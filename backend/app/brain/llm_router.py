@@ -107,7 +107,7 @@ class LLMRouter:
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": temperature,
-                "max_tokens": 1024
+                "max_tokens": 80
             }
             
             try:
@@ -153,7 +153,7 @@ class LLMRouter:
                 }],
                 "generationConfig": {
                     "temperature": temperature,
-                    "maxOutputTokens": 1024
+                    "maxOutputTokens": 80
                 }
             }
             
