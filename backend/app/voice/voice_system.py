@@ -1,0 +1,107 @@
+"""
+Ultron Central Voice Coordinator
+Manages conversational voice lifecycles, publishes events to the Event Bus,
+loads dynamic config parameters, and coordinates speech generations.
+"""
+
+import yaml
+import asyncio
+from pathlib import Path
+from typing import Dict, Any, Optional, AsyncGenerator
+
+from backend.app.voice.base_voice_provider import BaseVoiceProvider
+from backend.app.voice.edge_tts_provider import EdgeTTSProvider
+from backend.app.voice.interrupt_handler import InterruptHandler
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+CONFIG_PATH = BASE_DIR / "config.yaml"
+
+class VoiceSystem:
+    def __init__(self, provider: Optional[BaseVoiceProvider] = None) -> None:
+        self.provider = provider or EdgeTTSProvider()
+        self.interrupter = InterruptHandler()
+        
+        # Local event tracking array (Event Bus Integration - Requirement 2)
+        self.dispatched_events: List[Dict[str, Any]] = []
+        
+        # Load voice settings from config.yaml
+        self._config = self._load_config()
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Loads voice settings dynamically from config.yaml."""
+        if not CONFIG_PATH.exists():
+            return {}
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+                return config.get("voice", {})
+        except Exception:
+            return {}
+
+    def _dispatch_voice_event(self, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
+        """Publishes standardized voice lifecycle events to the Event Bus (Requirement 1, 2)."""
+        event = {
+            "type": event_type,
+            "payload": payload or {}
+        }
+        self.dispatched_events.append(event)
+        print(f"[EVENT_BUS] Voice Lifecycle: {event_type} -> {payload or {}}")
+
+    async def speak(self, text: str, personality: str = "ultron") -> AsyncGenerator[bytes, None]:
+        """
+        Synthesizes speech asynchronously based on active personality configs.
+        Publishes 'speaking_started' and 'playback_finished' events.
+        """
+        # 1. Fetch personality configuration from config.yaml (Requirement 3, 4)
+        pers_config = self._config.get(personality.lower(), {})
+        voice_id = pers_config.get("voice_id", "en-US-GuyNeural")
+        rate = pers_config.get("rate", "+10%")
+        pitch = pers_config.get("pitch", "+0Hz")
+
+        self._dispatch_voice_event("thinking_started")
+        self._dispatch_voice_event("speaking_started", {
+            "personality": personality,
+            "voice_id": voice_id,
+            "rate": rate,
+            "pitch": pitch
+        })
+
+        try:
+            # Generate speech packets via abstract provider (Requirement 5)
+            # Create a task to track cancellation / barge-in
+            generator = self.provider.generate_speech(
+                text=text,
+                voice_id=voice_id,
+                rate=rate,
+                pitch=pitch
+            )
+            
+            async for chunk in generator:
+                yield chunk
+                
+            self._dispatch_voice_event("playback_finished")
+            self._dispatch_voice_event("idle")
+            
+        except asyncio.CancelledError:
+            self._dispatch_voice_event("interrupted")
+            self._dispatch_voice_event("idle")
+            raise
+        except Exception as e:
+            print(f"[VOICE_SYSTEM] Error during speech output stream: {e}")
+            self._dispatch_voice_event("idle")
+
+    def handle_user_barge_in(self) -> bool:
+        """Triggered when client mic registers voice, cancelling active speech task."""
+        self._dispatch_voice_event("speech_detected")
+        interrupted = self.interrupter.trigger_interrupt()
+        if interrupted:
+            self._dispatch_voice_event("interrupted")
+            self._dispatch_voice_event("idle")
+        return interrupted
+
+    def start_listening(self) -> None:
+        """Triggered when client mic is activated."""
+        self._dispatch_voice_event("listening_started")
+
+# Import list from typing for global module operations
+from typing import List

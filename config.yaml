@@ -1,0 +1,90 @@
+# Ultron V1 - Production Configuration File
+# Target Environment: Windows 11 & Linux Ubuntu 24.04 (8GB RAM Host)
+
+ultron:
+  name: "ULTRON"
+  version: "1.0.0"
+  status: "pre-development"
+
+server:
+  host: "127.0.0.1"
+  backend_port: 8000
+  frontend_port: 5173
+  enable_cors: true
+
+ai:
+  primary_provider: "groq"
+  secondary_provider: "gemini"
+  timeout_seconds: 30
+  max_retries: 3
+  rate_limit_backoff_base_seconds: 2.0
+
+memory:
+  short_term_limit: 50
+  cleanup_interval_days: 30
+  search_on_demand: true
+  database_name: "ultron.db"
+  vector_index_name: "ultron_vectors"
+  duplicate_similarity_threshold: 0.95
+  low_density_keywords:
+    - "hi"
+    - "hello"
+    - "hey"
+    - "greetings"
+    - "good morning"
+    - "good afternoon"
+    - "good night"
+    - "thanks"
+    - "thank you"
+    - "welcome"
+    - "test"
+
+cache:
+  enabled: true
+  max_items: 200
+  expiry_hours: 24
+
+voice:
+  enabled: false
+  auto_start: false
+  load_on_demand: true
+  provider: "edge_tts"
+  interruption_timeout_seconds: 15.0
+  streaming_enabled: true
+  ultron:
+    voice_id: "en-US-GuyNeural"
+    rate: "+10%"
+    pitch: "+0Hz"
+  zora:
+    voice_id: "en-US-EmmaNeural"
+    rate: "-5%"
+    pitch: "+0Hz"
+
+security:
+  confirm_level_2: true
+  confirm_level_3: true
+  allowed_directories: []
+  blocked_directories: ["/etc", "/var", "C:\\Windows", "C:\\System32"]
+
+performance:
+  simple_request_skip_planning: true
+  max_tools_per_request: 5
+  response_streaming: true
+  parallel_tool_execution: true
+  lazy_module_loading: true
+  background_tasks_enabled: true
+
+personalities:
+  default: "ultron"
+  auto_switch_enabled: true
+  stress_threshold: 0.75
+  cooldown_turns: 3
+  cooldown_duration_minutes: 5
+
+targets:
+  startup_seconds: 5.0
+  simple_response_seconds: 3.0
+  medium_response_seconds: 5.0
+  heavy_response_seconds: 15.0
+  max_ram_gb: 3.0
+  cpu_idle_percent: 5.0
