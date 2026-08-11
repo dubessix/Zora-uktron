@@ -141,8 +141,9 @@ class ToolRegistry:
             "daily_briefing": ("backend.app.tools.daily_briefing_tool", "DailyBriefingTool"),
             "search_inside_documents": ("backend.app.tools.filesystem_search_tool", "SearchDocumentsTool"),
             "convert_file_format": ("backend.app.tools.filesystem_search_tool", "ConvertFileFormatTool"),
-            "world_monitor": ("backend.app.tools.world_monitor_tool", "WorldMonitorTool")
-        }
+            "world_monitor": ("backend.app.tools.world_monitor_tool", "WorldMonitorTool"),
+            "github_integration": ("backend.app.tools.github_integration_tool", "GitHubIntegrationTool")
+                }
 
     def register(self, tool: BaseTool) -> None:
         """Register a new custom tool dynamically (OCP compliant)."""

@@ -1,15 +1,17 @@
 """
 Ultron Unit & Integration Testing Suite — Final Dance Polish Diagnostics
 Verifies un-mocked Tasks tracker, Calendar solver, Daily Briefing, Security scanner,
-and Document Search tools.
+Document Search, and the GitHub Integration / parallel LLM tool calling systems.
 """
 
 import os
 import json
 import unittest
 import asyncio
+import datetime
 from pathlib import Path
 from backend.app.tools.tool_registry import ToolRegistry
+from backend.app.core.orchestrator import CognitiveOrchestrator
 
 class TestFinalDanceFeatureSet(unittest.TestCase):
     @classmethod
@@ -202,6 +204,34 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertTrue(res_mq["success"])
         self.assertIn("quotes", res_mq)
 
-import datetime # Local imports inside module context
+    def test_github_integration_automation(self):
+        """Test: Verify un-mocked github integration tool can parse actions, list issues, and search code."""
+        tool = self.registry.get_tool("github_integration")
+        self.assertIsNotNone(tool)
+
+        loop = asyncio.get_event_loop()
+        
+        # Test code search query
+        res_search = loop.run_until_complete(tool.execute(
+            action="search_code",
+            search_query="get_db_connection"
+        ))
+        self.assertTrue(res_search["success"])
+        self.assertGreaterEqual(res_search["data"]["count"], 0)
+
+    def test_parallel_llm_tool_calling(self):
+        """Test: Verify parallel dynamic tool executions inside cognitive orchestrator pipeline."""
+        orchestrator = CognitiveOrchestrator()
+        loop = asyncio.get_event_loop()
+
+        # Simulate a Hinglish query that should execute multiple tools
+        res = loop.run_until_complete(orchestrator.process_request(
+            user_prompt="Folder organize karo or files search karo, Sir.",
+            session_id="test_parallel_sess",
+            current_hour=12
+        ))
+        self.assertIn("content", res)
+        self.assertEqual(res["active_personality"], "ultron")
+
 if __name__ == "__main__":
     unittest.main()

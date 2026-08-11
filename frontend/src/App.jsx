@@ -88,7 +88,8 @@ export default function App() {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8000/api/health");
+        const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+        const response = await fetch(`${apiUrl}/api/health`);
         if (response.ok) {
           const data = await response.json();
           setBackendStatus("CONNECTED");
@@ -145,7 +146,8 @@ export default function App() {
     // The backend's Structured AI Action is the sole trigger governing the UI.
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/chat", {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${apiUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

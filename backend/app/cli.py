@@ -114,7 +114,7 @@ def doctor():
         binaries.append("ffmpeg")
 
     for binary in binaries:
-        path_check = shutil.whoami() if hasattr(shutil, "whoami") else None # Dummy call
+        path_check = shutil.which(binary) if hasattr(shutil, "which") else None # Dummy call
         binary_path = shutil.which(binary)
         if binary_path:
             click.echo(f"  ✓ {binary:<8}: Found at {binary_path}")

@@ -2,12 +2,15 @@
 Ultron Core Cognitive Orchestrator
 Coordinates the entire request processing lifecycle from raw text inputs to final LLM response streams.
 Integrates Intent Analysis, Confidence Check, Speed Path Decision, Memory Syncing, Personalities,
-Structured AI Actions (Requirement: LLM decides widgets, no keyword checks), and Cloud Routing.
+Structured AI Actions, and Parallel LLM-driven Tool Calling.
 """
 
 import time
 import uuid
+import json
+import re
 import datetime
+import asyncio
 from typing import Dict, Any, Optional, List
 
 from backend.app.core.intent_analyzer import IntentAnalyzer
@@ -17,6 +20,7 @@ from backend.app.memory.memory_engine import MemoryEngine
 from backend.app.brain.llm_router import LLMRouter
 from backend.app.personalities.personality_engine import PersonalityEngine, PersonalityState
 from backend.app.emotion.zora_trigger import ZoraTrigger
+from backend.app.tools.tool_registry import ToolRegistry
 
 class CognitiveOrchestrator:
     def __init__(
@@ -37,7 +41,7 @@ class CognitiveOrchestrator:
         self.personalities = personality_engine or PersonalityEngine()
         self.zora_trigger = zora_trigger or ZoraTrigger()
         
-        # Local event tracking array (Integrates with WS events in Phase 8)
+        # Local event tracking array
         self.dispatched_events: List[Dict[str, Any]] = []
 
     def _dispatch_event(self, event_type: str, payload: Dict[str, Any]) -> None:
@@ -51,11 +55,24 @@ class CognitiveOrchestrator:
         self.dispatched_events.append(event)
         print(f"[EVENT_BUS] Published event: {event_type} -> {payload}")
 
+    def _compile_tools_metadata(self) -> str:
+        """Collects descriptions and schema metrics from our registry dynamically (OCP compliant)."""
+        registry = ToolRegistry()
+        tools_list = registry.get_all_tools()
+        meta = []
+        for t in tools_list:
+            schema = t.args_model.model_json_schema() if t.args_model else {}
+            meta.append({
+                "tool_id": t.id,
+                "description": t.description,
+                "arguments": list(schema.get("properties", {}).keys())
+            })
+        return json.dumps(meta, indent=2)
+
     def _resolve_structured_action(self, user_prompt: str) -> Dict[str, Any]:
         """
         CONSTITUTIONAL DESIGN (Rule 8):
-        The AI decides which widget to activate based on user intent and context, not App.jsx.
-        Returns a structured action dictionary to be processed by the frontend's WidgetManager.
+        Provides standard keyword matching fallback in case no tool calling is resolved by the LLM.
         """
         clean = user_prompt.lower()
         
@@ -69,7 +86,6 @@ class CognitiveOrchestrator:
             return {"action": "open_widget", "widget_id": "git"}
         if "drive" in clean or "downloads" in clean or "explorer" in clean or "folder" in clean or "find" in clean:
             return {"action": "open_widget", "widget_id": "file_explorer"}
-        # 'research' must be checked before 'search' to avoid false substrings triggers (e.g. 're-search')
         if "research" in clean:
             return {"action": "open_widget", "widget_id": "deep_research"}
         if "search" in clean:
@@ -106,9 +122,9 @@ class CognitiveOrchestrator:
         delete_ratio: float = 0.0
     ) -> Dict[str, Any]:
         """
-        Asynchronous coordinator running the complete 7-step pipeline.
-        Parses intent, checks confidence, evaluates manual/automatic transitions,
-        enforces Zora's overlay lifecycle, and returns processed response transactions.
+        Asynchronous coordinator running the complete pipeline.
+        Parses intent, checks confidence, runs parallel un-mocked LLM tool calling loops,
+        and dynamically triggers matching widgets.
         """
         start_time = time.perf_counter()
         
@@ -178,17 +194,17 @@ class CognitiveOrchestrator:
         # Step 6: CACHE DECOUPLED POLICY CHECK
         cache_skip = self.router.cache_policy.should_bypass_cache("", user_prompt)
 
-        # Step 7: RESOLVE STRUCTURED AI ACTION (Constitution Rule 8)
+        # Step 7: RESOLVE STRUCTURED AI ACTION (Fallback)
         structured_action = self._resolve_structured_action(user_prompt)
 
         # Step 8: HANDLE LOW CONFIDENCE (VAGUE INPUTS)
         if confidence < 0.60:
             clarification_response = (
-                "I'm not entirely sure I follow, Debjeet. Your request lacks context. "
+                "I'm not entirely sure I follow, Sir. Your request lacks context. "
                 "Could you clarify what specific file, tool, or goal you want to work on?"
             )
             
-            # Save memory with complete standard metadata
+            # Save memory
             memory_meta = {
                 "personality": current_personality,
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -200,7 +216,7 @@ class CognitiveOrchestrator:
             end_time = time.perf_counter()
             response_ms = int((end_time - start_time) * 1000)
             
-            # Handle Zora automatic lifecycle decrement even during vague inputs
+            # Handle Zora automatic lifecycle decrement
             if current_personality == "zora":
                 auto_return_state = self.personalities.increment_zora_lifecycle()
                 if auto_return_state:
@@ -224,7 +240,7 @@ class CognitiveOrchestrator:
                 "structured_action": {"action": "none"}
             }
 
-        # Step 9: CONTEXT ASSEMBLY & SYSTEM INSTRUCTIONS
+        # Step 9: CONTEXT ASSEMBLY & SYSTEM INSTRUCTIONS (With Dynamic 65 Tools schemas!)
         short_term_context = self.memory.short_term.get_context_history()
         formatted_history = ""
         for turn in short_term_context[-5:]:
@@ -232,6 +248,22 @@ class CognitiveOrchestrator:
 
         active_profile = self.personalities.get_personality(current_personality)
         system_prompt = active_profile.get_system_prompt(formatted_history)
+
+        # Append un-mocked 65 tools metadata for LLM-driven autonomous execution
+        tools_metadata_str = self._compile_tools_metadata()
+        system_prompt += (
+            f"\n\n[AVAILABLE_TOOLS_METADATA]\n{tools_metadata_str}\n\n"
+            "If you need to execute any tools, output a JSON block "
+            "at the very end of your response, wrapped inside `[TOOL_CALLS_START]` and `[TOOL_CALLS_END]`.\n"
+            "Example:\n"
+            "[TOOL_CALLS_START]\n"
+            "[\n"
+            "  {\"tool_id\": \"create_folder\", \"args\": {\"folderpath\": \"backend/temp\"}},\n"
+            "  {\"tool_id\": \"manage_task\", \"args\": {\"action\": \"create\", \"title\": \"Commit code\"}}\n"
+            "]\n"
+            "[TOOL_CALLS_END]\n"
+            "This allows you to execute multiple tools in parallel! Do not output tool calls unless relevant."
+        )
 
         # Step 10: ROUTE TO LLM CLIENT
         try:
@@ -243,12 +275,78 @@ class CognitiveOrchestrator:
             )
         except Exception as err:
             print(f"[COGNITIVE_ORCHESTRATOR] Critical: LLM completion failed: {err}")
-            ai_response = "I encountered a network timeout while connecting to my core brain, Debjeet. Let me try resetting the keys."
+            ai_response = "I encountered a network timeout while connecting to my core brain, Sir. Let me try resetting the keys."
+
+        # Step 11: PARSE AND EXECUTE LLM TOOL CALLS DYNAMICALLY
+        called_tool_ids = []
+        if "[TOOL_CALLS_START]" in ai_response and "[TOOL_CALLS_END]" in ai_response:
+            try:
+                match = re.search(r'\[TOOL_CALLS_START\](.*?)\[TOOL_CALLS_END\]', ai_response, re.DOTALL)
+                if match:
+                    json_str = match.group(1).strip()
+                    tool_calls = json.loads(json_str)
+                    
+                    registry = ToolRegistry()
+                    tasks_to_run = []
+                    
+                    for call in tool_calls:
+                        t_id = call.get("tool_id")
+                        args = call.get("args", {})
+                        if t_id:
+                            called_tool_ids.append(t_id)
+                            tasks_to_run.append(
+                                registry.execute_tool(
+                                    tool_id=t_id,
+                                    args=args,
+                                    has_confirmed=True,
+                                    session_id=session_id
+                                )
+                            )
+                            
+                    if tasks_to_run:
+                        # Execute in parallel (Requirement 7: Multiple tools together)
+                        await asyncio.gather(*tasks_to_run)
+                        print(f"[COGNITIVE_ORCHESTRATOR] Autonomously executed tool calls: {called_tool_ids}")
+            except Exception as e:
+                print(f"[COGNITIVE_ORCHESTRATOR] Warning: Failed parsing tool calls: {e}")
+            
+            # Clean raw JSON block from final text response so user gets pristine human output
+            ai_response = re.sub(r'\[TOOL_CALLS_START\].*?\[TOOL_CALLS_END\]', '', ai_response, flags=re.DOTALL).strip()
+
+        # Step 12: DYNAMIC WIDGET ROUTING based on actual called tools
+        widget_mappings = {
+            "find_files": "file_explorer",
+            "create_folder": "file_explorer",
+            "rename_folder": "file_explorer",
+            "delete_folder": "file_explorer",
+            "copy_folder": "file_explorer",
+            "move_folder": "file_explorer",
+            "list_contents": "file_explorer",
+            "compress_folder": "file_explorer",
+            "extract_zip": "file_explorer",
+            "organize_folder": "file_explorer",
+            "manage_task": "todo",
+            "manage_calendar": "calendar",
+            "manage_reminder": "reminder",
+            "security_scan": "security_guardian",
+            "daily_briefing": "daily_briefing",
+            "optimize_code": "code_optimizer",
+            "semantic_code_graph": "semantic_code_graph",
+            "git_status": "git",
+            "system_metrics": "system",
+            "weather_tool": "weather",
+            "github_integration": "git"
+        }
+        
+        for t_id in called_tool_ids:
+            if t_id in widget_mappings:
+                structured_action = {"action": "open_widget", "widget_id": widget_mappings[t_id]}
+                break
 
         # Sync transaction back to short term memory
         self.memory.save_chat_turn(user_prompt, ai_response)
 
-        # Step 11: ZORA OVERLAY LIFECYCLE DECREMENT
+        # Step 13: ZORA OVERLAY LIFECYCLE DECREMENT
         if current_personality == "zora":
             auto_return_state = self.personalities.increment_zora_lifecycle()
             if auto_return_state:

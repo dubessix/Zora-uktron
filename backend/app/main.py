@@ -11,6 +11,7 @@ import platform
 import psutil
 import datetime
 import httpx
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -171,6 +172,52 @@ async def run_emergency_monitor():
             
         await asyncio.sleep(60.0)
 
+async def run_proactive_intelligence_loop():
+    """
+    PROACTIVE INTELLIGENCE LOOP (Requirements 8 & 9)
+    1. Check Downloads folder file count. If > 50, automatically trigger OrganizeFolderTool.
+    2. At 08:00 AM, compile DailyBriefingTool and push events to /ws/events.
+    """
+    print("[PROACTIVE_INTELLIGENCE] Starting proactive auto-organizer and morning briefing loops...")
+    last_briefing_date = None
+    
+    while True:
+        try:
+            # --- 1. Downloads Folder Auto-Organizer Check ---
+            downloads_dir = Path.home() / "Downloads"
+            if not downloads_dir.exists():
+                downloads_dir = Path("Downloads").resolve()
+                
+            if downloads_dir.exists():
+                file_count = sum(1 for f in downloads_dir.iterdir() if f.is_file())
+                if file_count > 50:
+                    print(f"[PROACTIVE_INTELLIGENCE] Downloads has {file_count} files. Auto-triggering organization...")
+                    from backend.app.tools.folder_tools import OrganizeFolderTool
+                    tool = OrganizeFolderTool()
+                    await tool.execute(folderpath=str(downloads_dir))
+                    
+            # --- 2. Morning 08:00 AM Auto-Briefing Trigger ---
+            now = datetime.datetime.now()
+            today_str = now.date().isoformat()
+            
+            if now.hour == 8 and now.minute == 0 and today_str != last_briefing_date:
+                last_briefing_date = today_str
+                print("[PROACTIVE_INTELLIGENCE] It is 08:00 AM. Compiling and broadcasting Daily Briefing...")
+                from backend.app.tools.daily_briefing_tool import DailyBriefingTool
+                tool = DailyBriefingTool()
+                res = await tool.execute()
+                if res.get("success"):
+                    event_payload = {
+                        "type": "daily_briefing_triggered",
+                        "briefing": res["data"]
+                    }
+                    await ws_manager.broadcast("events", event_payload)
+                    
+        except Exception as e:
+            print(f"[PROACTIVE_INTELLIGENCE] Loop exception: {e}")
+            
+        await asyncio.sleep(60.0)
+
 @app.on_event("startup")
 async def startup_event_handler():
     """Initializes standard SQLite databases and applies parameterized table migrations."""
@@ -178,9 +225,10 @@ async def startup_event_handler():
         with get_db_connection() as conn:
             initialize_database(conn)
             print("[INFO] Database successfully initialized with WAL mode enabled.")
-        # Launch non-blocking background scheduler and emergency monitor tasks
+        # Launch non-blocking background scheduler, emergency monitor, and proactive intelligence tasks
         asyncio.create_task(run_reminder_scheduler())
         asyncio.create_task(run_emergency_monitor())
+        asyncio.create_task(run_proactive_intelligence_loop())
     except Exception as e:
         print(f"[ERROR] Database migration crash during startup execution: {e}")
         raise SystemExit("Core startup database initialization failure.") from e
@@ -252,7 +300,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 user_prompt=prompt,
                 session_id=session_id,
                 consecutive_errors=0,
-                current_hour=12,
+                current_hour=datetime.datetime.now().hour,
                 delete_ratio=0.0
             )
 

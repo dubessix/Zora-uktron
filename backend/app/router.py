@@ -6,6 +6,7 @@ Supports structured AI action metadata payloads and explicit backend tool execut
 
 import time
 import uuid
+import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -73,7 +74,7 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             user_prompt=request.content,
             session_id=session_id,
             consecutive_errors=0,
-            current_hour=12,
+            current_hour=datetime.datetime.now().hour,
             delete_ratio=0.0
         )
         
