@@ -53,12 +53,12 @@ voice:
   streaming_enabled: true
   ultron:
     voice_id: "en-US-GuyNeural"
-    rate: "+10%"
+    rate: "+5%"
     pitch: "+0Hz"
   zora:
-    voice_id: "en-US-EmmaNeural"
+    voice_id: "en-IN-NeerjaNeural"
     rate: "-5%"
-    pitch: "+0Hz"
+    pitch: "+2Hz"
 
 security:
   confirm_level_2: true

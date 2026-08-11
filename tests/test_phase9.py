@@ -41,7 +41,7 @@ class TestPhase9VoiceSystemArchitecture(unittest.IsolatedAsyncioTestCase):
         
         # Verify separate voices
         self.assertEqual(ultron_config.get("voice_id"), "en-US-GuyNeural")
-        self.assertEqual(zora_config.get("voice_id"), "en-US-EmmaNeural")
+        self.assertEqual(zora_config.get("voice_id"), "en-IN-NeerjaNeural")
         
         # Verify separate speech rates
         self.assertNotEqual(ultron_config.get("rate"), zora_config.get("rate"))
