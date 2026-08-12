@@ -83,7 +83,7 @@ async def run_reminder_scheduler():
                     item_id = item["id"]
                     title = item["title"]
                     type_val = item["type"]
-                    rec = item["recurrence"].lower()
+                    rec = (item["recurrence"] or "one_time").lower()
                     
                     print(f"[SCHEDULER] Triggering {type_val} '{title}' (ID: {item_id})")
                     
@@ -184,24 +184,16 @@ async def run_proactive_intelligence_loop():
     
     while True:
         try:
-            # --- 1. Downloads Folder Auto-Organizer Check ---
-            downloads_dir = Path.home() / "Downloads"
-            if not downloads_dir.exists():
-                downloads_dir = Path("Downloads").resolve()
-                
-            if downloads_dir.exists():
-                file_count = sum(1 for f in downloads_dir.iterdir() if f.is_file())
-                if file_count > 50:
-                    print(f"[PROACTIVE_INTELLIGENCE] Downloads has {file_count} files. Auto-triggering organization...")
-                    from backend.app.tools.folder_tools import OrganizeFolderTool
-                    tool = OrganizeFolderTool()
-                    await tool.execute(folderpath=str(downloads_dir))
-                    
-            # --- 2. Morning 08:00 AM Auto-Briefing Trigger ---
+            # --- 1. Downloads auto-organizer removed (manual-only now for safety).
+            #     Use "organize my downloads" to trigger OrganizeFolderTool explicitly.
+
+            # --- 2. Morning 08:00 AM Auto-Briefing Trigger (fires once per hour) ---
             now = datetime.datetime.now()
             today_str = now.date().isoformat()
             
-            if now.hour == 8 and now.minute == 0 and today_str != last_briefing_date:
+            # Fire once during the whole 8 o'clock hour (not just minute==0, which a
+            # 120s loop can miss).
+            if now.hour == 8 and today_str != last_briefing_date:
                 last_briefing_date = today_str
                 print("[PROACTIVE_INTELLIGENCE] It is 08:00 AM. Compiling and broadcasting Daily Briefing...")
                 from backend.app.tools.daily_briefing_tool import DailyBriefingTool

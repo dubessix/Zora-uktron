@@ -104,6 +104,10 @@ class DeleteFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         folderpath = kwargs.get("folderpath", "")
         path = Path(folderpath).resolve()
+        # Security: block dangerous/system paths (e.g. /etc, C:\Windows).
+        from backend.app.security.path_guard import is_path_safe
+        if not is_path_safe(str(path)):
+            return {"success": False, "error": f"Blocked by path guard: {folderpath}", "data": {}}
         if not path.exists():
             return {"success": False, "error": f"Directory does not exist: {folderpath}", "data": {}}
         try:
@@ -239,6 +243,12 @@ class ExtractZipTool(BaseTool):
         try:
             dest.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(zippath, 'r') as zip_ref:
+                # Zip-slip protection: ensure every member stays inside dest.
+                dest_resolved = dest.resolve()
+                for member in zip_ref.infolist():
+                    member_path = (dest / member.filename).resolve()
+                    if not member_path.is_relative_to(dest_resolved):
+                        return {"success": False, "error": f"Zip-slip blocked: '{member.filename}' escapes target directory.", "data": {}}
                 zip_ref.extractall(dest)
             return {"success": True, "data": {"message": f"Successfully extracted archive to {dest}"}, "error": None}
         except Exception as e:

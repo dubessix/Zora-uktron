@@ -686,11 +686,20 @@ class CognitiveOrchestrator:
                                     )
                                 )
                             else:
+                                # Security: only auto-confirm read/write (level 0/1) tools.
+                                # Dangerous (level 2/3: terminal, delete, system) must go through
+                                # the confirmation gate instead of hardcoded has_confirmed=True.
+                                auto_confirm = False
+                                try:
+                                    _tool = registry.get_tool(t_id)
+                                    auto_confirm = (_tool is not None and _tool.permission_level <= 1)
+                                except Exception:
+                                    auto_confirm = False
                                 tasks_to_run.append(
                                     registry.execute_tool(
                                         tool_id=t_id,
                                         args=args if isinstance(args, dict) else {},
-                                        has_confirmed=True,
+                                        has_confirmed=auto_confirm,
                                         session_id=session_id
                                     )
                                 )

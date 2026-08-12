@@ -69,6 +69,10 @@ class FileWriteTool(BaseTool):
         filepath = kwargs.get("filepath", "")
         content = kwargs.get("content", "")
         path = Path(filepath).resolve()
+        # Security: block writes to dangerous/system paths.
+        from backend.app.security.path_guard import is_path_safe
+        if not is_path_safe(str(path)):
+            return {"success": False, "error": f"Blocked by path guard: {filepath}", "data": {}}
         
         try:
             # Ensure parent directories exist

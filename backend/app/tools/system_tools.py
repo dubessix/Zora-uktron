@@ -180,8 +180,29 @@ class TerminalRunTool(BaseTool):
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout_bytes, stderr_bytes = await proc.communicate()
-            
+            # Timeout guard: kill long-running commands so nothing hangs forever.
+            timed_out = False
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=20.0)
+            except asyncio.TimeoutError:
+                timed_out = True
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                stdout_bytes, stderr_bytes = b"", b"Command timed out after 20s (killed to prevent hang)."
+            if timed_out:
+                return {
+                    "success": False,
+                    "data": {
+                        "exit_code": 124,
+                        "stdout": "",
+                        "stderr": "Command timed out after 20s (killed to prevent hang).",
+                        "cwd": str(project_root),
+                        "self_healing_fix": None
+                    },
+                    "error": "Command timed out after 20s (killed to prevent hang)."
+                }
             stdout = stdout_bytes.decode("utf-8").strip()
             stderr = stderr_bytes.decode("utf-8").strip()
             exit_code = proc.returncode
