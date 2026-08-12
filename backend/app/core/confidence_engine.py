@@ -31,9 +31,10 @@ class ConfidenceEngine:
         if intent == "CONVERSATION" and length < 10:
             base_score = 0.95
 
-        # Heuristic 3: Deduct score for vague technical commands (e.g. just typing "webpack")
+        # Heuristic 3: Short dev commands (e.g. "git status", "run tests") are legitimate —
+        # don't reject them as vague. Keep a healthy score so they aren't sent to "clarify".
         elif intent == "DEVELOPER_HELP" and length < 15:
-            base_score = 0.55
+            base_score = 0.85
 
         # Clamp score between 0.0 and 1.0
         return max(0.0, min(1.0, base_score))

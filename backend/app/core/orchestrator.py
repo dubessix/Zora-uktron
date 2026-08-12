@@ -451,7 +451,8 @@ class CognitiveOrchestrator:
         session_id: str,
         consecutive_errors: int = 0,
         current_hour: int = 12,
-        delete_ratio: float = 0.0
+        delete_ratio: float = 0.0,
+        initial_personality: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Asynchronous coordinator running the complete pipeline.
@@ -462,6 +463,15 @@ class CognitiveOrchestrator:
         
         # Clear past events for this turn
         self.dispatched_events.clear()
+
+        # Fix #9: restore persisted personality for this session if provided.
+        if initial_personality and initial_personality in ("ultron", "zora"):
+            if self.personalities.state.active_personality != initial_personality:
+                self.personalities.update_state(
+                    personality=initial_personality,
+                    reason="Restored from session",
+                    switch_type="system"
+                )
 
         current_personality = self.personalities.state.active_personality
 
@@ -608,10 +618,17 @@ class CognitiveOrchestrator:
             except Exception as e:
                 print(f"[COGNITIVE_ORCHESTRATOR] Warning: skill loading skipped: {e}")
 
-        # Append un-mocked 65 tools metadata for LLM-driven autonomous execution
-        tools_metadata_str = self._compile_tools_metadata()
-        system_prompt += (
-            f"\n\n[AVAILABLE_TOOLS_METADATA]\n{tools_metadata_str}\n\n"
+        # Append tools metadata for LLM-driven autonomous execution.
+        # Fix 13: on 'fast' speed-track (simple chat) skip the heavy 65-tool dump to
+        # save tokens/latency; include it on medium/heavy/coding turns where tools matter.
+        if speed_track == "fast" and not coding_turn:
+            system_prompt += (
+                "\n\nNote: this is a simple conversational turn. No tool execution is needed."
+            )
+        else:
+            tools_metadata_str = self._compile_tools_metadata()
+            system_prompt += (
+                f"\n\n[AVAILABLE_TOOLS_METADATA]\n{tools_metadata_str}\n\n"
             "First, answer the user briefly and warmly like a human personal assistant "
             "(keep it to 25-40 words, 2 lines max, per your personality). "
             "Then, if you need to execute any tools, output a JSON block "

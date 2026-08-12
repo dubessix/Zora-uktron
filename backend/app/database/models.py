@@ -121,6 +121,15 @@ def get_session(conn: sqlite3.Connection, session_id: str) -> Optional[Dict[str,
         return dict(row)
     return None
 
+def update_session_personality(conn: sqlite3.Connection, session_id: str, personality: str) -> None:
+    """Persists the active personality on a session so it survives across requests."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE sessions SET personality = ? WHERE id = ?;",
+        (personality, session_id)
+    )
+    conn.commit()
+
 def save_conversation(
     conn: sqlite3.Connection,
     msg_id: str,

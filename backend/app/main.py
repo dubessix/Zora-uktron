@@ -337,9 +337,17 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
 
     except WebSocketDisconnect:
         ws_manager.disconnect("chat", client_id)
+        try:
+            await orchestrator.close()
+        except Exception:
+            pass
     except Exception as e:
         print(f"[WS_CHAT] Error on active chat pipeline: {e}")
         ws_manager.disconnect("chat", client_id)
+        try:
+            await orchestrator.close()
+        except Exception:
+            pass
 
 @app.websocket("/ws/events")
 async def websocket_events_endpoint(websocket: WebSocket, client_id: str = "default_client"):

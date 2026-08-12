@@ -11,13 +11,22 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.app.database.db import get_db_connection
-from backend.app.database.models import save_conversation, get_conversation_history
+from backend.app.database.models import save_conversation, get_conversation_history, update_session_personality
 from backend.app.session.session_manager import SessionManager
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.tools.tool_registry import ToolRegistry
 
 # Create regional router registry
 api_router = APIRouter(prefix="/api")
+
+# Fix #8: shared orchestrator singleton so short-term memory persists across
+# requests within the same process (instead of resetting every message).
+_shared_orchestrator = None
+def get_orchestrator() -> CognitiveOrchestrator:
+    global _shared_orchestrator
+    if _shared_orchestrator is None:
+        _shared_orchestrator = CognitiveOrchestrator()
+    return _shared_orchestrator
 
 # --- Pydantic Models for Input Validation and Type Safety ---
 
@@ -66,12 +75,13 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
     and returns a production-ready Echo Response with structured action payloads.
     """
     start_time = time.perf_counter()
-    orchestrator = CognitiveOrchestrator()
+    orchestrator = get_orchestrator()  # shared — memory persists across messages
     
     try:
         # 1. Resolve active session
         session_data = SessionManager.get_or_create_session(request.session_id)
         session_id = session_data["id"]
+        session_personality = session_data.get("personality") or "ultron"
         
         # 2. Process query async via Orchestrator to resolve structured actions
         result = await orchestrator.process_request(
@@ -79,7 +89,8 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             session_id=session_id,
             consecutive_errors=0,
             current_hour=datetime.datetime.now().hour,
-            delete_ratio=0.0
+            delete_ratio=0.0,
+            initial_personality=session_personality
         )
         
         # Calculate process latency
@@ -88,6 +99,11 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
         
         # 3. Save conversational turn directly to the database
         with get_db_connection() as conn:
+            # Fix #9: persist active personality on the session.
+            try:
+                update_session_personality(conn, session_id, result.get("active_personality", "ultron"))
+            except Exception:
+                pass
             save_conversation(
                 conn=conn,
                 msg_id=result["id"],
@@ -119,6 +135,8 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process chat message cleanly: {str(e)}"
         )
+    # Shared orchestrator is intentionally NOT closed here — it persists across
+    # messages for memory. (Its persistent httpx client lives for the process.)
 
 @api_router.post("/tools/execute", status_code=status.HTTP_200_OK)
 async def execute_backend_tool(request: ToolExecuteRequest) -> Dict[str, Any]:

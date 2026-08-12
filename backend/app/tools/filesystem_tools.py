@@ -124,7 +124,12 @@ class FindFilesTool(BaseTool):
                 
                 for file in files:
                     file_path = Path(root) / file
-                    file_rel = str(file_path.relative_to(self.workspace_root))
+                    # Fix 20: relative_to raises ValueError for paths outside workspace;
+                    # fall back to absolute path so searching outside never crashes.
+                    try:
+                        file_rel = str(file_path.relative_to(self.workspace_root))
+                    except ValueError:
+                        file_rel = str(file_path)
                     
                     matched = False
                     if is_glob:

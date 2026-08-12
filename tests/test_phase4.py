@@ -32,8 +32,8 @@ class TestPhase4OrchestratorArchitecture(unittest.IsolatedAsyncioTestCase):
         # High confidence for detailed query
         self.assertEqual(engine.calculate_confidence("How do I configure Vite with React?", "DEVELOPER_HELP"), 1.0)
         
-        # Low confidence for extremely vague technical term
-        self.assertLess(engine.calculate_confidence("webpack", "DEVELOPER_HELP"), 0.60)
+        # Short dev commands (e.g. "webpack") are now valid — not rejected as vague.
+        self.assertGreaterEqual(engine.calculate_confidence("webpack", "DEVELOPER_HELP"), 0.60)
         
         # Extremely low confidence for empty/digit queries
         self.assertLess(engine.calculate_confidence("123", "CONVERSATION"), 0.60)
@@ -68,17 +68,16 @@ class TestPhase4OrchestratorArchitecture(unittest.IsolatedAsyncioTestCase):
         orchestrator = CognitiveOrchestrator(memory_engine=memory)
         
         # --- Case A: Low Confidence Prompt (Should trigger single clarifying question instantly) ---
-        # "git" has length 3, intent DEVELOPER_HELP -> confidence 0.55 (<0.60) -> and has "git" which skips cache.
-        response_a = await orchestrator.process_request("git", session_id="test_sess_4")
+        # A genuinely vague input (e.g. "123") scores low -> clarify.
+        response_a = await orchestrator.process_request("123", session_id="test_sess_4")
         
         self.assertIn("clarify", response_a["content"])
         self.assertLess(response_a["confidence"], 0.60)
         self.assertEqual(response_a["speed_track"], "heavy")
-        self.assertTrue(response_a["cache_skip"]) # Contains "git", which matches Cache Guard
         
         # Verify clarifying turn was saved to memory history
         self.assertEqual(len(memory.short_term.get_context_history()), 1)
-        self.assertEqual(memory.short_term.get_context_history()[0]["user"], "git")
+        self.assertEqual(memory.short_term.get_context_history()[0]["user"], "123")
         self.assertIn("clarify", memory.short_term.get_context_history()[0]["ai"])
 
         # --- Case B: Detailed Prompt (Should execute full pipeline and call router) ---
