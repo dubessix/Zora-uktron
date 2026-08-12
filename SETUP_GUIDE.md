@@ -1,6 +1,6 @@
-# IRIS (Zora-Uktron) — Complete Setup Guide
+# ULTRON (Zora-Uktron) — Complete Setup Guide
 
-A step-by-step guide to get IRIS running on your machine (Windows 11 or Ubuntu 24.04),
+A step-by-step guide to get Ultron running on your machine (Windows 11 or Ubuntu 24.04),
 optimized for 8GB RAM / dual-core / no GPU.
 
 ---
@@ -89,7 +89,7 @@ TAVILY_API_KEY=your_tavily_api_key_here
 
 ---
 
-## Step 5 — Run IRIS
+## Step 5 — Run Ultron
 ```bash
 python launcher.py
 ```
