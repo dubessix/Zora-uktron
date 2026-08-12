@@ -212,6 +212,7 @@ python -m pytest tests/ -q        # 79 tests, all green
 | [`docs/frontend_structure.md`](docs/frontend_structure.md) | Frontend layout |
 | [`docs/ultron_daily_operating_manual.md`](docs/ultron_daily_operating_manual.md) | Operating manual |
 | [`ultron_cross_platform_launch_guide.md`](ultron_cross_platform_launch_guide.md) | Windows/Linux launch guide |
+| [`docs/ARCH_SETUP.md`](docs/ARCH_SETUP.md) | Complete Arch Linux beginner's setup |
 
 ---
 
