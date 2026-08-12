@@ -22,6 +22,8 @@ class TestPhase8WebSocketArchitecture(unittest.TestCase):
         with client.websocket_connect("/ws/events?client_id=test_client_handshake") as websocket:
             # Active count must dynamically increment to 1
             self.assertEqual(ws_manager.get_active_client_count("events"), 1)
+            # Use `websocket`: send a keep-alive frame to confirm it is live.
+            websocket.send_text("ping")
             
         # After exit, client must automatically be removed from pool (prevents leaks)
         self.assertEqual(ws_manager.get_active_client_count("events"), 0)

@@ -7,7 +7,7 @@ and compiles a concise, elite start-of-day summary report.
 
 import httpx
 import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 from backend.app.database.db import get_db_connection

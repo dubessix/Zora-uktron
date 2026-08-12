@@ -6,7 +6,7 @@ multi-source web summaries, URLs, and research data.
 
 import os
 import httpx
-from typing import Dict, Any, Type, List
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
@@ -30,17 +30,44 @@ class TavilyResearchTool(BaseTool):
         query_str = kwargs.get("query", "")
         api_key = os.getenv("TAVILY_API_KEY")
         
-        # If no key is set or is placeholder, default to robust localized aggregator fallback
+        # If no key is set or is placeholder, use real (free, keyless) web results
+        # instead of a fake summary, and open the top answer page in the browser.
         if not api_key or "your_tavily_api_key" in api_key:
+            try:
+                import webbrowser
+                from backend.app.tools._realsearch import real_web_search
+                results = await real_web_search(query_str, limit=3)
+                if results:
+                    # Open the most relevant answer page in the browser (not a search URL).
+                    top_url = results[0]["url"]
+                    try:
+                        webbrowser.open(top_url)
+                    except Exception:
+                        pass
+                    sources = [
+                        {"name": r["title"], "url": r["url"], "snippet": r["snippet"]}
+                        for r in results
+                    ]
+                    summary = (results[0]["snippet"] or results[0]["title"]).strip()
+                    return {
+                        "success": True,
+                        "data": {
+                            "topic": query_str,
+                            "summary": summary or f"Here are the top web results for '{query_str}'.",
+                            "sources": sources,
+                            "opened_in_browser": top_url
+                        },
+                        "error": None
+                    }
+            except Exception:
+                pass
             return {
                 "success": True,
                 "data": {
                     "topic": query_str,
-                    "summary": f"Decoupled Mock Research for: '{query_str}'. AI agents are rapidly shifting from simple prompts to autonomous, multi-step planning loops utilizing local database vector stores and key rotation clients.",
-                    "sources": [
-                        {"name": "Tavily AI Index (Mock)", "url": "https://tavily.com" },
-                        {"name": "LangChain Research (Mock)", "url": "https://langchain.com" }
-                    ]
+                    "summary": f"No live web results could be fetched for '{query_str}' right now.",
+                    "sources": [],
+                    "opened_in_browser": None
                 },
                 "error": None
             }
@@ -62,18 +89,29 @@ class TavilyResearchTool(BaseTool):
                     results = res_data.get("results", [])
                     
                     sources = []
+                    opened_in_browser = None
                     for r in results[:3]:  # Map top 3 sources
                         sources.append({
                             "name": r.get("title", "Web Source"),
                             "url": r.get("url", "https://tavily.com")
                         })
+                    # Open the top result page so the user sees the actual answer,
+                    # not a search page.
+                    if results:
+                        opened_in_browser = results[0].get("url")
+                        try:
+                            import webbrowser
+                            webbrowser.open(opened_in_browser)
+                        except Exception:
+                            pass
                         
                     return {
                         "success": True,
                         "data": {
                             "topic": query_str,
                             "summary": answer,
-                            "sources": sources
+                            "sources": sources,
+                            "opened_in_browser": opened_in_browser
                         },
                         "error": None
                     }

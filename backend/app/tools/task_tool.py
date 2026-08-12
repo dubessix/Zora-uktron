@@ -5,9 +5,7 @@ modules (e.g., Authentication, Quiz Engine), subtasks, and priority tracking in 
 """
 
 import uuid
-import datetime
-from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 from backend.app.database.db import get_db_connection

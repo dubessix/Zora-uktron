@@ -12,7 +12,7 @@ import shutil
 import os
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Type, List, Optional, Tuple
+from typing import Dict, Any, Tuple
 from backend.app.tools.tool_base import BaseTool
 
 # --- Validation Schemas ---
@@ -391,4 +391,5 @@ class SpotifyCurrentTrackTool(BaseTool):
                 track_info = f"{title} - {artist}" if artist else title
                 return {"success": True, "data": {"current_track": track_info}, "error": None}
         except Exception as e:
+            print(f"[SPOTIFY] Metadata inspection failed (non-fatal): {e}")
             return {"success": True, "data": {"current_track": "Spotify active, failed to inspect metadata. (Windows/Linux DBus lock)"}, "error": None}

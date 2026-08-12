@@ -5,8 +5,7 @@ Natively prevents socket leaks and manages client disconnection cycles.
 """
 
 from fastapi import WebSocket
-from typing import Dict, Any, List, Optional
-import json
+from typing import Dict, Any
 
 class WebSocketManager:
     def __init__(self) -> None:

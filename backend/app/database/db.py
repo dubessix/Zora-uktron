@@ -3,9 +3,7 @@ Ultron Core Database Connection Manager
 Establishes thread-safe local connections to SQLite and enforces Write-Ahead Logging (WAL) concurrency.
 """
 
-import os
 import sqlite3
-import platform
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Generator

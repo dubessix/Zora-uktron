@@ -4,8 +4,10 @@ Manages active personality lifecycles, manual switches, and automatic returns to
 """
 
 import re
+import yaml
 import datetime
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Dict, Optional
 from pydantic import BaseModel, Field
 
 from backend.app.personalities.base_personality import (
@@ -13,6 +15,9 @@ from backend.app.personalities.base_personality import (
     UltronPersonality,
     ZoraPersonality
 )
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+CONFIG_PATH = BASE_DIR / "config.yaml"
 
 class PersonalityState(BaseModel):
     active_personality: str = Field("ultron", description="ID of the current active personality.")
@@ -24,8 +29,10 @@ class PersonalityState(BaseModel):
     )
 
 class PersonalityEngine:
-    def __init__(self, cooldown_turns: int = 3) -> None:
-        self.cooldown_turns = cooldown_turns
+    def __init__(self, cooldown_turns: Optional[int] = None) -> None:
+        # Read cooldown_turns from config.yaml when not explicitly provided,
+        # so the runtime behavior stays in sync with configuration.
+        self.cooldown_turns = cooldown_turns if cooldown_turns is not None else self._load_cooldown_from_config()
         
         # State tracking
         self.state = PersonalityState()
@@ -44,6 +51,18 @@ class PersonalityEngine:
         self._to_ultron_triggers = [
             re.compile(r"\b(switch to ultron|back to work|ultron|let's get back to it)\b", re.IGNORECASE)
         ]
+
+    @staticmethod
+    def _load_cooldown_from_config() -> int:
+        """Reads cooldown_turns from config.yaml safely (default 3)."""
+        if CONFIG_PATH.exists():
+            try:
+                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+                    return int(config.get("personalities", {}).get("cooldown_turns", 3))
+            except Exception:
+                pass
+        return 3
 
     def register_personality(self, personality: BasePersonality) -> None:
         """Register a new personality dynamically (Supports Open/Closed Principle)."""
@@ -64,10 +83,8 @@ class PersonalityEngine:
             switch_type=switch_type,
             switched_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
-        if personality == "zora":
-            self._zora_active_turns = 0
-        else:
-            self._zora_active_turns = 0
+        # Reset the Zora active-turn counter on any transition.
+        self._zora_active_turns = 0
 
     def increment_zora_lifecycle(self) -> Optional[PersonalityState]:
         """

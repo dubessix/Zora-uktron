@@ -6,6 +6,7 @@ Supports Open/Closed Principle (OCP) for adding future personalities (Mentor, Re
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 PROMPTS_DIR = BASE_DIR / "backend" / "app" / "personalities"

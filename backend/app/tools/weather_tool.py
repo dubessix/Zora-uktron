@@ -5,7 +5,7 @@ and hourly/weekly forecasts based on local coordinates.
 """
 
 import httpx
-from typing import Dict, Any, Type
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
@@ -75,6 +75,7 @@ class WeatherTool(BaseTool):
                     return {"success": False, "error": f"Weather API returned status code: {response.status_code}", "data": {}}
             except Exception as e:
                 # Local safe fallback if host has no active internet connection
+                print(f"[WEATHER] Live API unavailable, using local fallback: {e}")
                 return {
                     "success": True,
                     "data": {

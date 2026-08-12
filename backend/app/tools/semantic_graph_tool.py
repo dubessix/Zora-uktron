@@ -9,9 +9,9 @@ Provides dependency tracking, symbol resolution, and call-graph traversal (Level
 import os
 import ast
 import json
-import asyncio
+import re
 from pathlib import Path
-from typing import Dict, Any, List, Set, Optional, Tuple
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
@@ -123,6 +123,8 @@ class SemanticGraphTool(BaseTool):
                             "name": call_name,
                             "line": node.lineno
                         })
+                        # Track unique referenced symbols (dedup below).
+                        symbols.append(call_name)
                 except Exception:
                     pass
                 self.generic_visit(node)
@@ -130,12 +132,16 @@ class SemanticGraphTool(BaseTool):
         visitor = ASTVisitor(file_relative)
         visitor.visit(tree)
 
+        # Deduplicate symbols (preserve order) so the list is meaningful/usable.
+        unique_symbols = list(dict.fromkeys(symbols))
+
         return {
             "file": file_relative,
             "classes": class_defs,
             "functions": func_defs,
             "imports": imports,
-            "calls": calls
+            "calls": calls,
+            "symbols": unique_symbols
         }
 
     def _scan_workspace(self) -> Dict[str, Any]:
@@ -214,12 +220,37 @@ class SemanticGraphTool(BaseTool):
 
         return graph
 
+    def _is_cache_stale(self, cache_mtime: float) -> bool:
+        """Returns True if any tracked .py file is newer than the cache file.
+
+        Enables automatic cache invalidation so the graph always reflects the
+        current workspace (new/changed/removed source files) instead of serving
+        a stale snapshot forever.
+        """
+        ignored_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist"}
+        for root, dirs, files in os.walk(self.workspace_root):
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            for file in files:
+                if file.endswith(".py"):
+                    file_path = Path(root) / file
+                    try:
+                        if file_path.stat().st_mtime > cache_mtime:
+                            return True
+                    except OSError:
+                        continue
+        return False
+
     def _load_graph(self) -> Dict[str, Any]:
-        """Loads semantic graph from local JSON cache, or builds it if missing."""
+        """Loads semantic graph from local JSON cache, or rebuilds it if the
+        cache is missing, corrupt, or stale relative to the source workspace."""
         if self.graph_cache_path.exists():
             try:
+                cache_mtime = self.graph_cache_path.stat().st_mtime
                 with open(self.graph_cache_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    graph = json.load(f)
+                # Serve the cache only if no source file has changed since it was built.
+                if not self._is_cache_stale(cache_mtime):
+                    return graph
             except Exception:
                 pass
         return self._scan_workspace()
@@ -290,7 +321,7 @@ class SemanticGraphTool(BaseTool):
             target_path = Path(target_path_str)
             
             for file_rel in graph["files"]:
-                if target_path_str in file_rel or file_rel.endswith(target_path_str):
+                if file_rel == str(target_path) or file_rel.endswith(target_path.name) or target_path_str in file_rel:
                     matching_file = file_rel
                     break
                     

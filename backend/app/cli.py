@@ -4,7 +4,6 @@ Provides global administration, setup wizards, diagnostics, and launch routines.
 Supports Windows 11 & Linux Ubuntu 24.04 natively.
 """
 
-import os
 import sys
 import platform
 import shutil
@@ -114,8 +113,8 @@ def doctor():
         binaries.append("ffmpeg")
 
     for binary in binaries:
-        path_check = shutil.which(binary) if hasattr(shutil, "which") else None # Dummy call
-        binary_path = shutil.which(binary)
+        path_check = shutil.which(binary) if hasattr(shutil, "which") else None
+        binary_path = path_check
         if binary_path:
             click.echo(f"  ✓ {binary:<8}: Found at {binary_path}")
         else:

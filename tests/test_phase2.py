@@ -5,12 +5,9 @@ and automatic rate-limit key rotations & Gemini failovers.
 """
 
 import unittest
-import time
 import os
-import json
 import httpx
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from backend.app.brain.api_key_manager import APIKeyManager
 from backend.app.brain.smart_cache import SmartCache, CACHE_PATH

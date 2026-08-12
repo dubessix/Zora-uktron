@@ -43,7 +43,7 @@ export default function RightPanel({
               ✓
             </div>
             <p className="text-[10px] text-[#8B8B96] leading-relaxed uppercase tracking-wider font-mono">
-              System online. Speak "Hey Ultron" or type below to begin.
+              System online. Tap the mic and say a wake word, or type below to begin.
             </p>
           </div>
         ) : (

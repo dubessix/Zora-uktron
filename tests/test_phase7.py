@@ -5,15 +5,10 @@ context builders, SQLite audit logs, and timeout handlers.
 """
 
 import unittest
-import asyncio
 import os
-import sqlite3
 from pathlib import Path
-from pydantic import BaseModel
 
 from backend.app.tools.tool_registry import ToolRegistry
-from backend.app.tools.filesystem_tools import FileReadTool, FileWriteTool
-from backend.app.tools.system_tools import TerminalRunTool
 from backend.app.tools.context_builder import ToolContextBuilder
 from backend.app.database.db import get_db_connection
 

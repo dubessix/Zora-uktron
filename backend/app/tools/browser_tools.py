@@ -7,11 +7,10 @@ to trigger active browser controls without heavy Selenium/Playwright dependencie
 
 import webbrowser
 import httpx
-import os
 import platform
 import asyncio
 from pathlib import Path
-from typing import Dict, Any, Type, List
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 

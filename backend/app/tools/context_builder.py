@@ -5,7 +5,7 @@ Satisfies SOLID, KISS, and Clean Architecture standards.
 """
 
 import json
-from typing import List, Dict, Any
+from typing import List
 from backend.app.tools.tool_base import BaseTool
 
 class ToolContextBuilder:

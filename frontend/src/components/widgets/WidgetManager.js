@@ -18,6 +18,7 @@ const CodeOptimizerWidget = lazy(() => import('./CodeOptimizerWidget'));
 const SemanticCodeGraphWidget = lazy(() => import('./SemanticCodeGraphWidget'));
 const SecurityGuardianWidget = lazy(() => import('./SecurityGuardianWidget'));
 const DailyBriefingWidget = lazy(() => import('./DailyBriefingWidget'));
+const CodingWidget = lazy(() => import('./CodingWidget'));
 
 /**
  * Standardized Frontend Widget Registry Map (OCP Compliant)
@@ -64,6 +65,14 @@ export const WIDGET_REGISTRY = {
     defaultWidth: 320,
     defaultHeight: 300,
     Component: SemanticCodeGraphWidget
+  },
+  coding: {
+    id: "coding",
+    title: "Coding Agent",
+    category: "developer",
+    defaultWidth: 340,
+    defaultHeight: 240,
+    Component: CodingWidget
   },
   security_guardian: {
     id: "security_guardian",

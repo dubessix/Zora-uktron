@@ -5,12 +5,20 @@ Runs entirely locally with 0MB RAM footprint.
 """
 
 import re
-from typing import Dict, Any
 
 class IntentAnalyzer:
     def __init__(self) -> None:
         # Predefined regex patterns for high-speed, local intent matching
         self._patterns = {
+            "CODING": re.compile(
+                r"\b(make|write|build|create|fix|refactor|implement|generate|review|"
+                r"update|edit|add|remove|delete) (a |the |an )?(api|endpoint|route|"
+                r"function|class|module|file|script|schema|config|middleware|component|"
+                r"css|html|jsx|auth|login|signup|oauth|database|model|handler)\b|"
+                r"\b(coding|code|refactor|debug this|write code|auth api|make api|"
+                r"review the code|optimize the code|add feature|build feature)\b",
+                re.IGNORECASE,
+            ),
             "PLANNING": re.compile(r"\b(plan|schedule|todo|task|calendar|sprint|reminder)\b", re.IGNORECASE),
             "DEVELOPER_HELP": re.compile(r"\b(debug|error|compile|build|npm|pip|git|git status|webpack|vite|cors|middleware|bug|traceback|line)\b", re.IGNORECASE),
             "EMOTIONAL": re.compile(r"\b(sad|stressed|overwhelmed|tired|stupid|impossible|give up|hate|upset|angry|sigh)\b", re.IGNORECASE),

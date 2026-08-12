@@ -3,8 +3,7 @@ Ultron Persistent Metadata Memory Layer
 Stores permanent key-value parameters (such as user profile details and configs) in SQLite.
 """
 
-import sqlite3
-from typing import Optional, Dict, Any
+from typing import Optional
 from backend.app.database.db import get_db_connection
 
 class PersistentMemory:

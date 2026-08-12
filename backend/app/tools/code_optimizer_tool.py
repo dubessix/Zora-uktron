@@ -5,13 +5,10 @@ checks SOLID compliance, spots anti-patterns, and can automatically refactor/opt
 Creates automated .bak backup files before applying any refactoring changes (Level 2 System Security).
 """
 
-import os
 import ast
 import re
-import platform
-import asyncio
 from pathlib import Path
-from typing import Dict, Any, Type, List, Optional
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
@@ -108,7 +105,8 @@ class CodeOptimizerTool(BaseTool):
             # --- Python Specific Enhancements ---
             if is_python:
                 # 1. Optimizing repetitive loop appends to list comprehensions or generators
-                if "for " in line and "append(" in line:
+                # (skip blank/comment lines via `stripped` before detecting the pattern)
+                if stripped and not stripped.startswith("#") and "for " in line and "append(" in line:
                     # Log optimization candidate
                     pass
                 # 2. Replacing redundant string concatenations with f-strings

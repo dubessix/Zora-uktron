@@ -6,11 +6,8 @@ Supports intelligent duration offsets (e.g., '10m', '1h', '30s') and recurring r
 """
 
 import uuid
-import json
-import sqlite3
 import datetime
-from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 from backend.app.database.db import get_db_connection
@@ -50,7 +47,8 @@ class ReminderTool(BaseTool):
         clean = time_str.strip().lower().lstrip("+")
         
         # Matches formats like '10m', '30s', '2h', '1d'
-        match = datetime.datetime.now() # Fallback
+        # Used as the fallback timestamp if all parsing strategies fail below.
+        match = datetime.datetime.now(datetime.timezone.utc)
         
         digits = "".join([c for c in clean if c.isdigit() or c == "."])
         unit = "".join([c for c in clean if not c.isdigit() and c != "."])
@@ -77,8 +75,8 @@ class ReminderTool(BaseTool):
             except ValueError:
                 continue
                 
-        # Return fallback of 5 minutes if all parsing fails
-        return now + datetime.timedelta(minutes=5)
+        # Return fallback of 5 minutes if all parsing fails (uses `match` fallback)
+        return match + datetime.timedelta(minutes=5)
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         action = kwargs.get("action", "list").lower()

@@ -29,7 +29,7 @@ export default function WidgetContainer({
   // Double-click header bar to toggle collapsed/expanded states (Requirement: remember collapsed state)
   const handleHeaderDoubleClick = () => {
     setIsCollapsed(!isCollapsed);
-    print(f"[WIDGET_CONTAINER] Widget '{widgetId}' collapsed state set to: {!isCollapsed}");
+    print(`[WIDGET_CONTAINER] Widget '${widgetId}' collapsed state set to: ${!isCollapsed}`);
   };
 
   return (

@@ -5,7 +5,7 @@ Pulls real-time local CPU Load, RAM utilization, storage capacity, and battery s
 
 import os
 import psutil
-from typing import Dict, Any, Type
+from typing import Dict, Any
 from pydantic import BaseModel
 from backend.app.tools.tool_base import BaseTool
 
@@ -49,6 +49,7 @@ class SystemMetricsTool(BaseTool):
                 "data": {
                     "cpu": f"{cpu_percent:.1f}%",
                     "ram": f"{total_ram_percent:.1f}%",
+                    "proc_ram_mb": round(ram_mb, 1),
                     "disk": f"{disk_used_gb:.1f} GB / {disk_total_gb:.1f} GB (Used)",
                     "battery": battery_str,
                     "network": "Latency: 31ms // Status: Stable"

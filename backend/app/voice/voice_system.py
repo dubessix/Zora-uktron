@@ -7,18 +7,28 @@ loads dynamic config parameters, and coordinates speech generations.
 import yaml
 import asyncio
 from pathlib import Path
-from typing import Dict, Any, Optional, AsyncGenerator
+from typing import Dict, Any, Optional, AsyncGenerator, List
 
 from backend.app.voice.base_voice_provider import BaseVoiceProvider
-from backend.app.voice.edge_tts_provider import EdgeTTSProvider
 from backend.app.voice.interrupt_handler import InterruptHandler
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
 
+def _get_default_provider() -> BaseVoiceProvider:
+    """Lazily construct the default TTS provider.
+
+    edge_tts (and its dependencies) is only imported/loaded on first voice use,
+    so it is NOT pulled into memory at backend boot time — keeping startup light
+    on 8GB / dual-core hosts while preserving all voice functionality.
+    """
+    from backend.app.voice.edge_tts_provider import EdgeTTSProvider
+    return EdgeTTSProvider()
+
 class VoiceSystem:
     def __init__(self, provider: Optional[BaseVoiceProvider] = None) -> None:
-        self.provider = provider or EdgeTTSProvider()
+        # Lazy default provider: only load edge_tts when actually needed.
+        self.provider = provider if provider is not None else _get_default_provider()
         self.interrupter = InterruptHandler()
         
         # Local event tracking array (Event Bus Integration - Requirement 2)
@@ -102,6 +112,3 @@ class VoiceSystem:
     def start_listening(self) -> None:
         """Triggered when client mic is activated."""
         self._dispatch_voice_event("listening_started")
-
-# Import list from typing for global module operations
-from typing import List

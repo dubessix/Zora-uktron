@@ -6,6 +6,7 @@ Registers WebSocket endpoints natively for real-time tokens, logs, and dashboard
 
 import time
 import os
+import json
 import asyncio
 import platform
 import psutil
@@ -18,7 +19,7 @@ from pydantic import BaseModel
 
 # Import database, routing, and websocket engines
 from backend.app.database.db import get_db_connection
-from backend.app.database.models import initialize_database, save_conversation
+from backend.app.database.models import initialize_database
 from backend.app.router import api_router
 from backend.app.websocket.connection_manager import WebSocketManager
 from backend.app.core.orchestrator import CognitiveOrchestrator
@@ -170,7 +171,7 @@ async def run_emergency_monitor():
         except Exception as e:
             print(f"[EMERGENCY_MONITOR] Error checking live emergency feeds: {e}")
             
-        await asyncio.sleep(60.0)
+        await asyncio.sleep(120.0)
 
 async def run_proactive_intelligence_loop():
     """
@@ -216,7 +217,7 @@ async def run_proactive_intelligence_loop():
         except Exception as e:
             print(f"[PROACTIVE_INTELLIGENCE] Loop exception: {e}")
             
-        await asyncio.sleep(60.0)
+        await asyncio.sleep(120.0)
 
 @app.on_event("startup")
 async def startup_event_handler():
@@ -400,6 +401,3 @@ async def websocket_dashboard_endpoint(websocket: WebSocket, client_id: str = "d
         ws_manager.disconnect("dashboard", client_id)
     except Exception:
         ws_manager.disconnect("dashboard", client_id)
-        
-# Import json globally for main module operations
-import json

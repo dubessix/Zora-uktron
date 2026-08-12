@@ -6,7 +6,7 @@ Automatically allowed (Level 1 permissions) to ensure seamless, non-intrusive op
 
 import webbrowser
 import urllib.parse
-from typing import Dict, Any, Type, List
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
@@ -33,6 +33,22 @@ class GoogleSearchTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         query = kwargs.get("query", "")
         escaped = urllib.parse.quote_plus(query)
+        # Try to fetch real results and open the top ANSWER page (not a search page).
+        try:
+            from backend.app.tools._realsearch import real_web_search
+            results = await real_web_search(query, limit=1)
+            if results:
+                url = results[0]["url"]
+                webbrowser.open(url)
+                return {"success": True, "data": {
+                    "url": url,
+                    "title": results[0]["title"],
+                    "snippet": results[0]["snippet"],
+                    "message": "Opened the top search result in your browser."
+                }, "error": None}
+        except Exception:
+            pass
+        # Fallback: open the Google search page.
         url = f"https://www.google.com/search?q={escaped}"
         try:
             webbrowser.open(url)

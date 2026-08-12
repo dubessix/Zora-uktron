@@ -59,3 +59,6 @@ logs/
 *.njsproj
 *.sln
 *.swp
+
+# Pip/package caches
+.cache/

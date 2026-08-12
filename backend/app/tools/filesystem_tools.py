@@ -7,7 +7,7 @@ Uses high-performance recursive globbing while safely ignoring cache/virtual env
 import os
 import datetime
 from pathlib import Path
-from typing import Dict, Any, Type, Optional
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 

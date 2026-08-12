@@ -47,3 +47,41 @@ class MemoryGate:
             return False
             
         return True
+
+    # Patterns for token-saving decisions (recall/save gating)
+    _RECALL_HINTS = re.compile(
+        r"\b(remember|recall|previous|earlier|before|last time|what did i|what did we|"
+        r"what happened|you told|we discussed|we decided|my project|our plan|"
+        r"you said|we were|context|from before|what was)\b",
+        re.IGNORECASE,
+    )
+
+    _SAVE_HINTS = re.compile(
+        r"\b(project|saas|app|build|build it|create|we should|our goal|"
+        r"let'?s|tech stack|database|api|backend|frontend|feature|decision|"
+        r"plan|roadmap|remember|keep in mind|important|i want|i will|"
+        r"start|deploy|launch)\b",
+        re.IGNORECASE,
+    )
+
+    def should_recall(self, user_prompt: str) -> bool:
+        """
+        Token saver: only trigger embedding recall for genuinely memory-related
+        questions. Ordinary chatter / simple commands skip the (paid) embedding
+        API entirely, so no tokens burn on everyday conversation.
+        """
+        clean = user_prompt.strip()
+        if not clean or not self.is_semantically_dense(clean):
+            return False
+        return bool(self._RECALL_HINTS.search(clean))
+
+    def should_save(self, user_prompt: str) -> bool:
+        """
+        Token saver: only persist important turns (project decisions, goals, plans,
+        tech stack) into long-term memory. Casual chatter is skipped so we don't
+        spend embedding tokens (and storage) on trivial talk.
+        """
+        clean = user_prompt.strip()
+        if not clean or not self.is_semantically_dense(clean):
+            return False
+        return bool(self._SAVE_HINTS.search(clean))

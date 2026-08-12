@@ -5,7 +5,6 @@ Time-Block Solver that computes scheduling overlaps and suggests blank gaps (Lev
 """
 
 import uuid
-import json
 import datetime
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field

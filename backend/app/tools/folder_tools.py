@@ -8,7 +8,7 @@ import os
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Dict, Any, Type, List
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 

@@ -3,8 +3,7 @@ Ultron Project State Memory Layer
 Handles per-project goals, tech stacks, and active decision registries.
 """
 
-import sqlite3
-from typing import Optional, Dict, List
+from typing import Optional
 from backend.app.database.db import get_db_connection
 
 class ProjectMemory:

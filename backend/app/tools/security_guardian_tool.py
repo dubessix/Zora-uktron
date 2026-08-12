@@ -10,7 +10,7 @@ import os
 import re
 import psutil
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 

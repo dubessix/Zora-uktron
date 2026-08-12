@@ -45,6 +45,7 @@ export default function SystemWidget() {
   const hardware = data || {
     cpu: "37.2% (Fallback)",
     ram: "82.2% (Fallback)",
+    proc_ram_mb: 0,
     disk: "142 GB / 256 GB (Used)",
     battery: "94% (Charging)",
     network: "Latency: 31ms // Status: Stable"
@@ -61,6 +62,7 @@ export default function SystemWidget() {
         <div>
           <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">RAM Utilization</span>
           <p className="text-xs font-bold text-[#F5F5F7] mt-1">{hardware.ram}</p>
+          <p className="text-[8px] text-[#8B8B96] mt-0.5">Ultron process: {hardware.proc_ram_mb} MB</p>
         </div>
         <div>
           <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">Disk Space</span>

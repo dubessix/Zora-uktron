@@ -11,11 +11,9 @@ Directly connects to live, real-time public APIs and crawls real-time global new
 """
 
 import httpx
-import json
 import re
 import datetime
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 

@@ -18,6 +18,10 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  // Coding Mode (NVIDIA brain) — manual toggle synced to backend /api/coding-mode
+  const [codingMode, setCodingMode] = useState(false);
+  // Coding activity log shown in the CodingWidget; auto-opened on coding turns.
+  const [codingLog, setCodingLog] = useState([]);
 
   // Widget floating toggle states (Requirement: Remember coordinates & state)
   const [widgetState, setWidgetState] = useState({
@@ -37,7 +41,8 @@ export default function App() {
     terminal: { visible: false, x: 240, y: 160 },
     memory: { visible: false, x: 260, y: 180 },
     notification: { visible: false, x: 280, y: 200 },
-    system: { visible: false, x: 300, y: 220 }
+    system: { visible: false, x: 300, y: 220 },
+    coding: { visible: false, x: 360, y: 300 }
   });
 
   // Dynamic Notification Toasts Queue (Requirement: Notification Prioritization)
@@ -117,6 +122,40 @@ export default function App() {
     }, 1000);
   };
 
+  // Toggle Coding Mode (manual override -> NVIDIA brain for all turns)
+  const toggleCodingMode = async () => {
+    const next = !codingMode;
+    setCodingMode(next);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${apiUrl}/api/coding-mode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next })
+      });
+      if (!response.ok) {
+        // rollback on failure
+        setCodingMode(!next);
+        addNotification("Coding Mode", "Failed to toggle coding mode.", "medium");
+      }
+    } catch (err) {
+      setCodingMode(!next);
+      addNotification("Coding Mode", "Backend offline — coding mode not changed.", "medium");
+    }
+  };
+
+  // Handle a coding response: auto-open the coding panel + log it (so the user
+  // doesn't have to go click a button — it follows the conversation).
+  const handleCodingResponse = (data) => {
+    if (!data.coding) return;
+    const short = (data.content || "").slice(0, 220);
+    setCodingLog(prev => [...prev.slice(-19), short]);
+    setWidgetState(prev => ({
+      ...prev,
+      coding: { ...prev.coding, visible: true }
+    }));
+  };
+
   // Toggle individual widget visibility
   const toggleWidget = (widgetId) => {
     setWidgetState(prev => ({
@@ -126,6 +165,64 @@ export default function App() {
         visible: !prev[widgetId].visible
       }
     }));
+  };
+
+  // Submit a command directly (used by wake-word voice input)
+  const handleVoiceCommand = async (text) => {
+    if (!text.trim() || isProcessing) return;
+    const userText = text.trim();
+    setInputValue("");
+    setIsProcessing(true);
+    setAiState("thinking");
+
+    const localUserMsgId = "user_" + Date.now();
+    setMessages(prev => [...prev, { id: localUserMsgId, sender: "user", text: userText }]);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${apiUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, content: userText })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (!sessionId) setSessionId(data.session_id);
+        setMessages(prev => [...prev, {
+          id: data.id,
+          sender: "ai",
+          text: data.content,
+          personality: data.personality,
+          response_ms: data.response_ms
+        }]);
+        setAiState("speaking");
+        setTimeout(() => setAiState("idle"), 1200);
+        const structured = data.structured_action;
+        if (structured && structured.action === "open_widget") {
+          const targetWidgetId = structured.widget_id;
+          setWidgetState(prev => ({
+            ...prev,
+            [targetWidgetId]: { ...prev[targetWidgetId], visible: true }
+          }));
+        }
+        handleCodingResponse(data);
+      } else {
+        setMessages(prev => [...prev, {
+          id: "error_" + Date.now(), sender: "system_error",
+          text: "System communication error."
+        }]);
+        setAiState("idle");
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: "error_" + Date.now(), sender: "system_error",
+        text: "Dropped. Backend server is offline."
+      }]);
+      setAiState("idle");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Dispatch REST messages
@@ -191,6 +288,7 @@ export default function App() {
             "medium"
           );
         }
+        handleCodingResponse(data);
         
       } else {
         setMessages(prev => [...prev, {
@@ -228,6 +326,10 @@ export default function App() {
         togglePersonality={togglePersonality}
         widgetState={widgetState}
         toggleWidget={toggleWidget}
+        handleVoiceCommand={handleVoiceCommand}
+        codingMode={codingMode}
+        toggleCodingMode={toggleCodingMode}
+        codingLog={codingLog}
       />
 
       {/* ==============================================================================

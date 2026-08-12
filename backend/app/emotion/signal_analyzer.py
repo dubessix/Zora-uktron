@@ -5,7 +5,7 @@ Individual stress indicators inherit from BaseEmotionSignal and are compiled dyn
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict
 
 class BaseEmotionSignal(ABC):
     def __init__(self, weight: float) -> None:

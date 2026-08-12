@@ -8,7 +8,7 @@ import os
 import httpx
 import asyncio
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
@@ -61,7 +61,9 @@ class GitHubIntegrationTool(BaseTool):
 
         # Pull PAT from environment
         github_token = os.getenv("GITHUB_TOKEN")
-        if not github_token:
+        # Treat missing OR placeholder token as "not configured" so a dummy .env
+        # value never triggers a real (failing) GitHub API call.
+        if not github_token or "your_github" in github_token or "placeholder" in github_token.lower():
             return {
                 "success": True,
                 "data": {

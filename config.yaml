@@ -51,6 +51,14 @@ voice:
   provider: "edge_tts"
   interruption_timeout_seconds: 15.0
   streaming_enabled: true
+  wake_words:
+    - "ultron"
+    - "jarvis"
+    - "zora"
+    - "hey ultron"
+    - "ok ultron"
+    - "wake up"
+    - "activate"
   ultron:
     voice_id: "en-US-GuyNeural"
     rate: "+5%"

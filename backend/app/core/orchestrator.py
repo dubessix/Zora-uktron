@@ -6,6 +6,7 @@ Structured AI Actions, and Parallel LLM-driven Tool Calling.
 """
 
 import time
+import sys
 import uuid
 import json
 import re
@@ -18,9 +19,14 @@ from backend.app.core.confidence_engine import ConfidenceEngine
 from backend.app.core.decision_engine import DecisionEngine
 from backend.app.memory.memory_engine import MemoryEngine
 from backend.app.brain.llm_router import LLMRouter
-from backend.app.personalities.personality_engine import PersonalityEngine, PersonalityState
+from backend.app.personalities.personality_engine import PersonalityEngine
 from backend.app.emotion.zora_trigger import ZoraTrigger
 from backend.app.tools.tool_registry import ToolRegistry
+
+# Shared module-level coding-mode flag. New CognitiveOrchestrator instances read
+# this as their default, so a manual toggle in one request persists across all
+# subsequent chat requests (which each construct their own orchestrator).
+_SHARED_CODING_MODE = False
 
 class CognitiveOrchestrator:
     def __init__(
@@ -41,8 +47,40 @@ class CognitiveOrchestrator:
         self.personalities = personality_engine or PersonalityEngine()
         self.zora_trigger = zora_trigger or ZoraTrigger()
         
+        # Coding Mode state
+        # - manual: toggled by the user (on/off) — SHARED module-level so it persists
+        # - auto: a CODING intent triggers NVIDIA coding provider automatically
+        self.coding_mode: bool = _SHARED_CODING_MODE
+        self.coding_manual_override: bool = _SHARED_CODING_MODE
+        self.coding_auto_detect: bool = True
+        self.max_coding_steps: int = 8  # bound multi-file tasks to prevent runaway loops
+        
         # Local event tracking array
         self.dispatched_events: List[Dict[str, Any]] = []
+
+    def set_coding_mode(self, enabled: bool) -> None:
+        """Manually toggle coding mode.
+
+        - enabled=True  -> arm NVIDIA coding (CODING intents use NVIDIA). Persists globally.
+        - enabled=False -> disarm coding (all turns use Groq). Persists globally.
+        Either way, NVIDIA is only ever used on CODING intents — never on normal chat.
+        """
+        global _SHARED_CODING_MODE
+        self.coding_auto_detect = bool(enabled)
+        self.coding_mode = bool(enabled)
+        _SHARED_CODING_MODE = bool(enabled)
+        print(f"[COGNITIVE_ORCHESTRATOR] Coding mode {'ON (armed)' if enabled else 'OFF'}.")
+
+    def _should_use_coding_provider(self, intent: str, user_prompt: str) -> bool:
+        """True if this turn should use the NVIDIA coding provider.
+
+        NVIDIA is reserved for CODING turns only. Manual override keeps auto-detect
+        armed for coding tasks but NEVER routes ordinary conversation to NVIDIA —
+        normal chat always uses Groq, saving NVIDIA rate-limit for coding.
+        """
+        if not self.coding_auto_detect:
+            return False
+        return intent == "CODING"
 
     def _dispatch_event(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Publishes structured personality/emotional event frameworks."""
@@ -54,6 +92,47 @@ class CognitiveOrchestrator:
         }
         self.dispatched_events.append(event)
         print(f"[EVENT_BUS] Published event: {event_type} -> {payload}")
+
+    def _extract_tool_calls(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Robustly extracts and parses the [TOOL_CALLS_START]...[TOOL_CALLS_END] block.
+        Tolerates markdown code fences, surrounding text, trailing commas, and single vs
+        double quotes so an LLM's slightly-off JSON still executes instead of silently failing.
+        """
+        match = re.search(
+            r"\[TOOL_CALLS_START\](.*?)\[TOOL_CALLS_END\]",
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if not match:
+            return []
+
+        block = match.group(1).strip()
+
+        # Drop markdown code fences if the model wrapped the JSON (```json ... ```)
+        block = re.sub(r"^```(?:json)?\s*", "", block, flags=re.IGNORECASE)
+        block = re.sub(r"\s*```$", "", block)
+
+        # Try strict JSON first; fall back to a tolerant normalizer on failure.
+        try:
+            return json.loads(block)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Tolerant pass: handle Python/JS-style single-quoted strings and trailing commas.
+        tolerant = block
+        # Convert balanced single-quoted strings ('foo' or 'foo bar') to double-quoted.
+        tolerant = re.sub(
+            r"'((?:[^'\\]|\\.)*)'",
+            lambda m: '"' + m.group(1) + '"',
+            tolerant,
+        )
+        # Strip trailing commas before closing brackets/braces.
+        tolerant = re.sub(r",(\s*[\]}])", r"\1", tolerant)
+        try:
+            return json.loads(tolerant)
+        except (json.JSONDecodeError, ValueError):
+            return []
 
     def _compile_tools_metadata(self) -> str:
         """Collects descriptions and schema metrics from our registry dynamically (OCP compliant)."""
@@ -68,6 +147,259 @@ class CognitiveOrchestrator:
                 "arguments": list(schema.get("properties", {}).keys())
             })
         return json.dumps(meta, indent=2)
+
+    def _scan_project_context(self, max_depth: int = 3) -> str:
+        """
+        Codex-style: scans the project root for structure so Ultron knows what it's
+        working on (folders, key files, manifest). Returns a concise text summary.
+        Deliberately bounded (shallow, capped) so it never hangs or bloats context.
+        """
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent.parent.parent  # project root
+        ignore = {".git", "node_modules", "__pycache__", ".cache", "dist", "build",
+                  ".venv", "venv", "data", "uploads", "images"}
+        lines = []
+        stack = [(root, 0)]
+        seen = set()
+        while stack:
+            p, depth = stack.pop()
+            if depth > max_depth:
+                continue
+            try:
+                entries = sorted(p.iterdir(), key=lambda e: (e.is_dir(), e.name.lower()))
+            except Exception:
+                continue
+            for e in entries:
+                if e.name in ignore:
+                    continue
+                indent = "  " * depth
+                if e.is_dir():
+                    lines.append(f"{indent}[dir] {e.name}/")
+                    stack.append((e, depth + 1))
+                else:
+                    # Only list a few notable manifest files to keep it small.
+                    if e.name in ("config.yaml", "requirements.txt", "package.json",
+                                  "setup.py", "README.md", "main.py", "app.py"):
+                        lines.append(f"{indent}{e.name}")
+        return "\n".join(lines[:120])
+
+    def _get_project_context_block(self) -> str:
+        """Combine stored project state + live scan into a prompt block for coding."""
+        parts = []
+        # Stored project facts (name, stack, goals)
+        stored = []
+        for key in ("project_name", "tech_stack", "project_goal", "project_structure"):
+            val = self.memory.project.get_project_state(key)
+            if val:
+                stored.append(f"{key}: {val}")
+        if stored:
+            parts.append("\n".join(stored))
+
+        # Live structure scan
+        scan = self._scan_project_context()
+        if scan:
+            parts.append("Current project structure (top-level):\n" + scan)
+
+        if not parts:
+            return ""
+        return "\n\n[PROJECT_CONTEXT]\n" + "\n\n".join(parts)
+
+    async def _recall_long_term_memory(self, user_prompt: str) -> str:
+        """
+        Jarvis-style long-term recall: queries episodic + semantic memory for the
+        most relevant past events/concepts related to the current prompt, and
+        returns a formatted context block for the system prompt. If no embedding
+        key is configured (mock mode) or anything fails, it degrades gracefully
+        to an empty string so the conversation is never blocked.
+        """
+        try:
+            # Token saver: only do embedding recall on memory-related questions.
+            if not self.memory.gate.should_recall(user_prompt):
+                return ""
+
+            # Query both memory layers in parallel (low latency, async/network-bound).
+            past_events, past_concepts = await asyncio.gather(
+                self.memory.episodic.recall_related_events(user_prompt, limit=3),
+                self.memory.semantic.recall_related_concepts(user_prompt, limit=3),
+            )
+
+            blocks = []
+            if past_events:
+                snippets = []
+                for item in past_events:
+                    sim = item.get("similarity", 0.0)
+                    if sim >= 0.45:
+                        snippets.append(item["content"])
+                if snippets:
+                    blocks.append("Relevant past events from your sessions:\n" + "\n".join("- " + s for s in snippets))
+
+            if past_concepts:
+                snippets = []
+                for item in past_concepts:
+                    sim = item.get("similarity", 0.0)
+                    if sim >= 0.45:
+                        snippets.append(item["content"])
+                if snippets:
+                    blocks.append("Knowledge/concepts you previously taught me:\n" + "\n".join("- " + s for s in snippets))
+
+            if not blocks:
+                return ""
+            return "\n\n[LONG_TERM_MEMORY]\n" + "\n\n".join(blocks) + "\n"
+        except Exception as e:
+            print(f"[COGNITIVE_ORCHESTRATOR] Warning: Long-term recall skipped: {e}")
+            return ""
+
+    async def _persist_turn_to_memory(self, user_prompt: str, ai_response: str) -> None:
+        """
+        Persists a meaningful conversational turn into long-term episodic memory
+        so Ultron "remembers" like Jarvis. Skips low-density greetings to avoid
+        bloating the vector store, and is fully wrapped so it can never break the
+        main conversation flow. Runs as a background task (non-blocking).
+        """
+        try:
+            # Token saver: only persist important turns (project/decision/plans).
+            if not self.memory.gate.should_save(user_prompt):
+                return
+            # Keep stored entries short & focused to conserve storage.
+            entry = f"{user_prompt.strip()[:500]} -> {ai_response.strip()[:500]}"
+            await self.memory.episodic.record_event(
+                content=entry,
+                metadata={"kind": "conversation_turn"}
+            )
+        except Exception as e:
+            print(f"[COGNITIVE_ORCHESTRATOR] Warning: Memory persist skipped: {e}")
+
+    def _coding_safe_write(
+        self,
+        args: Dict[str, Any],
+        has_confirmed: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Coding-mode safe file write with confirmation + backup.
+
+        - New file      -> write directly (allowed).
+        - Existing file -> if not confirmed, return PENDING_CONFIRMATION (Ultron asks).
+                           If confirmed, back up the original to <file>.bak first,
+                           then overwrite. This prevents accidental data loss.
+        """
+        filepath = args.get("filepath", "")
+        content = args.get("content", "")
+        if not filepath:
+            return {"success": False, "error": "filepath required", "data": {}}
+
+        from pathlib import Path
+        path = Path(filepath).resolve()
+        exists = path.exists()
+
+        # New file -> safe to write.
+        if not exists:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                path.write_text(content, encoding="utf-8")
+                new_lines = len(content.splitlines())
+                return {
+                    "success": True,
+                    "data": {
+                        "message": f"Created new file: {filepath}",
+                        "backup": None,
+                        "diff": {
+                            "action": "created",
+                            "file": filepath,
+                            "lines": new_lines
+                        }
+                    },
+                    "error": None
+                }
+            except Exception as e:
+                return {"success": False, "error": f"Failed to write file: {e}", "data": {}}
+
+        # Existing file -> require confirmation (unless already confirmed by user).
+        if not has_confirmed:
+            return {
+                "status": "PENDING_CONFIRMATION",
+                "tool_id": "file_write",
+                "message": f"Overwrite existing file '{filepath}', Sir? I'll back it up first.",
+                "required_permission_level": 2,
+                "file_exists": True
+            }
+
+        # Confirmed -> back up, then overwrite.
+        try:
+            old_content = path.read_text(encoding="utf-8")
+            old_lines = old_content.splitlines()
+            new_lines = content.splitlines()
+            backup_path = path.with_suffix(path.suffix + ".bak")
+            backup_path.write_text(old_content, encoding="utf-8")
+            path.write_text(content, encoding="utf-8")
+            # Diff-style summary: how many lines added/removed/changed.
+            old_set = [l for l in old_lines if l.strip()]
+            new_set = [l for l in new_lines if l.strip()]
+            added = len(new_set) - len(old_set)
+            return {
+                "success": True,
+                "data": {
+                    "message": f"Overwrote file: {filepath}",
+                    "backup": str(backup_path),
+                    "diff": {
+                        "action": "updated",
+                        "file": filepath,
+                        "old_lines": len(old_lines),
+                        "new_lines": len(new_lines),
+                        "net_lines_change": added,
+                        "backup": str(backup_path)
+                    }
+                },
+                "error": None
+            }
+        except Exception as e:
+            return {"success": False, "error": f"Failed to write file with backup: {e}", "data": {}}
+
+    async def _safe_verify_code(self, filepath: str) -> Dict[str, Any]:
+        """
+        Step C: safely verify a written file without risking the system.
+        Runs ONLY a syntax check (python -m py_compile / node --check) with a
+        hard timeout. Never executes arbitrary/destructive commands and never
+        touches the whole system. Returns pass/fail + reason.
+        """
+        import asyncio as _asyncio
+        from pathlib import Path
+        result = {"file": filepath, "verified": False, "lang": None, "detail": None}
+        path = Path(filepath)
+        if not path.exists():
+            result["detail"] = "file not found"
+            return result
+
+        if filepath.endswith(".py"):
+            result["lang"] = "python"
+            cmd = [sys.executable, "-m", "py_compile", filepath]
+        elif filepath.endswith((".js", ".jsx", ".ts", ".tsx")):
+            result["lang"] = "node"
+            cmd = ["node", "--check", filepath]
+        else:
+            result["detail"] = "no safe syntax check available for this file type"
+            return result
+
+        try:
+            proc = await _asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=_asyncio.subprocess.PIPE,
+                stderr=_asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=8.0)
+            except _asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                result["detail"] = "verification timed out (cancelled to avoid hang)"
+                return result
+            result["verified"] = (proc.returncode == 0)
+            result["detail"] = (stderr.decode("utf-8", "ignore").strip()
+                                if proc.returncode != 0 else "syntax OK")
+        except Exception as e:
+            result["detail"] = f"verification failed to run: {e}"
+        return result
 
     def _resolve_structured_action(self, user_prompt: str) -> Dict[str, Any]:
         """
@@ -185,6 +517,11 @@ class CognitiveOrchestrator:
         # Step 3: ANALYZE INTENT
         intent = self.intent_analyzer.analyze(user_prompt)
 
+        # Step 3b: CODING MODE — pick the right brain/provider for this turn.
+        # Coding tasks use the NVIDIA coding model; everything else uses Groq.
+        coding_turn = self._should_use_coding_provider(intent, user_prompt)
+        provider_for_turn = "nvidia" if coding_turn else "groq"
+
         # Step 4: COMPUTE CONFIDENCE
         confidence = self.confidence_engine.calculate_confidence(user_prompt, intent)
 
@@ -249,11 +586,35 @@ class CognitiveOrchestrator:
         active_profile = self.personalities.get_personality(current_personality)
         system_prompt = active_profile.get_system_prompt(formatted_history)
 
+        # Jarvis-style long-term memory injection (episodic + semantic recall)
+        memory_context = await self._recall_long_term_memory(user_prompt)
+        if memory_context:
+            system_prompt += memory_context
+
+        # Codex-style: inject project context ONLY on coding turns, so Ultron knows
+        # the project it's editing. Skipped on normal chat to save tokens/latency.
+        if coding_turn:
+            project_ctx = self._get_project_context_block()
+            if project_ctx:
+                system_prompt += project_ctx
+
+            # Inject coding skills (permission-first, multi-file workflow, project rules)
+            # from the modular skills/ folder — keeps ultron.md clean & professional.
+            try:
+                from backend.app.skills.loader import load_coding_skills
+                coding_skills = load_coding_skills()
+                if coding_skills:
+                    system_prompt += "\n\n[CODING_SKILLS]\n" + coding_skills
+            except Exception as e:
+                print(f"[COGNITIVE_ORCHESTRATOR] Warning: skill loading skipped: {e}")
+
         # Append un-mocked 65 tools metadata for LLM-driven autonomous execution
         tools_metadata_str = self._compile_tools_metadata()
         system_prompt += (
             f"\n\n[AVAILABLE_TOOLS_METADATA]\n{tools_metadata_str}\n\n"
-            "If you need to execute any tools, output a JSON block "
+            "First, answer the user briefly and warmly like a human personal assistant "
+            "(keep it to 25-40 words, 2 lines max, per your personality). "
+            "Then, if you need to execute any tools, output a JSON block "
             "at the very end of your response, wrapped inside `[TOOL_CALLS_START]` and `[TOOL_CALLS_END]`.\n"
             "Example:\n"
             "[TOOL_CALLS_START]\n"
@@ -271,7 +632,7 @@ class CognitiveOrchestrator:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 temperature=0.7,
-                provider_preference="groq"
+                provider_preference=provider_for_turn
             )
         except Exception as err:
             print(f"[COGNITIVE_ORCHESTRATOR] Critical: LLM completion failed: {err}")
@@ -279,39 +640,130 @@ class CognitiveOrchestrator:
 
         # Step 11: PARSE AND EXECUTE LLM TOOL CALLS DYNAMICALLY
         called_tool_ids = []
+        tool_results = []
         if "[TOOL_CALLS_START]" in ai_response and "[TOOL_CALLS_END]" in ai_response:
-            try:
-                match = re.search(r'\[TOOL_CALLS_START\](.*?)\[TOOL_CALLS_END\]', ai_response, re.DOTALL)
-                if match:
-                    json_str = match.group(1).strip()
-                    tool_calls = json.loads(json_str)
-                    
+            tool_calls = self._extract_tool_calls(ai_response)
+            if tool_calls:
+                try:
                     registry = ToolRegistry()
                     tasks_to_run = []
-                    
+                    task_meta = []  # (tool_id, args) aligned with each coroutine
+                    coding_steps_used = 0
                     for call in tool_calls:
+                        if not isinstance(call, dict):
+                            continue
                         t_id = call.get("tool_id")
                         args = call.get("args", {})
+                        if isinstance(args, str):
+                            # Some models pass args as an escaped JSON string; parse it.
+                            try:
+                                args = json.loads(args)
+                            except (json.JSONDecodeError, ValueError):
+                                args = {}
                         if t_id:
+                            # Step B: enforce per-task step limit so a large multi-file
+                            # request can never run away / hang.
+                            if coding_turn and coding_steps_used >= self.max_coding_steps:
+                                tool_results.append({
+                                    "tool": t_id,
+                                    "args": args,
+                                    "success": False,
+                                    "error": (f"Step limit reached ({self.max_coding_steps} steps). "
+                                              f"Tell the user to continue for the remaining files.")
+                                })
+                                continue
+                            coding_steps_used += 1
+
                             called_tool_ids.append(t_id)
-                            tasks_to_run.append(
-                                registry.execute_tool(
-                                    tool_id=t_id,
-                                    args=args,
-                                    has_confirmed=True,
-                                    session_id=session_id
+                            task_meta.append((t_id, args))
+                            # Step 3 (permission-first): in coding mode, file writes go
+                            # through the safe path (confirmation + .bak backup).
+                            if coding_turn and t_id == "file_write":
+                                tasks_to_run.append(
+                                    self._coding_safe_write(
+                                        args if isinstance(args, dict) else {},
+                                        has_confirmed=False
+                                    )
                                 )
-                            )
-                            
+                            else:
+                                tasks_to_run.append(
+                                    registry.execute_tool(
+                                        tool_id=t_id,
+                                        args=args if isinstance(args, dict) else {},
+                                        has_confirmed=True,
+                                        session_id=session_id
+                                    )
+                                )
                     if tasks_to_run:
                         # Execute in parallel (Requirement 7: Multiple tools together)
-                        await asyncio.gather(*tasks_to_run)
+                        raw_results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
                         print(f"[COGNITIVE_ORCHESTRATOR] Autonomously executed tool calls: {called_tool_ids}")
-            except Exception as e:
-                print(f"[COGNITIVE_ORCHESTRATOR] Warning: Failed parsing tool calls: {e}")
-            
+
+                        # F1: Capture tool outputs so Ultron can answer based on REAL results.
+                        for (tid, targs), r in zip(task_meta, raw_results):
+                            if isinstance(r, BaseException):
+                                tool_results.append({
+                                    "tool": tid,
+                                    "args": targs,
+                                    "success": False,
+                                    "error": str(r)
+                                })
+                            elif isinstance(r, dict):
+                                # Step C: after a successful coding-mode file write, run a
+                                # SAFE syntax check (timeout-bounded, non-destructive).
+                                verified = None
+                                if (coding_turn and tid == "file_write" and r.get("success")):
+                                    fp = (targs or {}).get("filepath", "")
+                                    if fp:
+                                        try:
+                                            verified = await self._safe_verify_code(fp)
+                                        except Exception as e:
+                                            verified = {"file": fp, "verified": False, "detail": str(e)}
+                                result_item = {
+                                    "tool": tid,
+                                    "args": targs,
+                                    "success": r.get("success", False),
+                                    "result": r.get("data", {}),
+                                    "error": r.get("error")
+                                }
+                                if verified is not None:
+                                    result_item["verification"] = verified
+                                tool_results.append(result_item)
+                except Exception as e:
+                    print(f"[COGNITIVE_ORCHESTRATOR] Warning: Failed executing tool calls: {e}")
+
             # Clean raw JSON block from final text response so user gets pristine human output
-            ai_response = re.sub(r'\[TOOL_CALLS_START\].*?\[TOOL_CALLS_END\]', '', ai_response, flags=re.DOTALL).strip()
+            ai_response = re.sub(
+                r"\[TOOL_CALLS_START\].*?\[TOOL_CALLS_END\]",
+                "",
+                ai_response,
+                flags=re.DOTALL | re.IGNORECASE,
+            ).strip()
+
+            # F2: If tools produced real results, feed them back to the LLM so the
+            # final answer reflects what actually happened (not a pre-written guess).
+            if tool_results:
+                try:
+                    final_prompt = (
+                        f"{user_prompt}\n\n"
+                        "[TOOL RESULTS] The following tools were executed. "
+                        "Use these REAL results to give an accurate, short, warm answer "
+                        "(25-40 words, 2 lines max). If a tool failed, say so honestly. "
+                        "For file writes, report the diff-style summary: created/updated, "
+                        "file name, and line counts, plus the backup path if present.\\n\\n"
+                        + json.dumps(tool_results, indent=2, default=str)[:3000]
+                    )
+                    final_answer = await self.router.get_completions(
+                        system_prompt=system_prompt,
+                        user_prompt=final_prompt,
+                        temperature=0.5,
+                        provider_preference=provider_for_turn
+                    )
+                    # Only adopt the tool-informed answer if the LLM actually produced text.
+                    if final_answer and final_answer.strip():
+                        ai_response = final_answer.strip()
+                except Exception as e:
+                    print(f"[COGNITIVE_ORCHESTRATOR] Warning: Tool-result synthesis failed: {e}")
 
         # Step 12: DYNAMIC WIDGET ROUTING based on actual called tools
         widget_mappings = {
@@ -346,6 +798,9 @@ class CognitiveOrchestrator:
         # Sync transaction back to short term memory
         self.memory.save_chat_turn(user_prompt, ai_response)
 
+        # Jarvis-style long-term persistence (non-blocking background task)
+        asyncio.create_task(self._persist_turn_to_memory(user_prompt, ai_response))
+
         # Step 13: ZORA OVERLAY LIFECYCLE DECREMENT
         if current_personality == "zora":
             auto_return_state = self.personalities.increment_zora_lifecycle()
@@ -378,7 +833,8 @@ class CognitiveOrchestrator:
             "active_personality": current_personality,
             "events": list(self.dispatched_events),
             "metadata": memory_meta,
-            "structured_action": structured_action
+            "structured_action": structured_action,
+            "coding": coding_turn
         }
 
     async def close(self) -> None:

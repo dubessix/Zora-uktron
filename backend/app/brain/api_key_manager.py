@@ -18,14 +18,16 @@ class APIKeyManager:
         # State definitions: "ACTIVE", "COOLING", "FAILED"
         self._keys: Dict[str, List[Dict[str, Any]]] = {
             "groq": [],
-            "gemini": []
+            "gemini": [],
+            "nvidia": []
         }
         # Cooldown track map: {key_value: timestamp_cooldown_ends}
         self._cooldowns: Dict[str, float] = {}
         # Cursor indexes for round-robin rotation
         self._cursors: Dict[str, int] = {
             "groq": 0,
-            "gemini": 0
+            "gemini": 0,
+            "nvidia": 0
         }
         self._load_keys_from_env()
 
@@ -42,11 +44,17 @@ class APIKeyManager:
             key = os.getenv(f"GEMINI_API_KEY_{i}")
             if key and "your_gemini_api_key" not in key:
                 self._keys["gemini"].append({"key": key, "state": "ACTIVE"})
+                
+        # Load NVIDIA Build (NIM) keys pool — OpenAI-compatible coding provider.
+        for i in range(1, 4):
+            key = os.getenv(f"NVIDIA_API_KEY_{i}")
+            if key and "your_nvidia_api_key" not in key:
+                self._keys["nvidia"].append({"key": key, "state": "ACTIVE"})
 
     def _clean_cooldowns(self) -> None:
         """Pipes through expired cooldown timers, returning keys back to ACTIVE state."""
         current_time = time.time()
-        for provider in ["groq", "gemini"]:
+        for provider in ["groq", "gemini", "nvidia"]:
             for item in self._keys[provider]:
                 key_val = item["key"]
                 if item["state"] == "COOLING" and key_val in self._cooldowns:

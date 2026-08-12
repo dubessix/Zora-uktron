@@ -5,14 +5,11 @@ emotion signals, Zora auto-return lifecycles, and dynamic WS event publications.
 """
 
 import unittest
-import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
-from backend.app.personalities.base_personality import BasePersonality, UltronPersonality, ZoraPersonality
+from backend.app.personalities.base_personality import UltronPersonality
 from backend.app.personalities.personality_engine import PersonalityEngine, PersonalityState
 from backend.app.emotion.signal_analyzer import SignalAnalyzer, BaseEmotionSignal
-from backend.app.emotion.zora_trigger import ZoraTrigger
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.memory.memory_engine import MemoryEngine
 

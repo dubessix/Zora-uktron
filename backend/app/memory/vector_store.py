@@ -7,8 +7,7 @@ Bypasses local transformers footprint, fully complying with 8GB RAM host limitat
 import json
 import yaml
 import sqlite3
-import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 from backend.app.database.db import get_db_connection
 from backend.app.brain.api_key_manager import APIKeyManager
@@ -16,10 +15,27 @@ from backend.app.brain.api_key_manager import APIKeyManager
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
 
+# Lazy-load numpy only when needed (cosine math / embeddings), so the heavy
+# NumPy dependency is NOT pulled into memory at backend boot time. This keeps
+# startup light on 8GB / dual-core hosts while preserving all functionality.
+_np = None
+
+def _lazy_numpy():
+    """Import numpy lazily on first use and cache the module reference."""
+    global _np
+    if _np is None:
+        import numpy
+        _np = numpy
+    return _np
+
 class VectorStore:
     def __init__(self, key_manager: Optional[APIKeyManager] = None) -> None:
         self.key_manager = key_manager or APIKeyManager()
         self.duplicate_threshold = self._load_threshold_from_config()
+        self._writes_since_prune = 0
+        self.prune_interval = 100  # Run retention check every N writes (keeps writes cheap)
+        self._embedding_cache: Dict[str, List[float]] = {}
+        self._embedding_cache_limit = 256
         self._initialize_table()
 
     def _load_threshold_from_config(self) -> float:
@@ -52,8 +68,14 @@ class VectorStore:
     async def generate_embedding(self, text: str) -> List[float]:
         """
         Dispatches async request to Gemini text-embedding-004 API to generate
-        a highly precise 768-dimension float array.
+        a highly precise 768-dimension float array. Token saver: repeated text is
+        served from an in-memory cache so we never burn API calls on the same
+        query twice.
         """
+        key = text.strip()
+        if key in self._embedding_cache:
+            return self._embedding_cache[key]
+
         api_key = self.key_manager.get_active_key("gemini")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
@@ -67,8 +89,11 @@ class VectorStore:
         # Safe fallback check for local mock test executions
         if "dummy_fallback" in api_key:
             # Generate a reproducible pseudo-embedding vector for testing
+            np = _lazy_numpy()
             np.random.seed(hash(text) % (2**32))
-            return np.random.randn(768).tolist()
+            vec = np.random.randn(768).tolist()
+            self._embedding_cache[key] = vec
+            return vec
 
         import httpx
         async with httpx.AsyncClient() as client:
@@ -76,11 +101,20 @@ class VectorStore:
                 response = await client.post(url, headers=headers, json=payload, timeout=15.0)
                 if response.status_code == 200:
                     res_data = response.json()
-                    return res_data["embedding"]["values"]
+                    vec = res_data["embedding"]["values"]
+                    self._cache_embedding(key, vec)
+                    return vec
                 else:
                     raise RuntimeError(f"Embedding API returned status code: {response.status_code}")
             except Exception as e:
                 raise RuntimeError(f"Failed to connect to cloud embedding client: {e}")
+
+    def _cache_embedding(self, key: str, vec: List[float]) -> None:
+        """Bounded in-memory embedding cache (token saver)."""
+        self._embedding_cache[key] = vec
+        if len(self._embedding_cache) > self._embedding_cache_limit:
+            # Drop the oldest entry (dicts preserve insertion order).
+            self._embedding_cache.pop(next(iter(self._embedding_cache)))
 
     def save_vector_memory(
         self,
@@ -95,6 +129,7 @@ class VectorStore:
         if a high similarity exceeds config-defined threshold, halts writing.
         """
         # Convert list to high-performance NumPy float32 array
+        np = _lazy_numpy()
         new_vec = np.array(embedding, dtype=np.float32)
         
         # 1. Run Duplicate Verification check
@@ -119,6 +154,16 @@ class VectorStore:
                 (msg_id, mem_type, content, sqlite3.Binary(vec_blob), metadata_str)
             )
             conn.commit()
+
+            # Opportunistic storage-retention guard (bounds long-term growth).
+            self._writes_since_prune += 1
+            if self._writes_since_prune >= self.prune_interval:
+                self._writes_since_prune = 0
+                try:
+                    self.prune()
+                except Exception as e:
+                    print(f"[VECTOR_STORE] Warning: retention prune failed: {e}")
+
             return True
 
     def search_similarity(
@@ -131,6 +176,7 @@ class VectorStore:
         Loads all matching type vector binaries from SQLite, deserializes them to NumPy arrays,
         computes local Cosine Similarities, and returns sorted top matches.
         """
+        np = _lazy_numpy()
         target_vec = np.array(query_embedding, dtype=np.float32)
         target_norm = np.linalg.norm(target_vec)
         
@@ -168,3 +214,43 @@ class VectorStore:
         # Sort matches chronologically by similarity descending
         matches.sort(key=lambda x: x["similarity"], reverse=True)
         return matches[:limit]
+
+    def prune(self, max_per_type: int = 2000) -> int:
+        """
+        Lightweight storage-retention guard. Keeps only the most recent
+        `max_per_type` rows per memory type, deleting the oldest beyond the cap.
+        This bounds long-term growth so memory stays tiny even over years of use.
+        Returns the number of rows removed.
+        """
+        removed = 0
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # For each distinct type, delete rows beyond the newest max_per_type.
+            cursor.execute("SELECT DISTINCT type FROM vector_memories;")
+            types = [row["type"] for row in cursor.fetchall()]
+            for mem_type in types:
+                # Find the cutoff id: the id at offset max_per_type when ordered newest-first.
+                cursor.execute(
+                    """
+                    SELECT id FROM vector_memories
+                    WHERE type = ?
+                    ORDER BY created_at DESC, rowid DESC
+                    LIMIT 1 OFFSET ?;
+                    """,
+                    (mem_type, max_per_type),
+                )
+                cutoff = cursor.fetchone()
+                if cutoff:
+                    cursor.execute(
+                        """
+                        DELETE FROM vector_memories
+                        WHERE type = ? AND rowid <= (SELECT rowid FROM vector_memories
+                                                     WHERE id = ?);
+                        """,
+                        (mem_type, cutoff["id"]),
+                    )
+                    removed += cursor.rowcount
+            conn.commit()
+        if removed:
+            print(f"[VECTOR_STORE] Storage retention: pruned {removed} old memory rows (bounded to {max_per_type}/type).")
+        return removed

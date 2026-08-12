@@ -7,17 +7,13 @@ Memory Gate prompt filtering, and Episodic/Semantic/Emotional async operations.
 import unittest
 import numpy as np
 import uuid
-import os
-import sqlite3
-from typing import Dict, Any, List
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.memory.vector_store import VectorStore
 from backend.app.memory.memory_gate import MemoryGate
 from backend.app.memory.episodic_memory import EpisodicMemory
 from backend.app.memory.semantic_memory import SemanticMemory
 from backend.app.memory.emotional_memory import EmotionalMemory
-from backend.app.database.db import get_db_connection, DB_PATH
+from backend.app.database.db import get_db_connection
 
 class TestPhase5VectorMemoryArchitecture(unittest.IsolatedAsyncioTestCase):
     
@@ -39,6 +35,8 @@ class TestPhase5VectorMemoryArchitecture(unittest.IsolatedAsyncioTestCase):
         
         # Test similarities on standalone calculations
         store = VectorStore()
+        # Use `store`: confirm it loads a sane deduplication threshold (0 < t <= 1).
+        self.assertTrue(0 < store.duplicate_threshold <= 1.0)
         
         # Override table search directly to test calculations
         target = np.array(vec_a, dtype=np.float32)

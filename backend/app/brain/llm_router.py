@@ -6,9 +6,8 @@ Employs Dependency Injection to delegate cache bypass decisions to a BaseCachePo
 """
 
 import hashlib
-import json
 import httpx
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from backend.app.brain.api_key_manager import APIKeyManager
 from backend.app.brain.smart_cache import SmartCache
@@ -35,6 +34,24 @@ class LLMRouter:
         payload = f"{system_prompt}|||{user_prompt}|||{temperature}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
+    # Ordered failover cascade per primary preference. Each list defines the
+    # fallback order when the preferred provider fails or rate-limits.
+    _CASCADE = {
+        "groq":   ["groq", "gemini", "nvidia"],
+        "gemini": ["gemini", "groq", "nvidia"],
+        "nvidia": ["nvidia", "groq", "gemini"],
+    }
+
+    def _provider_executor(self, provider: str):
+        """Return the async executor callable for a provider name."""
+        if provider == "groq":
+            return self._execute_groq_pipeline
+        if provider == "gemini":
+            return self._execute_gemini_pipeline
+        if provider == "nvidia":
+            return self._execute_nvidia_pipeline
+        raise ValueError(f"Unsupported provider: {provider}")
+
     async def get_completions(
         self,
         system_prompt: str,
@@ -45,9 +62,11 @@ class LLMRouter:
         """
         Main query router. Asks the decoupled cache policy whether caching should
         be bypassed, keeping the router completely blind to the policy's implementation rules.
+        Executes providers in the failover cascade order.
         """
         cache_key = self._generate_cache_hash(system_prompt, user_prompt, temperature)
-        
+        pref = provider_preference.lower() if provider_preference.lower() in self._CASCADE else "groq"
+
         # 1. Ask the decoupled policy whether to bypass cache
         cache_skip = self.cache_policy.should_bypass_cache(system_prompt, user_prompt)
         
@@ -60,34 +79,21 @@ class LLMRouter:
         else:
             print("[LLM_ROUTER] Cache Policy triggered bypass. Querying live brain client.")
 
-        # 3. Process Cascade Flow
-        try:
-            if provider_preference.lower() == "groq":
-                response = await self._execute_groq_pipeline(system_prompt, user_prompt, temperature)
-            else:
-                response = await self._execute_gemini_pipeline(system_prompt, user_prompt, temperature)
-                
-            # Update cache registry upon successful API execution (if permitted by the policy)
-            if not cache_skip:
-                self.cache.set(cache_key, response)
-            return response
-            
-        except Exception as e:
-            # If primary path failed, fall back automatically to backup system channel
-            fallback_provider = "gemini" if provider_preference.lower() == "groq" else "groq"
-            print(f"[LLM_ROUTER] Primary path failed: {e}. Executing immediate failover cascade to {fallback_provider}...")
-            
+        # 3. Process Cascade Flow (ordered failover)
+        cascade = self._CASCADE[pref]
+        last_err = None
+        for idx, provider in enumerate(cascade):
             try:
-                if fallback_provider == "gemini":
-                    response = await self._execute_gemini_pipeline(system_prompt, user_prompt, temperature)
-                else:
-                    response = await self._execute_groq_pipeline(system_prompt, user_prompt, temperature)
-                    
+                executor = self._provider_executor(provider)
+                response = await executor(system_prompt, user_prompt, temperature)
                 if not cache_skip:
                     self.cache.set(cache_key, response)
                 return response
-            except Exception as final_err:
-                raise RuntimeError(f"Global key pool depletion error. All providers failed: {final_err}")
+            except Exception as e:
+                last_err = e
+                if idx < len(cascade) - 1:
+                    print(f"[LLM_ROUTER] Provider '{provider}' failed: {e}. Failing over to '{cascade[idx+1]}'...")
+        raise RuntimeError(f"Global key pool depletion error. All providers failed: {last_err}")
 
     async def _execute_groq_pipeline(self, system_prompt: str, user_prompt: str, temperature: float) -> str:
         """Dispatches async query to Groq chat completions. Handles automatic 429 rotation."""
@@ -107,7 +113,10 @@ class LLMRouter:
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": temperature,
-                "max_tokens": 80
+                # Room for both a short human answer AND the [TOOL_CALLS] JSON block.
+                # Answer length is kept short by the personality system-prompt (25-40 words),
+                # NOT by the token cap, so tool-calling no longer gets truncated.
+                "max_tokens": 512
             }
             
             try:
@@ -153,7 +162,9 @@ class LLMRouter:
                 }],
                 "generationConfig": {
                     "temperature": temperature,
-                    "maxOutputTokens": 80
+                    # Answer length is kept short by the personality system-prompt (25-40 words).
+                    # 512 leaves room for the [TOOL_CALLS] JSON block so tool-calling isn't cut off.
+                    "maxOutputTokens": 512
                 }
             }
             
@@ -180,6 +191,49 @@ class LLMRouter:
                     raise RuntimeError(f"Gemini connection attempts exhausted. Exception: {e}")
                     
         raise RuntimeError("Failed to resolve completions via Gemini key rotation pool.")
+
+    async def _execute_nvidia_pipeline(self, system_prompt: str, user_prompt: str, temperature: float) -> str:
+        """Dispatches async query to NVIDIA Build (NIM) OpenAI-compatible endpoint.
+        Best-of-breed coding model. Handles automatic 429 key rotation + cooling."""
+        url = "https://integrate.api.nvidia.com/v1/chat/completions"
+        # Nemotron 3 Ultra 550B: NVIDIA's strongest agent/coding-focused open model.
+        model = "nvidia/nemotron-3-ultra-550b-a55b:free"
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            api_key = self.key_manager.get_active_key("nvidia")
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": temperature,
+                "max_tokens": 1024
+            }
+
+            try:
+                if "dummy_fallback" in api_key:
+                    return f"[Mock NVIDIA Response] Query processed: {user_prompt[:20]}..."
+                response = await self.client.post(url, headers=headers, json=payload, timeout=40.0)
+                if response.status_code == 429:
+                    self.key_manager.mark_key_cooling("nvidia", api_key, cooldown_duration_sec=60)
+                    continue
+                if response.status_code != 200:
+                    self.key_manager.mark_key_failed("nvidia", api_key)
+                    continue
+                res_data = response.json()
+                return res_data["choices"][0]["message"]["content"]
+            except (httpx.RequestError, KeyError) as e:
+                self.key_manager.mark_key_cooling("nvidia", api_key, duration_sec=30)
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(f"NVIDIA connection attempts exhausted. Exception: {e}")
+
+        raise RuntimeError("Failed to resolve completions via NVIDIA key rotation pool.")
 
     async def close(self) -> None:
         """Cleanly releases and closes underlying HTTPX client connection pools."""

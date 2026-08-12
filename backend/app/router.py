@@ -5,7 +5,6 @@ Supports structured AI action metadata payloads and explicit backend tool execut
 """
 
 import time
-import uuid
 import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
@@ -33,11 +32,16 @@ class ChatResponse(BaseModel):
     personality: str = Field(..., description="Active answering persona profile.")
     response_ms: int = Field(..., description="Calculated processing duration.")
     structured_action: Dict[str, Any] = Field(default_factory=dict, description="Structured AI Action metadata payload.")
+    coding: bool = Field(False, description="True if this turn was a coding turn (so UI can auto-show the coding panel).")
+    intent: str = Field("", description="Detected intent for the turn.")
 
 class ToolExecuteRequest(BaseModel):
     tool_id: str = Field(..., description="ID of the target registered tool.")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Input arguments to validate and feed to tool execution.")
     has_confirmed: bool = Field(False, description="Explicit user confirmation for Level 2/3 security clearances.")
+
+class CodingModeRequest(BaseModel):
+    enabled: bool = Field(..., description="True to force NVIDIA coding mode ON, False to revert to auto-detect.")
 
 class ConversationHistoryItem(BaseModel):
     id: str
@@ -105,7 +109,9 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             content=result["content"],
             personality=result["active_personality"],
             response_ms=latency_ms,
-            structured_action=result["structured_action"]
+            structured_action=result["structured_action"],
+            coding=result.get("coding", False),
+            intent=result.get("intent", "")
         )
         
     except Exception as e:
@@ -146,4 +152,17 @@ async def get_session_history(session_id: str = Query(..., description="Target s
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve conversation logs: {str(e)}"
+        )
+
+@api_router.post("/coding-mode", status_code=status.HTTP_200_OK)
+async def set_coding_mode(request: CodingModeRequest) -> dict:
+    """Manually toggle NVIDIA coding mode on/off for the orchestrator."""
+    try:
+        orch = CognitiveOrchestrator()
+        orch.set_coding_mode(request.enabled)
+        return {"success": True, "coding_mode": request.enabled}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle coding mode: {str(e)}"
         )

@@ -3,15 +3,13 @@ Ultron Unit & Integration Testing Suite — Phase 1 Verification
 Validates database connection pooling, schema integrity, session isolation, and REST chat routing.
 """
 
-import os
 import unittest
 import sqlite3
 import uuid
-from pathlib import Path
 from fastapi.testclient import TestClient
 
-from backend.app.database.db import get_db_connection, DB_PATH
-from backend.app.database.models import initialize_database, get_session, get_conversation_history
+from backend.app.database.db import get_db_connection
+from backend.app.database.models import initialize_database, get_conversation_history
 from backend.app.main import app
 
 class TestPhase1Architecture(unittest.TestCase):

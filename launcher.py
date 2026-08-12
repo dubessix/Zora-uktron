@@ -7,6 +7,7 @@ Natively verified on Windows 11 and Ubuntu 24.04.
 
 import os
 import sys
+import socket
 import platform
 import subprocess
 import signal
@@ -18,6 +19,10 @@ from threading import Thread
 # Pathing parameters
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+
+# Service ports (kept in sync with config.yaml / backend)
+BACKEND_PORT = 8000
+FRONTEND_PORT = 5173
 
 class ServiceLauncher:
     def __init__(self):
@@ -43,9 +48,36 @@ class ServiceLauncher:
         """Validate if npm installation was conducted on frontend packages."""
         return (FRONTEND_DIR / "node_modules").exists()
 
+    @staticmethod
+    def check_port_availability(port: int, host: str = "127.0.0.1") -> bool:
+        """Return True if a TCP port is free to bind on the given host."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+                return True
+            except OSError:
+                return False
+
+    def preflight_port_check(self) -> bool:
+        """Ensure both service ports are free BEFORE booting, with clear errors."""
+        ok = True
+        for name, port in [("backend (8000)", BACKEND_PORT), ("frontend (5173)", FRONTEND_PORT)]:
+            if self.check_port_availability(port):
+                self.log("Launcher", f"Port {name} is free. Proceeding.", "32")
+            else:
+                self.log("Launcher", f"Port {name} is ALREADY IN USE. "
+                                     "Close the occupying process (or an existing Ultron instance) and retry.", "31")
+                ok = False
+        return ok
+
     def run(self):
         """Execute concurrent bootstrap sequences."""
         self.log("Launcher", "Initializing Ultron Cross-Platform Orchestrator...", "35")
+
+        # 0. Preflight: verify service ports are free before booting anything
+        if not self.preflight_port_check():
+            self.log("Launcher", "Aborting launch: required ports are occupied.", "31")
+            sys.exit(1)
 
         # 1. Run node package audit
         if not self.check_node_modules():
@@ -75,7 +107,7 @@ class ServiceLauncher:
             "--host",
             "127.0.0.1",
             "--port",
-            "8000"
+            str(BACKEND_PORT)
         ]
         
         # Create dedicated subprocess configurations for clean OS termination
@@ -125,7 +157,7 @@ class ServiceLauncher:
         # 5. Delay browser launch until ports stabilize
         time.sleep(1.5)
         self.log("Launcher", "Orchestration fully aligned. Launching user viewport...", "35")
-        webbrowser.open("http://127.0.0.1:5173")
+        webbrowser.open(f"http://127.0.0.1:{FRONTEND_PORT}")
 
         # 6. Keep main launcher execution alive
         try:

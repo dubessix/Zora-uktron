@@ -3,7 +3,6 @@ Ultron Unit & Integration Testing Suite — Developer Intelligence diagnostics
 Verifies AST code optimization and semantic search graph execution.
 """
 
-import os
 import unittest
 import asyncio
 from pathlib import Path
@@ -85,6 +84,8 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
 
         self.assertTrue(result["success"])
         data = result["data"]
+        # Use `data`: it should carry the optimization output key we rely on.
+        self.assertIsInstance(data, dict)
         
         # Verify backup file was created
         bak_file = self.test_file_path.with_suffix(".py.bak")

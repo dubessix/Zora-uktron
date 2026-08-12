@@ -6,7 +6,6 @@ and our newly developed un-mocked Self-Healing Compiler Loop (Autoreactive Debug
 """
 
 import unittest
-import os
 import shutil
 from pathlib import Path
 
@@ -115,10 +114,11 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         open_res = await registry.execute_tool("open_url", {"url": "https://github.com"}, has_confirmed=False)
         self.assertTrue(open_res["success"])
         
-        # Test Google Search
+        # Test Google Search — now returns the real top-result page (or falls back to
+        # the search URL), so check case-insensitively for the query term in the URL.
         g_res = await registry.execute_tool("google_search", {"query": "Vite React"}, has_confirmed=False)
         self.assertTrue(g_res["success"])
-        self.assertIn("Vite", g_res["data"]["url"])
+        self.assertIn("vite", g_res["data"]["url"].lower())
         
         # Test StackOverflow Search
         so_res = await registry.execute_tool("stackoverflow_search", {"query": "asyncio"}, has_confirmed=False)

@@ -5,7 +5,7 @@ Prevents context window overflow and local memory consumption spikes.
 """
 
 from collections import deque
-from typing import List, Dict, Any
+from typing import List, Dict
 
 class ShortTermMemory:
     def __init__(self, limit: int = 50) -> None:

@@ -5,14 +5,13 @@ and full async Orchestrator pipeline execution under mock LLM clients.
 """
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from backend.app.core.intent_analyzer import IntentAnalyzer
 from backend.app.core.confidence_engine import ConfidenceEngine
 from backend.app.core.decision_engine import DecisionEngine
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.memory.memory_engine import MemoryEngine
-from backend.app.brain.llm_router import LLMRouter
 
 class TestPhase4OrchestratorArchitecture(unittest.IsolatedAsyncioTestCase):
     

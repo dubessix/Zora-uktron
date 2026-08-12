@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import LeftPanel from './LeftPanel';
 import RightPanel from './RightPanel';
 import BlobCanvas from './BlobCanvas';
+import useVoice from '../hooks/useVoice';
 
 // Import dynamic widget registry structures (Requirement: Never hardcode widgets in AppShell)
 import { WIDGET_REGISTRY } from './widgets/WidgetManager';
@@ -12,7 +13,8 @@ import WidgetContainer from './widgets/WidgetContainer';
  * Implements the responsive 3-panel widescreen dashboard layout.
  * Houses left system stats, center canvas particle core, right chat dialogues,
  * and dynamically iterates over the WIDGET_REGISTRY to render open draggable widgets.
- * Integrates the top navigation capsule bar exactly as shown in the mockup.
+ * The IRIS header name + accent color switch dynamically between Ultron (emerald)
+ * and Zora (pink). The bottom mic toggles browser-native wake-word listening.
  */
 export default function AppShell({ 
   messages, 
@@ -26,47 +28,52 @@ export default function AppShell({
   setAiState,
   togglePersonality,
   widgetState,
-  toggleWidget
+  toggleWidget,
+  handleVoiceCommand,
+  codingMode,
+  toggleCodingMode,
+  codingLog
 }) {
+  const isZora = activePersonality === "zora";
+  const accent = isZora ? "#EC4899" : "#10B981"; // pink vs emerald
+  const accentText = isZora ? "text-pink-400" : "text-emerald-400";
+  const accentRing = isZora ? "border-pink-400/30" : "border-emerald-400/30";
+  const accentBg = isZora ? "bg-pink-500/10" : "bg-emerald-500/10";
+  const accentDot = isZora ? "bg-pink-400" : "bg-emerald-400";
+  const aiName = isZora ? "Zora" : "Ultron";
+
+  // Voice control: wake-word listening wired to the bottom mic toggle.
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const voice = useVoice({
+    enabled: voiceEnabled,
+    onCommand: (cmd) => {
+      if (handleVoiceCommand) handleVoiceCommand(cmd);
+    }
+  });
+
+  const handleMicToggle = () => {
+    setVoiceEnabled((prev) => !prev);
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen p-6 select-none bg-transparent overflow-hidden text-[#F5F5F7] relative">
       
       {/* ==============================================================================
-          1. SYSTEM HEADER & TOP NAVIGATION CAPSULE BAR (Mockup Header)
+          1. SYSTEM HEADER & TOP NAVIGATION (Dynamic IRIS identity)
          ============================================================================== */}
       <header className="flex justify-between items-center border-b border-white/5 pb-4 mb-6 z-10 font-mono">
         <div className="flex items-center gap-2">
-          {/* Glowing Eye Icon from mockup */}
-          <div className="text-emerald-400 text-sm">👁️</div>
-          <span className="text-xs font-bold tracking-widest text-[#F5F5F7] uppercase">
-            IRIS AI // ULTRON V1
+          <span className={`text-2xl font-black italic tracking-tight uppercase transition-all duration-500 drop-shadow-[0_0_12px_rgba(16,185,129,0.35)] ${isZora ? "text-pink-400" : "text-emerald-400"}`}
+            style={{ fontFamily: "'Arial Black', 'Segoe UI', system-ui, sans-serif", textShadow: isZora ? "0 0 18px rgba(236,72,153,0.55)" : "0 0 18px rgba(16,185,129,0.55)" }}>
+            {aiName}
           </span>
         </div>
 
-        {/* Center Top Capsule Navbar */}
-        <div className="flex items-center gap-1.5 bg-white/[0.02] border border-white/5 px-2 py-1.5 rounded-full backdrop-blur-3xl text-[8px] font-bold tracking-widest uppercase">
-          <button className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full">
-            Command
-          </button>
-          <button className="px-3 py-1 hover:text-white transition-colors">
-            Notes
-          </button>
-          <button className="px-3 py-1 hover:text-white transition-colors">
-            Gallery
-          </button>
-          <button className="px-3 py-1 hover:text-white transition-colors">
-            Mobile
-          </button>
-          <button className="px-3 py-1 hover:text-white transition-colors">
-            Settings
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5 text-[8px]">
-          <span className="text-white/20">NETWORK:</span>
-          <span className="text-emerald-400 font-bold tracking-widest uppercase flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-            Connected
+        {/* Minimal status capsule — no clutter */}
+        <div className={`flex items-center gap-1.5 text-[8px] px-2 py-1.5 rounded-full border backdrop-blur-3xl ${accentRing} ${accentBg}`}>
+          <div className={`w-1.5 h-1.5 ${accentDot} rounded-full animate-pulse`} />
+          <span className={`font-bold tracking-widest uppercase ${accentText}`}>
+            {isZora ? "Zora Online" : "Ultron Online"}
           </span>
         </div>
       </header>
@@ -83,8 +90,8 @@ export default function AppShell({
           {/* Header context indicators */}
           <div className="absolute top-6 left-6 font-mono text-[9px] text-[#8B8B96] flex items-center gap-2">
             <span>CORE STATUS:</span>
-            <span className="text-[#7DD3FC] uppercase tracking-wider font-bold">
-              {aiState}
+            <span className={`uppercase tracking-wider font-bold ${voice.wakeDetected ? "text-pink-400" : "text-[#7DD3FC]"}`}>
+              {voice.wakeDetected ? "WAKED" : aiState}
             </span>
           </div>
 
@@ -110,7 +117,7 @@ export default function AppShell({
           {/* Core Canvas particle loop component */}
           <div className="flex-1 flex items-center justify-center">
             <BlobCanvas 
-              aiState={aiState} 
+              aiState={voice.wakeDetected ? "wake_word_detected" : (voice.isListening ? "listening" : aiState)} 
               personality={activePersonality} 
               amplitude={0.0}
             />
@@ -132,19 +139,52 @@ export default function AppShell({
             <button 
               onClick={togglePersonality}
               className={`px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
-                activePersonality === "zora"
-                  ? "bg-purple-500/10 border-purple-400/20 text-purple-300 shadow-[0_0_15px_rgba(192,132,252,0.15)]"
+                isZora
+                  ? "bg-pink-500/10 border-pink-400/20 text-pink-300 shadow-[0_0_15px_rgba(236,72,153,0.15)]"
                   : "bg-emerald-500/10 border-emerald-400/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]"
               }`}
             >
-              {activePersonality === "zora" ? "Zora Online" : "Ultron Online"}
+              {isZora ? "Zora Online" : "Ultron Online"}
             </button>
 
-            {/* Mic icon */}
-            <button className="text-white/20 hover:text-white/50 transition-colors px-2">
-              🎙️
+            {/* Coding Mode toggle — NVIDIA coding brain */}
+            <button 
+              onClick={toggleCodingMode}
+              className={`px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
+                codingMode
+                  ? "bg-sky-500/10 border-sky-400/30 text-sky-300 shadow-[0_0_15px_rgba(56,189,248,0.2)]"
+                  : "border-white/10 text-white/30 hover:text-white/60"
+              }`}
+              title={codingMode ? "Coding Mode ON (NVIDIA brain for all turns). Click to revert to auto." : "Coding Mode OFF (auto-detect). Click to force NVIDIA coding brain."}
+            >
+              💻 {codingMode ? "Coding ON" : "Coding"}
+            </button>
+
+            {/* Mic icon — real wake-word listening toggle with pulse-ring effect */}
+            <button 
+              onClick={handleMicToggle}
+              className={`relative flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-500 ${
+                voice.isListening
+                  ? isZora
+                    ? "text-pink-400 border-pink-400/40 bg-pink-500/10"
+                    : "text-emerald-400 border-emerald-400/40 bg-emerald-500/10"
+                  : "text-white/20 border-white/10 hover:text-white/60 hover:border-white/20"
+              }`}
+              title={voice.isListening ? "Listening for wake word... (click to stop)" : "Enable voice (click to start listening)"}
+            >
+              <span className={`text-sm ${voice.isListening ? "animate-pulse" : ""}`}>🎙️</span>
+              {voice.isListening && (
+                <span className={`absolute inset-0 rounded-full animate-ping opacity-40 ${isZora ? "bg-pink-400/40" : "bg-emerald-400/40"}`} />
+              )}
             </button>
           </div>
+
+          {/* Voice listening hint */}
+          {voice.isListening && (
+            <div className="absolute bottom-6 right-6 text-[8px] font-mono uppercase tracking-widest text-pink-300/80">
+              {voice.wakeDetected ? "Wake word heard — speak your command..." : "Listening for wake word..."}
+            </div>
+          )}
 
         </main>
 
@@ -189,7 +229,11 @@ export default function AppShell({
                 Lazy loading assets...
               </div>
             }>
-              <config.Component />
+              {key === "coding" ? (
+                <config.Component log={codingLog || []} />
+              ) : (
+                <config.Component />
+              )}
             </React.Suspense>
           </WidgetContainer>
         );
@@ -198,3 +242,4 @@ export default function AppShell({
     </div>
   );
 }
+

@@ -7,7 +7,7 @@ Uses a centralized state manager, running lightweight native subprocesses.
 import os
 import platform
 import asyncio
-from typing import Dict, Any, Type, List
+from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 

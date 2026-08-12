@@ -5,7 +5,7 @@ modified files, and commit logs.
 """
 
 import asyncio
-from typing import Dict, Any, Type
+from typing import Dict, Any
 from pydantic import BaseModel
 from backend.app.tools.tool_base import BaseTool
 
