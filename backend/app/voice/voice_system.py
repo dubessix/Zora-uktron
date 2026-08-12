@@ -62,6 +62,10 @@ class VoiceSystem:
         Synthesizes speech asynchronously based on active personality configs.
         Publishes 'speaking_started' and 'playback_finished' events.
         """
+        # Clean the text so TTS reads naturally (no ellipses, emoji, markdown, bullets).
+        from backend.app.utils.text_cleaner import clean_for_speech
+        text = clean_for_speech(text)
+
         # 1. Fetch personality configuration from config.yaml (Requirement 3, 4)
         pers_config = self._config.get(personality.lower(), {})
         voice_id = pers_config.get("voice_id", "en-US-GuyNeural")

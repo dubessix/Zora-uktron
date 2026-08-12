@@ -14,6 +14,7 @@ from backend.app.database.db import get_db_connection
 from backend.app.database.models import save_conversation, get_conversation_history, update_session_personality
 from backend.app.session.session_manager import SessionManager
 from backend.app.core.orchestrator import CognitiveOrchestrator
+from backend.app.utils.text_cleaner import clean_text
 from backend.app.tools.tool_registry import ToolRegistry
 
 # Create regional router registry
@@ -122,7 +123,7 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
         return ChatResponse(
             id=result["id"],
             session_id=session_id,
-            content=result["content"],
+            content=clean_text(result["content"]) if result.get("content") else result["content"],
             personality=result["active_personality"],
             response_ms=latency_ms,
             structured_action=result["structured_action"],
