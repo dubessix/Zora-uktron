@@ -96,6 +96,15 @@ class CognitiveOrchestrator:
         self.dispatched_events.append(event)
         print(f"[EVENT_BUS] Published event: {event_type} -> {payload}")
 
+    def _dispatch_log(self, level: str, message: str) -> None:
+        """Emit a real-time operational log line (shown in the UI Log tab)."""
+        self.dispatched_events.append({
+            "event_id": str(uuid.uuid4()),
+            "type": "log",
+            "log": {"level": level, "message": message},
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        })
+
     def _extract_tool_calls(self, text: str) -> List[Dict[str, Any]]:
         """
         Robustly extracts and parses the [TOOL_CALLS_START]...[TOOL_CALLS_END] block.
@@ -752,6 +761,9 @@ class CognitiveOrchestrator:
                                         session_id=session_id
                                     )
                                 )
+                    for (tid, targs) in task_meta:
+                        self._dispatch_log("info", f"Tool call → {tid}")
+
                     if tasks_to_run:
                         # Execute in parallel (Requirement 7: Multiple tools together)
                         raw_results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
@@ -767,6 +779,11 @@ class CognitiveOrchestrator:
                                     "error": str(r)
                                 })
                             elif isinstance(r, dict):
+                                # Real-time log: success or error per tool.
+                                if r.get("success", False):
+                                    self._dispatch_log("success", f"Tool {tid} → OK")
+                                else:
+                                    self._dispatch_log("error", f"Tool {tid} → Error: {(r.get('error') or 'failed')[:80]}")
                                 # Step C: after a successful coding-mode file write, run a
                                 # SAFE syntax check (timeout-bounded, non-destructive).
                                 verified = None

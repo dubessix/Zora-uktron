@@ -45,6 +45,7 @@ class ChatResponse(BaseModel):
     response_ms: int = Field(..., description="Calculated processing duration.")
     structured_action: Dict[str, Any] = Field(default_factory=dict, description="Structured AI Action metadata payload.")
     coding: bool = Field(False, description="True if this turn was a coding turn (so UI can auto-show the coding panel).")
+    events: List[dict] = Field(default_factory=list, description="Operational log/event stream for the Log tab.")
     intent: str = Field("", description="Detected intent for the turn.")
 
 class ToolExecuteRequest(BaseModel):
@@ -133,7 +134,8 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             response_ms=latency_ms,
             structured_action=result["structured_action"],
             coding=result.get("coding", False),
-            intent=result.get("intent", "")
+            intent=result.get("intent", ""),
+            events=result.get("events", [])
         )
         
     except Exception as e:

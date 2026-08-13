@@ -24,6 +24,8 @@ export default function App() {
   const [codingLog, setCodingLog] = useState([]);
   // P0-3: track a pending dangerous action so the user can confirm & run it.
   const [pendingConfirm, setPendingConfirm] = useState(false);
+  // Real-time operational log (Log tab)
+  const [logs, setLogs] = useState([]);
   const [lastUserText, setLastUserText] = useState("");
 
   // Widget floating toggle states (Requirement: Remember coordinates & state)
@@ -295,7 +297,7 @@ export default function App() {
         if (msg.type === "progress") return;
         if (msg.type === "token") { acc += msg.content; }
         else if (msg.type === "done") {
-          const data = { id: msg.message_id, content: acc, personality: msg.active_personality, response_ms: msg.response_ms, coding: msg.coding, intent: msg.intent };
+          const data = { id: msg.message_id, content: acc, personality: msg.active_personality, response_ms: msg.response_ms, coding: msg.coding, intent: msg.intent, events: msg.events || [] };
           try { ws.close(); } catch {}
           wsRef.current = null;
           resolve(data);
@@ -340,6 +342,11 @@ export default function App() {
         speakResponse(data.content, data.personality || "ultron");
         setTimeout(() => setAiState("idle"), 1200);
         handleCodingResponse(data);
+        // Log tab: collect real-time tool/activity events
+        if (data.events && data.events.length) {
+          const logLines = data.events.filter(e => e.type === "log").map(e => ({ level: e.log.level, message: e.log.message }));
+          if (logLines.length) setLogs(prev => [...prev, ...logLines].slice(-80));
+        }
       } else {
         setMessages(prev => [...prev, {
           id: "error_" + Date.now(),
@@ -381,6 +388,7 @@ export default function App() {
         toggleCodingMode={toggleCodingMode}
         codingLog={codingLog}
         onConfirmRun={handleConfirmRun}
+        logs={logs}
       />
 
       {/* ==============================================================================

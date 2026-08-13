@@ -33,7 +33,8 @@ export default function AppShell({
   codingMode,
   toggleCodingMode,
   codingLog,
-  onConfirmRun
+  onConfirmRun,
+  logs
 }) {
   const isZora = activePersonality === "zora";
   const accent = isZora ? "#EC4899" : "#10B981"; // pink vs emerald
@@ -206,6 +207,7 @@ export default function AppShell({
           handleSendMessage={handleSendMessage}
           isProcessing={isProcessing}
           activePersonality={activePersonality}
+          logs={logs}
         />
 
       </div>

@@ -335,7 +335,8 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 "active_personality": result["active_personality"],
                 "response_ms": result["response_ms"],
                 "coding": result.get("coding", False),
-                "intent": result.get("intent", "")
+                "intent": result.get("intent", ""),
+                "events": result.get("events", [])
             })
 
     except WebSocketDisconnect:
