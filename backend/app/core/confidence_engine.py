@@ -18,6 +18,9 @@ class ConfidenceEngine:
         # Edge case: Empty or extremely short inputs
         if length == 0:
             return 0.0
+        # Human-like: short confirmations (ok/yes/no/ya/na/okay) are valid, not "clarify".
+        if clean_prompt.lower() in ("ok", "yes", "no", "ya", "na", "okay", "sure", "yup", "nope", "fine", "done", "go"):
+            return 0.95
         if length < 3:
             return 0.30
 

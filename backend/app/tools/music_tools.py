@@ -48,7 +48,13 @@ class LocalMusicPlayerController:
         self.is_paused = False
         
         system_type = platform.system()
-        cmd = f"start {filepath}" if system_type == "Windows" else f"xdg-open {filepath}"
+        # Fix 2: shell-injection guard — block dangerous metacharacters in the filename,
+        # and shell-quote it so a filename with spaces/symbols is treated as one arg.
+        import shlex
+        if any(ch in filepath for ch in ";|&`$(){}<>"):
+            raise ValueError("Unsafe filename (shell metacharacters) blocked.")
+        safe_path = shlex.quote(filepath)
+        cmd = f"start {safe_path}" if system_type == "Windows" else f"xdg-open {safe_path}"
         
         try:
             if self.proc:
