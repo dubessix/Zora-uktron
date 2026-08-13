@@ -105,6 +105,42 @@ class CognitiveOrchestrator:
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
         })
 
+    @staticmethod
+    def _tool_live_messages(tool_id: str, args: dict, result: dict) -> list:
+        """Build rich live log lines for a tool based on its id + real result data.
+        Gives the 'it's really working' feel (searching -> found N -> processing)."""
+        lines = []
+        def have(*ks):
+            return any(k in result for k in ks)
+        # Search / files
+        if tool_id in ("find_files", "search_inside_documents", "google_search", "github_search"):
+            q = args.get("pattern") or args.get("search_query") or args.get("query") or ""
+            lines.append(("info", f"Searching for {q!r}..."))
+            if have("matches_count", "count", "matches"):
+                n = result.get("matches_count") or result.get("count") or len(result.get("matches") or [])
+                lines.append(("info", f"Found {n} matching result(s)."))
+            lines.append(("info", "Processing results..."))
+        elif tool_id == "weather_tool":
+            lines.append(("info", "Fetching live weather data..."))
+            if have("temp", "condition"):
+                lines.append(("info", f"Weather: {result.get('temp')}, {result.get('condition')}"))
+        elif tool_id in ("system_metrics",):
+            lines.append(("info", "Reading system telemetry..."))
+        elif tool_id in ("file_write", "_coding_safe_write"):
+            lines.append(("info", "Writing file..."))
+        elif tool_id in ("create_folder", "organize_folder"):
+            lines.append(("info", "Working on folders..."))
+        elif tool_id in ("terminal_run",):
+            lines.append(("info", "Running command..."))
+        elif tool_id == "tavily_research":
+            lines.append(("info", "Researching the web..."))
+        elif tool_id == "git_status":
+            lines.append(("info", "Reading repository state..."))
+        else:
+            lines.append(("info", f"Executing {tool_id}..."))
+        lines.append(("success", f"{tool_id} → complete"))
+        return lines
+
     def _extract_tool_calls(self, text: str) -> List[Dict[str, Any]]:
         """
         Robustly extracts and parses the [TOOL_CALLS_START]...[TOOL_CALLS_END] block.
@@ -779,9 +815,10 @@ class CognitiveOrchestrator:
                                     "error": str(r)
                                 })
                             elif isinstance(r, dict):
-                                # Real-time log: success or error per tool.
+                                # Real-time rich log: live 'it's working' feel.
                                 if r.get("success", False):
-                                    self._dispatch_log("success", f"Tool {tid} → OK")
+                                    for level, msg in self._tool_live_messages(tid, targs, r.get("data", {}) or {}):
+                                        self._dispatch_log(level, msg)
                                 else:
                                     self._dispatch_log("error", f"Tool {tid} → Error: {(r.get('error') or 'failed')[:80]}")
                                 # Step C: after a successful coding-mode file write, run a
