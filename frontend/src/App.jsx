@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AppShell from './components/AppShell';
 import NotificationToast from './components/NotificationToast';
 
@@ -277,6 +277,34 @@ export default function App() {
   };
 
   // Dispatch REST messages
+  // C-1: real WebSocket streaming for chat (Jarvis-style token-by-token).
+  const wsRef = useRef(null);
+  const sendViaWS = (text) => {
+    return new Promise((resolve) => {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const wsBase = apiUrl.replace(/^http/, "ws");
+      let ws;
+      try {
+        ws = new WebSocket(`${wsBase}/ws/chat?client_id=web`);
+      } catch (e) { resolve(null); return; }
+      wsRef.current = ws;
+      let acc = "";
+      ws.onopen = () => ws.send(JSON.stringify({ content: text, session_id: sessionId || "" }));
+      ws.onmessage = (ev) => {
+        let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+        if (msg.type === "progress") return;
+        if (msg.type === "token") { acc += msg.content; }
+        else if (msg.type === "done") {
+          const data = { id: msg.message_id, content: acc, personality: msg.active_personality, response_ms: msg.response_ms, coding: msg.coding, intent: msg.intent };
+          try { ws.close(); } catch {}
+          wsRef.current = null;
+          resolve(data);
+        }
+      };
+      ws.onerror = () => { try { ws.close(); } catch {} wsRef.current = null; resolve(null); };
+    });
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputValue.trim() || isProcessing) return;
@@ -295,55 +323,23 @@ export default function App() {
     // The backend's Structured AI Action is the sole trigger governing the UI.
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const response = await fetch(`${apiUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          content: userText,
-          has_confirmed: pendingConfirm
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (!sessionId) {
-          setSessionId(data.session_id);
-        }
+      // C-1: stream via WebSocket for real token-by-token typing.
+      const data = await sendViaWS(userText);
+      if (data) {
+        if (!sessionId) setSessionId("web_" + Date.now());
         
-        // Append completion
         setMessages(prev => [...prev, {
-          id: data.id,
+          id: data.id || ("ai_" + Date.now()),
           sender: "ai",
-          text: data.content,
-          personality: data.personality,
+          text: data.content || "",
+          personality: data.personality || "ultron",
           response_ms: data.response_ms
         }]);
         
-        // Set state to speaking, then return to idle
         setAiState("speaking");
         speakResponse(data.content, data.personality || "ultron");
-        setTimeout(() => {
-          setAiState("idle");
-        }, 1200);
-
-        // Intercept Structured AI Action (Constitution Rule 8)
-        const structured = data.structured_action;
-        if (structured && structured.action === "open_widget") {
-          const targetWidgetId = structured.widget_id;
-          setWidgetState(prev => ({
-            ...prev,
-            [targetWidgetId]: { ...prev[targetWidgetId], visible: true }
-          }));
-          addNotification(
-            "AI Action Triggered", 
-            `Ultron successfully analyzed your intent and deployed the matching ${targetWidgetId} workspace.`, 
-            "medium"
-          );
-        }
+        setTimeout(() => setAiState("idle"), 1200);
         handleCodingResponse(data);
-        
       } else {
         setMessages(prev => [...prev, {
           id: "error_" + Date.now(),

@@ -169,6 +169,11 @@ class TerminalRunTool(BaseTool):
         if not command.strip():
             return {"success": False, "error": "Command parameter is empty.", "data": {}}
 
+        # Risk guard: block destructive/system-damaging commands (loop-risk prevention).
+        from backend.app.tools._cmd_guard import is_command_safe
+        if not is_command_safe(command):
+            return {"success": False, "error": "Command blocked by risk guard (destructive/system command).", "data": {}}
+
         # Run commands from the project root so relative paths/errors resolve correctly.
         project_root = Path(__file__).resolve().parent.parent.parent.parent
 

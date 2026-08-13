@@ -263,7 +263,8 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
     progress alerts, and widget pop-up pushes.
     """
     await ws_manager.connect("chat", client_id, websocket)
-    orchestrator = CognitiveOrchestrator()
+    from backend.app.router import get_orchestrator
+    orchestrator = get_orchestrator()
     
     try:
         while True:
@@ -332,7 +333,9 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 "type": "done",
                 "message_id": result["id"],
                 "active_personality": result["active_personality"],
-                "response_ms": result["response_ms"]
+                "response_ms": result["response_ms"],
+                "coding": result.get("coding", False),
+                "intent": result.get("intent", "")
             })
 
     except WebSocketDisconnect:
