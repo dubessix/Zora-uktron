@@ -52,7 +52,16 @@ class MemoryGate:
     _RECALL_HINTS = re.compile(
         r"\b(remember|recall|previous|earlier|before|last time|what did i|what did we|"
         r"what happened|you told|we discussed|we decided|my project|our plan|"
-        r"you said|we were|context|from before|what was)\b",
+        r"you said|we were|context|from before|what was|what is my name|"
+        r"who am i|my goal|our stack|what are we building)\b",
+        re.IGNORECASE,
+    )
+
+    # Human-like "calendar" recall: only when the user asks about the past.
+    _TIME_AWARE_HINTS = re.compile(
+        r"\b(yesterday|last (day|week|month|night)|3 days|three days|a few days|"
+        r"earlier|previously|before|past few|last few|recently|the other day|"
+        r"last time we|when did we|how long ago)\b",
         re.IGNORECASE,
     )
 
@@ -73,7 +82,8 @@ class MemoryGate:
         clean = user_prompt.strip()
         if not clean or not self.is_semantically_dense(clean):
             return False
-        return bool(self._RECALL_HINTS.search(clean))
+        # Trigger recall on direct memory questions OR past-time references.
+        return bool(self._RECALL_HINTS.search(clean)) or bool(self._TIME_AWARE_HINTS.search(clean))
 
     def should_save(self, user_prompt: str) -> bool:
         """

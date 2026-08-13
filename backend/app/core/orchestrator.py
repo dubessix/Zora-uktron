@@ -207,17 +207,19 @@ class CognitiveOrchestrator:
             return ""
         return "\n\n[PROJECT_CONTEXT]\n" + "\n\n".join(parts)
 
-    async def _recall_long_term_memory(self, user_prompt: str) -> str:
+    async def _recall_long_term_memory(self, user_prompt: str, force: bool = False) -> str:
         """
-        Jarvis-style long-term recall: queries episodic + semantic memory for the
-        most relevant past events/concepts related to the current prompt, and
-        returns a formatted context block for the system prompt. If no embedding
-        key is configured (mock mode) or anything fails, it degrades gracefully
-        to an empty string so the conversation is never blocked.
+        Human-like long-term recall: queries episodic + semantic memory for the
+        most relevant past events/concepts, returning a context block for the
+        system prompt.
+
+        Token-smart: by default it only recalls on memory/past-time questions
+        (see memory_gate). When force=True (e.g. a coding turn), it does a light
+        recall for project continuity across days. Always degrades gracefully.
         """
         try:
-            # Token saver: only do embedding recall on memory-related questions.
-            if not self.memory.gate.should_recall(user_prompt):
+            # Token saver: skip embedding recall unless memory-related or forced.
+            if not force and not self.memory.gate.should_recall(user_prompt):
                 return ""
 
             # Query both memory layers in parallel (low latency, async/network-bound).
@@ -623,8 +625,10 @@ class CognitiveOrchestrator:
         active_profile = self.personalities.get_personality(current_personality)
         system_prompt = active_profile.get_system_prompt(formatted_history)
 
-        # Jarvis-style long-term memory injection (episodic + semantic recall)
-        memory_context = await self._recall_long_term_memory(user_prompt)
+        # Jarvis-style long-term memory injection (episodic + semantic recall).
+        # Force a light recall on coding turns so Ultron remembers the project
+        # across days; otherwise recall only on explicit memory/past questions.
+        memory_context = await self._recall_long_term_memory(user_prompt, force=coding_turn)
         if memory_context:
             system_prompt += memory_context
 
