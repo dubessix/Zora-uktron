@@ -74,12 +74,15 @@ class CognitiveOrchestrator:
     def _should_use_coding_provider(self, intent: str, user_prompt: str) -> bool:
         """True if this turn should use the NVIDIA coding provider.
 
-        NVIDIA is reserved for CODING turns only. Manual override keeps auto-detect
-        armed for coding tasks but NEVER routes ordinary conversation to NVIDIA —
-        normal chat always uses Groq, saving NVIDIA rate-limit for coding.
+        NVIDIA is reserved for CODING turns only. Reads the SHARED global flag so a
+        manual coding-mode toggle (from any endpoint) takes effect on the shared
+        brain too. Normal conversation NEVER routes to NVIDIA — saving its limit
+        for coding.
         """
-        if not self.coding_auto_detect:
-            return False
+        global _SHARED_CODING_MODE
+        # Manual ON forces NVIDIA for all turns; otherwise only CODING intents use it.
+        if _SHARED_CODING_MODE:
+            return True
         return intent == "CODING"
 
     def _dispatch_event(self, event_type: str, payload: Dict[str, Any]) -> None:
@@ -269,7 +272,7 @@ class CognitiveOrchestrator:
         except Exception as e:
             print(f"[COGNITIVE_ORCHESTRATOR] Warning: Memory persist skipped: {e}")
 
-    def _coding_safe_write(
+    async def _coding_safe_write(
         self,
         args: Dict[str, Any],
         has_confirmed: bool = False

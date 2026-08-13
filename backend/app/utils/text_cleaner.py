@@ -62,8 +62,11 @@ def clean_text(text: str) -> str:
     # 4. En/em dashes -> hyphen (natural spoken pause)
     t = _DASHES.sub("-", t)
 
-    # 5. Remaining asterisks
+    # 5. Remaining asterisks — but keep *args / **kwargs (valid Python code tokens).
+    # Protect them first, then strip remaining asterisks.
+    t = t.replace("**kwargs", "KW").replace("*args", "AR")
     t = _ASTERISKS.sub("", t)
+    t = t.replace("KW", "**kwargs").replace("AR", "*args")
 
     # 6. Whitespace tidy
     t = _DOUBLE_SPACE.sub(" ", t)

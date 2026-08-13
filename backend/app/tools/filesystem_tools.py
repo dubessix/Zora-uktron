@@ -43,6 +43,10 @@ class FileReadTool(BaseTool):
         filepath = kwargs.get("filepath", "")
         path = Path(filepath).resolve()
         
+        # Security: block reading sensitive/system paths (e.g. /etc, C:\Windows, ~/.ssh).
+        from backend.app.security.path_guard import is_path_safe
+        if not is_path_safe(str(path)):
+            return {"success": False, "error": f"Blocked by path guard: {filepath}", "data": {}}
         if not path.exists():
             return {"success": False, "error": f"File does not exist: {filepath}", "data": {}}
             

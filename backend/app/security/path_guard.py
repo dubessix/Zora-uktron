@@ -75,4 +75,13 @@ def is_path_safe(path_str: str) -> bool:
         # Block exact match or anything inside a blocked directory.
         if target == blocked or target.startswith(blocked + os.sep):
             return False
+
+    # Block sensitive dotfiles / secrets anywhere (e.g. ~/.ssh, .env, credentials).
+    name = Path(target).name.lower()
+    parent_name = Path(target).parent.name.lower()
+    if name == ".ssh" or parent_name == ".ssh":
+        return False
+    if name in (".env", ".env.example", "credentials", ".netrc", ".git-credentials"):
+        return False
+
     return True
