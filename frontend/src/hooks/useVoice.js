@@ -1,15 +1,9 @@
 import { useRef, useState, useCallback } from 'react';
 
 /**
- * useVoice Hook
- * Lightweight, browser-native voice control using the Web Speech API
- * (webkitSpeechRecognition). No backend STT, no heavy local model — ideal for
- * low-spec machines (8GB RAM / dual-core).
- *
- * Flow:
- *  - When enabled, it listens continuously for a WAKE WORD.
- *  - On wake word, it switches to "command" mode and captures the next phrase.
- *  - The captured command is returned via onCommand().
+ * useVoice Hook — human-like wake-word voice.
+ * Listens for a wake word and captures the FULL command in ONE line,
+ * so "Hey Ultron what's the weather" sends the whole command (not just the name).
  */
 const WAKE_WORDS = [
   "ultron", "jarvis", "zora", "hey ultron", "hi ultron",
@@ -24,14 +18,15 @@ export default function useVoice({ onCommand, enabled }) {
   const capturingRef = useRef(false);
   const finalTextRef = useRef("");
 
-  const restart = useCallback((rec) => {
-    try {
-      rec.stop();
-      rec.start();
-    } catch (_e) {
-      /* ignore restart races */
+  const dispatch = (cmd) => {
+    if (cmd) {
+      setHeardText(cmd);
+      if (onCommand) onCommand(cmd);
     }
-  }, []);
+    capturingRef.current = false;
+    finalTextRef.current = "";
+    setWakeDetected(false);
+  };
 
   const start = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -43,9 +38,6 @@ export default function useVoice({ onCommand, enabled }) {
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
-    // Multilingual capture: Hinglish + English + Hindi mixed speech.
-    // Web Speech only supports one lang at a time; hi-IN transcribes both
-    // Hindi and English (Hinglish) so Ultron understands mixed talk.
     rec.lang = "hi-IN";
 
     rec.onresult = (event) => {
@@ -56,28 +48,39 @@ export default function useVoice({ onCommand, enabled }) {
         if (res.isFinal) final += res[0].transcript;
         else interim += res[0].transcript;
       }
-      const full = (final || interim || "").trim().toLowerCase();
+      const transcript = (final || interim || "").trim();
+      const low = transcript.toLowerCase();
 
+      // 1. Command-capture mode: accumulate + send on a pause.
       if (capturingRef.current) {
-        // In command-capture mode: accumulate final text.
+        finalTextRef.current = (finalTextRef.current + " " + transcript).trim();
+        setHeardText(finalTextRef.current);
+        // Send after a short silence (when this result is final).
         if (final) {
-          finalTextRef.current = (finalTextRef.current + " " + final).trim();
-          setHeardText(finalTextRef.current);
-          // A short silence usually means the phrase ended — dispatch.
-          const cmd = finalTextRef.current;
-          finalTextRef.current = "";
-          capturingRef.current = false;
-          setWakeDetected(false);
-          if (onCommand && cmd) onCommand(cmd);
+          const cmd = finalTextRef.current.replace(/^\s*(hey|ok|please)\s+/i, "").trim();
+          dispatch(cmd);
         }
         return;
       }
 
-      // Wake-word detection mode.
-      if (full) {
-        const matched = WAKE_WORDS.find((w) => full.includes(w));
+      // 2. Wake-word detection — capture the WHOLE line in one shot.
+      if (low) {
+        const matched = WAKE_WORDS.find((w) => low.includes(w));
         if (matched) {
           setWakeDetected(true);
+          // Everything AFTER the wake word is the command (same utterance).
+          const idx = low.indexOf(matched);
+          let rest = transcript.slice(idx + matched.length).trim();
+          // If there's a command after the wake word, send it immediately (one-line).
+          if (rest) {
+            rest = rest.replace(/^[,.\s]+/, "").trim();
+            if (rest.length >= 2) {
+              // Dispatch the command, but keep listening for a follow-up.
+              dispatch(rest);
+              return;
+            }
+          }
+          // No command in this utterance yet → capture the next phrase.
           capturingRef.current = true;
           finalTextRef.current = "";
         }
@@ -88,15 +91,11 @@ export default function useVoice({ onCommand, enabled }) {
       if (event.error === "not-allowed") {
         console.warn("[VOICE] Microphone permission denied.");
       }
-      // Non-fatal: let the continuous loop restart.
       try { rec.stop(); } catch (_e) {}
     };
 
     rec.onend = () => {
-      // Keep listening while the mic toggle is still on.
-      if (enabled) {
-        try { rec.start(); } catch (_e) {}
-      }
+      if (enabled) { try { rec.start(); } catch (_e) {} }
     };
 
     recRef.current = rec;
@@ -105,10 +104,7 @@ export default function useVoice({ onCommand, enabled }) {
   }, [enabled, onCommand]);
 
   const stop = useCallback(() => {
-    if (recRef.current) {
-      try { recRef.current.stop(); } catch (_e) {}
-      recRef.current = null;
-    }
+    if (recRef.current) { try { recRef.current.stop(); } catch (_e) {} recRef.current = null; }
     capturingRef.current = false;
     finalTextRef.current = "";
     setIsListening(false);
@@ -116,9 +112,7 @@ export default function useVoice({ onCommand, enabled }) {
     setHeardText("");
   }, []);
 
-  // React to `enabled` changes.
   if (enabled && !isListening && !recRef.current) {
-    // start after render tick to avoid StrictMode double-start
     setTimeout(() => { if (enabled) start(); }, 0);
   } else if (!enabled && isListening) {
     stop();
