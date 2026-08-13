@@ -345,7 +345,12 @@ export default function App() {
         // Log tab: collect real-time tool/activity events
         if (data.events && data.events.length) {
           const logLines = data.events.filter(e => e.type === "log").map(e => ({ level: e.log.level, message: e.log.message }));
-          if (logLines.length) setLogs(prev => [...prev, ...logLines].slice(-80));
+          if (logLines.length) {
+            setLogs(prev => [...prev, ...logLines].slice(-80));
+            // Speak the Jarvis narration live (info lines only, skip the final Done.)
+            const narration = logLines.find(l => l.level === "info");
+            if (narration) speakResponse(narration.message, data.personality || "ultron");
+          }
         }
       } else {
         setMessages(prev => [...prev, {
