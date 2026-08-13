@@ -104,7 +104,9 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
         with get_db_connection() as conn:
             # Fix #9: persist active personality on the session.
             try:
-                update_session_personality(conn, session_id, result.get("active_personality", "ultron"))
+                # Save the EFFECTIVE personality (after any Zora auto-return) so Zora
+                # doesn't get stuck on the session across requests/days.
+                update_session_personality(conn, session_id, result.get("persisted_personality", result.get("active_personality", "ultron")))
             except Exception:
                 pass
             save_conversation(

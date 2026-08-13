@@ -569,7 +569,8 @@ class CognitiveOrchestrator:
             end_time = time.perf_counter()
             response_ms = int((end_time - start_time) * 1000)
             
-            # Handle Zora automatic lifecycle decrement
+            # Handle Zora automatic lifecycle decrement (update current_personality too,
+            # so the session persists the correct value and Zora doesn't get stuck).
             if current_personality == "zora":
                 auto_return_state = self.personalities.increment_zora_lifecycle()
                 if auto_return_state:
@@ -888,6 +889,10 @@ class CognitiveOrchestrator:
             "cache_skip": cache_skip,
             "response_ms": response_ms,
             "active_personality": current_personality,
+            # P0-6: the personality to persist to the session — after any Zora
+            # auto-return this is 'ultron' (so Zora doesn't get stuck across days),
+            # while the current response still reports who answered (current_personality).
+            "persisted_personality": self.personalities.state.active_personality,
             "events": list(self.dispatched_events),
             "metadata": memory_meta,
             "structured_action": structured_action,
