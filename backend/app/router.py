@@ -195,6 +195,23 @@ async def speak_text(request: SpeakRequest):
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"TTS failed: {e}")
 
+@api_router.get("/memory/recent", status_code=status.HTTP_200_OK)
+async def get_recent_memories(limit: int = Query(5, ge=1, le=20)):
+    """Real recent memory rows from the vector store (Set B: no fake memory widget)."""
+    try:
+        from backend.app.database.db import get_db_connection
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            total = cursor.execute("SELECT COUNT(*) FROM vector_memories").fetchone()[0]
+            cursor.execute(
+                "SELECT type, content, created_at FROM vector_memories ORDER BY rowid DESC LIMIT ?",
+                (limit,)
+            )
+            rows = [{"type": r["type"], "content": (r["content"] or "")[:120], "created_at": r["created_at"]} for r in cursor.fetchall()]
+        return {"total": total, "memories": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Memory query failed: {e}")
+
 @api_router.post("/coding-mode", status_code=status.HTTP_200_OK)
 async def set_coding_mode(request: CodingModeRequest) -> dict:
     """Manually toggle NVIDIA coding mode on/off for the orchestrator."""

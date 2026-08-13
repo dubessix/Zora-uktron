@@ -1,43 +1,49 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
- * MemoryWidget Content Component
- * Displays recent database indices, long-term context triggers, and user profile values.
+ * MemoryWidget — real memory viewer (Set B: no fake counts).
+ * Fetches real vector_memories from the backend.
  */
 export default function MemoryWidget() {
-  const memories = [
-    { text: "User prefers React 19 over Angular", category: "persistent", confidence: "1.00" },
-    { text: "Learned: JWT is used for stateless authentication tokens", category: "semantic", confidence: "0.98" },
-    { text: "Struggled with CORS policy error last night", category: "episodic", confidence: "0.91" }
-  ];
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+        const res = await fetch(`${apiUrl}/api/memory/recent?limit=5`);
+        if (res.ok) setData(await res.json());
+      } catch (err) { /* offline */ } finally { setLoading(false); }
+    };
+    load();
+  }, []);
+
+  const memories = data?.memories || [];
+  const total = data?.total ?? 0;
 
   return (
     <div className="space-y-3 font-mono text-[10px]">
-      
-      {/* Database status counts */}
       <div className="flex justify-between items-center bg-white/5 p-2 rounded-sm text-[8px] text-[#8B8B96] uppercase tracking-wider font-bold">
         <span>Recent Memories Indexed</span>
-        <span>Total Count: 1,402</span>
+        <span>Total: {loading ? "…" : total}</span>
       </div>
 
-      {/* Memories loop */}
       <div className="space-y-2 max-h-48 overflow-y-auto">
-        {memories.map((mem, idx) => (
-          <div 
-            key={idx}
-            className="p-2 border border-white/5 bg-white/[0.01] rounded-sm flex flex-col gap-1.5"
-          >
-            <p className="text-[9px] text-[#F5F5F7] leading-relaxed select-text font-mono">
-              "{mem.text}"
-            </p>
+        {loading ? (
+          <p className="text-[9px] text-white/30">Loading memories…</p>
+        ) : memories.length === 0 ? (
+          <p className="text-[9px] text-white/30">No memories stored yet.</p>
+        ) : memories.map((mem, idx) => (
+          <div key={idx} className="p-2 border border-white/5 bg-white/[0.01] rounded-sm flex flex-col gap-1.5">
+            <p className="text-[9px] text-[#F5F5F7] leading-relaxed select-text font-mono">"{mem.content}"</p>
             <div className="flex justify-between items-center text-[7px] uppercase tracking-widest font-bold mt-1 text-white/40">
-              <span className="text-[#7DD3FC]">{mem.category}</span>
-              <span>Confidence: {mem.confidence}</span>
+              <span className="text-[#7DD3FC]">{mem.type}</span>
+              <span>{mem.created_at || ""}</span>
             </div>
           </div>
         ))}
       </div>
-
     </div>
   );
 }

@@ -1,37 +1,69 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 /**
- * TerminalWidget Content Component
- * Demonstrates local subprocess command runners, running logs, and compiler statuses.
+ * TerminalWidget — real command runner (Set B: no fake logs).
+ * Runs a command via the backend terminal_run tool and shows real output.
  */
 export default function TerminalWidget() {
-  const terminal_logs = [
-    { line: "$ npm run build", type: "cmd" },
-    { line: "vite v5.3.1 building for production...", type: "info" },
-    { line: "✓ 142 modules transformed.", type: "success" },
-    { line: "dist/index.html                  0.42 kB │ gzip: 0.12 kB", type: "log" },
-    { line: "dist/assets/index-B_024f2b.js   145.42 kB │ gzip: 42.12 kB", type: "log" },
-    { line: "✓ built in 3.42s", type: "success" }
-  ];
+  const [cmd, setCmd] = useState("");
+  const [logs, setLogs] = useState([]);
+  const [running, setRunning] = useState(false);
+
+  const run = async (e) => {
+    e.preventDefault();
+    if (!cmd.trim() || running) return;
+    const input = cmd.trim();
+    setCmd("");
+    setRunning(true);
+    setLogs(prev => [...prev, { line: `$ ${input}`, type: "cmd" }]);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiUrl}/api/tools/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_id: "terminal_run", arguments: { command: input }, has_confirmed: true })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const out = data.data?.stdout;
+        if (out) setLogs(prev => [...prev, { line: out, type: "success" }]);
+        const err = data.data?.stderr;
+        if (err) setLogs(prev => [...prev, { line: err, type: "error" }]);
+        const fix = data.data?.self_healing_fix;
+        if (fix && fix.fix_hint) setLogs(prev => [...prev, { line: `💡 ${fix.fix_hint}`, type: "error" }]);
+      } else {
+        setLogs(prev => [...prev, { line: `error: ${data.error || "command failed"}`, type: "error" }]);
+      }
+    } catch (err) {
+      setLogs(prev => [...prev, { line: "offline", type: "error" }]);
+    } finally {
+      setRunning(false);
+    }
+  };
 
   return (
     <div className="space-y-3 font-mono text-[9px]">
-      
-      {/* Console log outputs */}
-      <div className="bg-[#0A0A0F] border border-white/5 p-3 rounded-sm space-y-1.5 h-44 overflow-y-auto font-mono text-[#7DD3FC]">
-        {terminal_logs.map((log, idx) => (
-          <div key={idx} className="leading-relaxed whitespace-pre-wrap select-text">
-            <span className={
-              log.type === "cmd" ? "text-emerald-400 font-bold" :
-              log.type === "success" ? "text-emerald-400" :
-              log.type === "info" ? "text-[#8B8B96]" : "text-sky-200"
-            }>
-              {log.line}
-            </span>
-          </div>
+      <form onSubmit={run} className="flex gap-2">
+        <input
+          value={cmd}
+          onChange={(e) => setCmd(e.target.value)}
+          placeholder="type a command, e.g. ls"
+          disabled={running}
+          className="flex-1 bg-white/[0.02] border border-white/10 rounded-sm px-2 py-1 text-[9px] text-[#F5F5F7] placeholder-white/20 focus:outline-none focus:border-[#7DD3FC]/30"
+        />
+        <button type="submit" disabled={running || !cmd.trim()}
+          className="text-[8px] px-2 py-1 border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 rounded-sm uppercase disabled:opacity-30">
+          Run
+        </button>
+      </form>
+      <div className="bg-black/40 border border-white/5 rounded-sm p-2 h-36 overflow-y-auto space-y-1">
+        {logs.length === 0 && <p className="text-white/25">Run a command to see real output…</p>}
+        {logs.map((l, i) => (
+          <p key={i} className={l.type === "cmd" ? "text-[#7DD3FC]" : l.type === "error" ? "text-rose-400" : "text-white/70"}>
+            {l.line}
+          </p>
         ))}
       </div>
-
     </div>
   );
 }

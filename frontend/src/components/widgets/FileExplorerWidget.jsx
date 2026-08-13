@@ -1,74 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
- * FileExplorerWidget Content Component
- * Renders local directories, disk drives (D:), downloads, and file structures.
+ * FileExplorerWidget — real project browser (Set B: no fake D:\ drives).
+ * Lists the actual project directory via the backend list_contents tool.
  */
 export default function FileExplorerWidget() {
-  const [currentPath, setCurrentPath] = useState("D:\\SaaS-Builds\\");
-  const [files, setFiles] = useState([
-    { name: "src", type: "folder" },
-    { name: "public", type: "folder" },
-    { name: "package.json", type: "file", size: "1.2 KB" },
-    { name: "vite.config.js", type: "file", size: "640 B" },
-    { name: "README.md", type: "file", size: "4.2 KB" }
-  ]);
+  const [path, setPath] = useState(".");
+  const [entries, setEntries] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const handleNavigate = (dir) => {
-    if (dir === "D:\\") {
-      setCurrentPath("D:\\");
-      setFiles([
-        { name: "SaaS-Builds", type: "folder" },
-        { name: "Documents", type: "folder" },
-        { name: "Downloads", type: "folder" },
-        { name: "backups", type: "folder" }
-      ]);
-    } else if (dir === "Downloads") {
-      setCurrentPath("D:\\Downloads\\");
-      setFiles([
-        { name: "node-v20-linux.tar.gz", type: "file", size: "42 MB" },
-        { name: "stripe-webhook-test.sh", type: "file", size: "1.5 KB" }
-      ]);
-    } else {
-      setCurrentPath(`D:\\SaaS-Builds\\${dir}\\`);
-      setFiles([
-        { name: "App.jsx", type: "file", size: "12 KB" },
-        { name: "main.jsx", type: "file", size: "1.1 KB" }
-      ]);
-    }
+  const load = async (folder) => {
+    setLoading(true); setError("");
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiUrl}/api/tools/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_id: "list_contents", arguments: { folderpath: folder }, has_confirmed: true })
+      });
+      const data = await res.json();
+      if (data.success && data.data?.contents) {
+        setEntries(data.data.contents);
+        setPath(folder);
+      } else {
+        setError(data.error || "cannot list folder");
+      }
+    } catch (err) { setError("offline"); } finally { setLoading(false); }
   };
 
-  return (
-    <div className="space-y-3 font-mono text-[10px]">
-      {/* Path bar and quick shortcuts */}
-      <div className="flex justify-between items-center bg-white/5 p-2 rounded-sm text-[#8B8B96]">
-        <span className="truncate max-w-[70%] font-bold text-[#F5F5F7]">{currentPath}</span>
-        <div className="flex gap-2">
-          <button onClick={() => handleNavigate("D:\\")} className="hover:text-white uppercase tracking-wider text-[8px] font-bold">D: Drive</button>
-          <button onClick={() => handleNavigate("Downloads")} className="hover:text-white uppercase tracking-wider text-[8px] font-bold">Downloads</button>
-        </div>
-      </div>
+  useEffect(() => { load("."); }, []);
 
-      {/* Files List */}
-      <div className="space-y-1.5 max-h-48 overflow-y-auto">
-        {files.map((file, idx) => (
-          <div 
-            key={idx}
-            onClick={() => file.type === "folder" && handleNavigate(file.name)}
-            className={`flex justify-between items-center p-1.5 rounded-sm hover:bg-white/5 ${file.type === "folder" ? "cursor-pointer" : "cursor-default"}`}
-          >
-            <span className="flex items-center gap-2">
-              <span className={file.type === "folder" ? "text-[#7DD3FC]" : "text-white/40"}>
-                {file.type === "folder" ? "📁" : "📄"}
-              </span>
-              <span className={file.type === "folder" ? "text-[#7DD3FC] font-bold" : "text-[#F5F5F7]"}>
-                {file.name}
-              </span>
-            </span>
-            {file.size && <span className="text-[8px] text-white/30">{file.size}</span>}
-          </div>
-        ))}
+  return (
+    <div className="space-y-2 font-mono text-[9px]">
+      <div className="flex items-center gap-2 text-[8px] text-white/40 truncate">
+        <button onClick={() => load(".")} className="text-[#7DD3FC] hover:underline">root</button>
+        <span>/</span>
+        <span className="truncate text-white/60">{path}</span>
       </div>
+      {error && <p className="text-rose-400">{error}</p>}
+      {loading ? <p className="text-white/25">Loading…</p> : (
+        <div className="space-y-1 max-h-40 overflow-y-auto">
+          {entries.length === 0 && <p className="text-white/25">(empty)</p>}
+          {entries.map((e, i) => (
+            <button key={i} onClick={() => e.type === "folder" && load(`${path === "." ? "" : path}/${e.name}`)}
+              className="flex w-full items-center justify-between text-left text-[#F5F5F7] hover:bg-white/5 rounded-sm px-1">
+              <span className={e.type === "folder" ? "text-[#7DD3FC]" : ""}>
+                {e.type === "folder" ? "📁 " : "📄 "}{e.name}
+              </span>
+              <span className="text-white/30 text-[8px]">{e.type === "file" && e.size ? e.size : ""}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

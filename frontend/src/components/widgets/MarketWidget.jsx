@@ -1,45 +1,59 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
- * MarketWidget Content Component
- * Renders live stock prices, cryptocurrency indexes, and personal watchlists.
+ * MarketWidget — real crypto prices (Set B: no fake BTC).
+ * Fetches live prices from the free CoinGecko API.
  */
 export default function MarketWidget() {
-  const assets = [
-    { symbol: "BTC/USD", price: "$64,250.00", change: "+4.12%", up: true },
-    { symbol: "TSLA", price: "$182.42", change: "-2.35%", up: false },
-    { symbol: "AAPL", price: "$174.12", change: "+0.85%", up: true }
-  ];
+  const [coins, setCoins] = useState([]);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(
+          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin,solana&vs_currencies=usd&include_24hr_change=true"
+        );
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const map = {
+          bitcoin: "BTC", ethereum: "ETH", binancecoin: "BNB", solana: "SOL"
+        };
+        const list = Object.entries(data).map(([id, v]) => ({
+          symbol: `${map[id] || id.toUpperCase()}/USD`,
+          price: `$${v.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+          change: `${v.usd_24h_change != null ? (v.usd_24h_change > 0 ? "+" : "") + v.usd_24h_change.toFixed(2) : "0.00"}%`,
+          up: (v.usd_24h_change || 0) >= 0
+        }));
+        setCoins(list);
+        setStatus("ok");
+      } catch (err) { setStatus("offline"); } 
+    };
+    load();
+  }, []);
 
   return (
-    <div className="space-y-3 font-mono text-[10px]">
-      
-      {/* Header index */}
-      <div className="flex justify-between items-center bg-white/5 p-2 rounded-sm text-[8px] text-[#8B8B96] uppercase tracking-wider font-bold">
-        <span>Active Watchlist</span>
-        <span>Market Index</span>
+    <div className="space-y-2 font-mono text-[10px]">
+      <div className="flex justify-between text-[7px] uppercase tracking-widest text-white/40 font-bold">
+        <span>Live Market</span>
+        <span className={status === "offline" ? "text-rose-400" : "text-emerald-400"}>
+          {status === "loading" ? "loading…" : status === "offline" ? "offline" : "LIVE"}
+        </span>
       </div>
-
-      {/* Assets loop */}
+      {status !== "ok" && coins.length === 0 && (
+        <p className="text-[9px] text-white/30">{status === "offline" ? "Could not fetch live prices." : "Loading…"}</p>
+      )}
       <div className="space-y-1.5">
-        {assets.map((asset, idx) => (
-          <div 
-            key={idx}
-            className="flex justify-between items-center bg-white/[0.01] border border-white/5 p-2 rounded-sm"
-          >
-            <div>
-              <span className="font-bold text-[#F5F5F7]">{asset.symbol}</span>
-              <span className="block text-[8px] text-white/30 mt-0.5">{asset.price}</span>
-            </div>
-            <span className={`text-[8px] px-2 py-0.5 rounded-sm font-bold tracking-widest ${
-              asset.up ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
-            }`}>
-              {asset.change}
+        {coins.map((c, i) => (
+          <div key={i} className="flex items-center justify-between border border-white/5 bg-white/[0.01] p-2 rounded-sm">
+            <span className="text-[#F5F5F7]">{c.symbol}</span>
+            <span className="flex items-center gap-2">
+              <span className="text-white/70">{c.price}</span>
+              <span className={c.up ? "text-emerald-400" : "text-rose-400"}>{c.change}</span>
             </span>
           </div>
         ))}
       </div>
-
     </div>
   );
 }
