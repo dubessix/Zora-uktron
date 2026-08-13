@@ -592,8 +592,31 @@ class CognitiveOrchestrator:
             }
 
         # Step 9: CONTEXT ASSEMBLY & SYSTEM INSTRUCTIONS (With Dynamic 65 Tools schemas!)
+        # P0-5: Load last turns from DB (per-session, survives restarts) + merge RAM.
         short_term_context = self.memory.short_term.get_context_history()
+        try:
+            from backend.app.database.db import get_db_connection
+            from backend.app.database.models import get_conversation_history
+            with get_db_connection() as _conn:
+                db_rows = get_conversation_history(_conn, session_id, limit=8)
+            # newest first for merging with RAM; keep chronological order for the prompt
+            db_turns = [{"user": r.get("user_message",""), "ai": r.get("ai_response","")} for r in db_rows]
+        except Exception as e:
+            print(f"[COGNITIVE_ORCHESTRATOR] Warning: DB history load failed: {e}")
+            db_turns = []
+
+        # Merge DB history + in-memory short-term (dedupe by exact (user,ai) pair).
+        all_turns = db_turns + short_term_context
+        seen = set()
+        merged = []
+        for t in all_turns:
+            key = (t.get("user"), t.get("ai"))
+            if key not in seen:
+                seen.add(key)
+                merged.append(t)
         formatted_history = ""
+        for turn in merged[-6:]:
+            formatted_history += f"User: {turn.get('user','')}\nAI: {turn.get('ai','')}\n"
         for turn in short_term_context[-5:]:
             formatted_history += f"User: {turn['user']}\nAI: {turn['ai']}\n"
 
