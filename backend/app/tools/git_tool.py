@@ -36,7 +36,7 @@ class GitStatusTool(BaseTool):
             stdout_b, _ = await proc_branch.communicate()
             branch_name = stdout_b.decode("utf-8").strip() or "main"
             
-            # 2. Fetch modified uncommitted files
+            # 2. Fetch modified uncommitted files (real, no fake fallback)
             proc_status = await asyncio.create_subprocess_shell(
                 "git status --porcelain",
                 stdout=asyncio.subprocess.PIPE,
@@ -46,26 +46,27 @@ class GitStatusTool(BaseTool):
             status_lines = stdout_s.decode("utf-8").splitlines()
             
             uncommitted_files = []
-            for line in status_lines[:5]:  # Capture top 5 modified files
+            for line in status_lines[:10]:  # Capture top 10 modified files
                 if line.strip():
-                    # Format: 'M path/to/file.py' -> extract path
                     parts = line.strip().split(maxsplit=1)
                     if len(parts) == 2:
                         uncommitted_files.append(parts[1])
 
-            # Fallback mock values in case we are running outside a git initialized repo
-            if not uncommitted_files:
-                uncommitted_files = [
-                    "frontend/src/App.jsx",
-                    "backend/app/tools/tool_registry.py"
-                ]
+            # 3. Fetch the real last commit message (P0-7: no hardcoded fake commit)
+            proc_log = await asyncio.create_subprocess_shell(
+                "git log -1 --pretty=%s",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout_l, _ = await proc_log.communicate()
+            last_commit = stdout_l.decode("utf-8").strip()
 
             return {
                 "success": True,
                 "data": {
                     "branch": branch_name,
                     "uncommitted_files": uncommitted_files,
-                    "last_commit": "feat: refactor voice lifecycle events"
+                    "last_commit": last_commit  # real, or "" if none
                 },
                 "error": None
             }
