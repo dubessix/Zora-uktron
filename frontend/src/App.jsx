@@ -22,6 +22,9 @@ export default function App() {
   const [codingMode, setCodingMode] = useState(false);
   // Coding activity log shown in the CodingWidget; auto-opened on coding turns.
   const [codingLog, setCodingLog] = useState([]);
+  // P0-3: track a pending dangerous action so the user can confirm & run it.
+  const [pendingConfirm, setPendingConfirm] = useState(false);
+  const [lastUserText, setLastUserText] = useState("");
 
   // Widget floating toggle states (Requirement: Remember coordinates & state)
   const [widgetState, setWidgetState] = useState({
@@ -156,6 +159,31 @@ export default function App() {
     }));
   };
 
+  // P0-3: confirm & re-run the last pending dangerous action.
+  const handleConfirmRun = async () => {
+    if (!lastUserText || isProcessing) return;
+    setPendingConfirm(true);
+    // Re-send the last command with has_confirmed=true via the existing handler.
+    setInputValue(lastUserText);
+    await new Promise(r => setTimeout(r, 0));
+    // trigger send with confirm flag
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${apiUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, content: lastUserText, has_confirmed: true })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (!sessionId) setSessionId(data.session_id);
+        setMessages(prev => [...prev, { id: data.id, sender: "ai", text: data.content, personality: data.personality, response_ms: data.response_ms }]);
+      }
+    } catch (err) { /* ignore */ } finally {
+      setPendingConfirm(false);
+    }
+  };
+
   // Toggle individual widget visibility
   const toggleWidget = (widgetId) => {
     setWidgetState(prev => ({
@@ -232,6 +260,7 @@ export default function App() {
 
     const userText = inputValue.trim();
     setInputValue("");
+    setLastUserText(userText);
     setIsProcessing(true);
     setAiState("thinking");
 
@@ -249,7 +278,8 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId,
-          content: userText
+          content: userText,
+          has_confirmed: pendingConfirm
         })
       });
 
@@ -330,6 +360,7 @@ export default function App() {
         codingMode={codingMode}
         toggleCodingMode={toggleCodingMode}
         codingLog={codingLog}
+        onConfirmRun={handleConfirmRun}
       />
 
       {/* ==============================================================================

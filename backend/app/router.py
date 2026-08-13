@@ -34,6 +34,7 @@ def get_orchestrator() -> CognitiveOrchestrator:
 class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Active unique conversation UUID.")
     content: str = Field(..., min_length=1, description="Raw user prompt query content.")
+    has_confirmed: bool = Field(False, description="User confirmation for a pending dangerous tool (delete/terminal).")
 
 class ChatResponse(BaseModel):
     id: str = Field(..., description="Unique generated message ID.")
@@ -91,7 +92,8 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             consecutive_errors=0,
             current_hour=datetime.datetime.now().hour,
             delete_ratio=0.0,
-            initial_personality=session_personality
+            initial_personality=session_personality,
+            user_confirmed=request.has_confirmed
         )
         
         # Calculate process latency

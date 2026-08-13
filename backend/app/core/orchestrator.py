@@ -455,7 +455,8 @@ class CognitiveOrchestrator:
         consecutive_errors: int = 0,
         current_hour: int = 12,
         delete_ratio: float = 0.0,
-        initial_personality: Optional[str] = None
+        initial_personality: Optional[str] = None,
+        user_confirmed: bool = False
     ) -> Dict[str, Any]:
         """
         Asynchronous coordinator running the complete pipeline.
@@ -707,8 +708,8 @@ class CognitiveOrchestrator:
                                 )
                             else:
                                 # Security: only auto-confirm read/write (level 0/1) tools.
-                                # Dangerous (level 2/3: terminal, delete, system) must go through
-                                # the confirmation gate instead of hardcoded has_confirmed=True.
+                                # Dangerous (level 2/3: terminal, delete, system) need user
+                                # confirmation (user_confirmed from a confirm button/API) to run.
                                 auto_confirm = False
                                 try:
                                     _tool = registry.get_tool(t_id)
@@ -719,7 +720,7 @@ class CognitiveOrchestrator:
                                     registry.execute_tool(
                                         tool_id=t_id,
                                         args=args if isinstance(args, dict) else {},
-                                        has_confirmed=auto_confirm,
+                                        has_confirmed=(auto_confirm or user_confirmed),
                                         session_id=session_id
                                     )
                                 )

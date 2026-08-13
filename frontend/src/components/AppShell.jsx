@@ -32,7 +32,8 @@ export default function AppShell({
   handleVoiceCommand,
   codingMode,
   toggleCodingMode,
-  codingLog
+  codingLog,
+  onConfirmRun
 }) {
   const isZora = activePersonality === "zora";
   const accent = isZora ? "#EC4899" : "#10B981"; // pink vs emerald
@@ -158,6 +159,15 @@ export default function AppShell({
               title={codingMode ? "Coding Mode ON (NVIDIA brain for all turns). Click to revert to auto." : "Coding Mode OFF (auto-detect). Click to force NVIDIA coding brain."}
             >
               💻 {codingMode ? "Coding ON" : "Coding"}
+            </button>
+
+            {/* P0-3: Confirm & Run for pending dangerous actions */}
+            <button
+              onClick={onConfirmRun}
+              className="px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border border-amber-400/40 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.2)]"
+              title="Confirm and run the pending action (delete/terminal)"
+            >
+              ✓ Confirm & Run
             </button>
 
             {/* Mic icon — real wake-word listening toggle with pulse-ring effect */}
