@@ -41,7 +41,7 @@ export default function FileExplorerWidget() {
     load(parts.length ? "/" + parts.join("/") : ".");
   };
 
-  const go = (e) => { e.preventDefault(); if (input.trim()) load(input.trim().replace(/^~/, "")); };
+  const go = (e) => { e.preventDefault(); if (input.trim()) load(input.trim()); };
 
   return (
     <div className="space-y-2 font-mono text-[9px]">
@@ -60,7 +60,7 @@ export default function FileExplorerWidget() {
         <div className="space-y-1 max-h-40 overflow-y-auto">
           {entries.length === 0 && <p className="text-white/25">(empty folder)</p>}
           {entries.map((e, i) => (
-            <button key={i} onClick={() => e.type === "folder" && load(`${path === "." ? "" : path}/${e.name}`)}
+            <button key={i} onClick={() => e.type === "folder" && load(`${path === "." ? path + "/" : path}/${e.name}`.replace(/\/+/g,"/"))}
               className="flex w-full items-center justify-between text-left text-[#F5F5F7] hover:bg-white/5 rounded-sm px-1">
               <span className={e.type === "folder" ? "text-[#7DD3FC]" : ""}>
                 {e.type === "folder" ? "📁 " : "📄 "}{e.name}

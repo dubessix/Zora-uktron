@@ -175,7 +175,16 @@ class ListContentsTool(BaseTool):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         folderpath = kwargs.get("folderpath", "")
-        path = Path(folderpath).resolve()
+        # Expand ~ and relative home navigation so "Desktop/jerry" or "~" resolve
+        # against the user's home directory (real folder browsing).
+        expanded = os.path.expanduser(folderpath.strip())
+        if not os.path.isabs(expanded):
+            expanded = os.path.join(os.path.expanduser("~"), expanded)
+        path = Path(expanded).resolve()
+        # Security: block listing system-critical paths.
+        from backend.app.security.path_guard import is_path_safe
+        if not is_path_safe(str(path)):
+            return {"success": False, "error": f"Blocked by path guard: {folderpath}", "data": {}}
         if not path.exists():
             return {"success": False, "error": f"Directory does not exist: {folderpath}", "data": {}}
         try:
@@ -188,7 +197,7 @@ class ListContentsTool(BaseTool):
                     "type": "folder" if item_path.is_dir() else "file",
                     "size": f"{item_path.stat().st_size / 1024:.1f} KB" if item_path.is_file() else None
                 })
-            return {"success": True, "data": {"contents": details, "raw_names": contents}, "error": None}
+            return {"success": True, "data": {"contents": details, "raw_names": contents, "path": str(path)}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to list directory contents: {e}", "data": {}}
 
