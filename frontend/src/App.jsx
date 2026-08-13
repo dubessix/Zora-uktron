@@ -45,7 +45,10 @@ export default function App() {
     memory: { visible: false, x: 260, y: 180 },
     notification: { visible: false, x: 280, y: 200 },
     system: { visible: false, x: 300, y: 220 },
-    coding: { visible: false, x: 360, y: 300 }
+    coding: { visible: false, x: 360, y: 300 },
+    music: { visible: false, x: 380, y: 320 },
+    world_monitor: { visible: false, x: 400, y: 340 },
+    github_search: { visible: false, x: 420, y: 360 }
   });
 
   // Dynamic Notification Toasts Queue (Requirement: Notification Prioritization)

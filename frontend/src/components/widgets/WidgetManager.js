@@ -19,6 +19,9 @@ const SemanticCodeGraphWidget = lazy(() => import('./SemanticCodeGraphWidget'));
 const SecurityGuardianWidget = lazy(() => import('./SecurityGuardianWidget'));
 const DailyBriefingWidget = lazy(() => import('./DailyBriefingWidget'));
 const CodingWidget = lazy(() => import('./CodingWidget'));
+const MusicWidget = lazy(() => import('./MusicWidget'));
+const WorldMonitorWidget = lazy(() => import('./WorldMonitorWidget'));
+const GithubSearchWidget = lazy(() => import('./GithubSearchWidget'));
 
 /**
  * Standardized Frontend Widget Registry Map (OCP Compliant)
@@ -73,6 +76,30 @@ export const WIDGET_REGISTRY = {
     defaultWidth: 340,
     defaultHeight: 240,
     Component: CodingWidget
+  },
+  music: {
+    id: "music",
+    title: "Music Player",
+    category: "music",
+    defaultWidth: 320,
+    defaultHeight: 220,
+    Component: MusicWidget
+  },
+  world_monitor: {
+    id: "world_monitor",
+    title: "World Monitor",
+    category: "research",
+    defaultWidth: 320,
+    defaultHeight: 260,
+    Component: WorldMonitorWidget
+  },
+  github_search: {
+    id: "github_search",
+    title: "GitHub Search",
+    category: "developer",
+    defaultWidth: 320,
+    defaultHeight: 240,
+    Component: GithubSearchWidget
   },
   security_guardian: {
     id: "security_guardian",
