@@ -8,6 +8,7 @@ import time
 import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.database.db import get_db_connection
@@ -176,6 +177,23 @@ async def get_session_history(session_id: str = Query(..., description="Target s
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve conversation logs: {str(e)}"
         )
+
+class SpeakRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="Text to speak.")
+    personality: str = Field("ultron", description="Personality voice: ultron or zora.")
+
+@api_router.post("/speak", status_code=status.HTTP_200_OK)
+async def speak_text(request: SpeakRequest):
+    """Text-to-speech: returns an audio stream (MP3) for the given text."""
+    try:
+        from backend.app.voice.voice_system import VoiceSystem
+        voice = VoiceSystem()
+        async def audio_stream():
+            async for chunk in voice.speak(request.text, personality=request.personality):
+                yield chunk
+        return StreamingResponse(audio_stream(), media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"TTS failed: {e}")
 
 @api_router.post("/coding-mode", status_code=status.HTTP_200_OK)
 async def set_coding_mode(request: CodingModeRequest) -> dict:

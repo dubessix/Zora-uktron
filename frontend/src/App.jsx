@@ -184,6 +184,25 @@ export default function App() {
     }
   };
 
+  // P1: speak the AI response aloud via /api/speak (real TTS).
+  const speakResponse = async (text, personality = "ultron") => {
+    if (!text || text.startsWith("[Mock")) return; // skip mock/debug lines
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiUrl}/api/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, personality })
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      await audio.play().catch(() => {});
+      audio.onended = () => URL.revokeObjectURL(url);
+    } catch (err) { /* silent */ }
+  };
+
   // Toggle individual widget visibility
   const toggleWidget = (widgetId) => {
     setWidgetState(prev => ({
@@ -225,6 +244,7 @@ export default function App() {
           response_ms: data.response_ms
         }]);
         setAiState("speaking");
+        speakResponse(data.content, data.personality || "ultron");
         setTimeout(() => setAiState("idle"), 1200);
         const structured = data.structured_action;
         if (structured && structured.action === "open_widget") {
@@ -300,6 +320,7 @@ export default function App() {
         
         // Set state to speaking, then return to idle
         setAiState("speaking");
+        speakResponse(data.content, data.personality || "ultron");
         setTimeout(() => {
           setAiState("idle");
         }, 1200);
