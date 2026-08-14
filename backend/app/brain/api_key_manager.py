@@ -115,6 +115,18 @@ class APIKeyManager:
         """True if ANY provider has at least one real (non-placeholder) key."""
         return any(self.has_real_key(p) for p in self._keys)
 
+    def config_status(self) -> Dict[str, str]:
+        """
+        Honest startup awareness: which providers have a real key configured.
+        Returns {"groq": "configured"|"not_configured", ...}. This is a config
+        check, NOT a live API call — actual reachability must be verified at
+        runtime by a provider call.
+        """
+        return {
+            p: ("configured" if self.has_real_key(p) else "not_configured")
+            for p in ("groq", "gemini", "nvidia")
+        }
+
     def mark_key_cooling(self, provider: str, key: str, cooldown_duration_sec: int = 60, duration_sec: Optional[int] = None) -> None:
         """
         Transitions key to COOLING state and sets dynamic lock timer.

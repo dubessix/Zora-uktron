@@ -51,6 +51,7 @@ class HealthStatusResponse(BaseModel):
     uptime_seconds: float
     system_metrics: dict
     environment: dict
+    providers: dict
 
 # Boot timestamp tracker
 START_TIME = time.time()
@@ -261,12 +262,18 @@ async def get_health_status() -> dict:
         "os_release": platform.release(),
         "python_version": platform.python_version(),
     }
-    
+
+    # Honest provider config status (which providers have a key configured).
+    # This is a config check, not a live reachability test.
+    from backend.app.brain.api_key_manager import APIKeyManager
+    providers = APIKeyManager().config_status()
+
     return {
         "status": "healthy",
         "uptime_seconds": time.time() - START_TIME,
         "system_metrics": metrics,
         "environment": env_details,
+        "providers": providers,
     }
 
 # ==============================================================================
