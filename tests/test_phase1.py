@@ -77,17 +77,19 @@ class TestPhase1Architecture(unittest.TestCase):
         
         data = response.json()
         self.assertEqual(data["session_id"], test_session_id)
-        
-        # Assert the mock parser return prefix is correct
-        self.assertIn("Query parsed successfully", data["content"])
-        self.assertEqual(data["personality"], "ultron") # Standard startup default
-        
+
+        # Provider-agnostic assertions: the e2e transaction must return real,
+        # non-empty content and the correct personality — but NOT a specific
+        # mock/realtime string, since the active LLM provider can vary.
+        self.assertTrue(data["content"])  # non-empty response
+        self.assertEqual(data["personality"], "ultron")  # Standard startup default
+
         # Validate record is safely saved into the database
         with get_db_connection() as conn:
             history = get_conversation_history(conn, test_session_id)
             self.assertEqual(len(history), 1)
             self.assertEqual(history[0]["user_message"], test_message)
-            self.assertIn("Query parsed successfully", history[0]["ai_response"])
+            self.assertTrue(history[0]["ai_response"])  # saved response is non-empty
 
 if __name__ == "__main__":
     unittest.main()

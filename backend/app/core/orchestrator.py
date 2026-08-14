@@ -622,7 +622,7 @@ class CognitiveOrchestrator:
                 "memory_type": "short_term",
                 "confidence": confidence
             }
-            self.memory.save_chat_turn(user_prompt, clarification_response)
+            self.memory.save_chat_turn(session_id, user_prompt, clarification_response)
             
             end_time = time.perf_counter()
             response_ms = int((end_time - start_time) * 1000)
@@ -654,7 +654,9 @@ class CognitiveOrchestrator:
 
         # Step 9: CONTEXT ASSEMBLY & SYSTEM INSTRUCTIONS (With Dynamic 65 Tools schemas!)
         # P0-5: Load last turns from DB (per-session, survives restarts) + merge RAM.
-        short_term_context = self.memory.short_term.get_context_history()
+        # The RAM buffer is session-scoped (per-session short-term memory), so two
+        # sessions never leak recent turns into each other.
+        short_term_context = self.memory.get_session_context(session_id)
         try:
             from backend.app.database.db import get_db_connection
             from backend.app.database.models import get_conversation_history
@@ -920,8 +922,8 @@ class CognitiveOrchestrator:
                 structured_action = {"action": "open_widget", "widget_id": widget_mappings[t_id]}
                 break
 
-        # Sync transaction back to short term memory
-        self.memory.save_chat_turn(user_prompt, ai_response)
+        # Sync transaction back to short term memory (session-scoped)
+        self.memory.save_chat_turn(session_id, user_prompt, ai_response)
 
         # Jarvis-style long-term persistence (non-blocking background task)
         asyncio.create_task(self._persist_turn_to_memory(user_prompt, ai_response))

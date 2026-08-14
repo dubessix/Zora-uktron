@@ -226,6 +226,24 @@ async def startup_event_handler():
         print(f"[ERROR] Database migration crash during startup execution: {e}")
         raise SystemExit("Core startup database initialization failure.") from e
 
+
+@app.on_event("shutdown")
+async def shutdown_event_handler():
+    """
+    Close the shared orchestrator exactly once at application shutdown.
+
+    The orchestrator is shared across ALL sessions and owns the persistent HTTPX
+    client + smart-cache state. It must NOT be closed per-WebSocket-disconnect
+    (that previously killed the client mid-session and broke later chat).
+    """
+    try:
+        from backend.app.router import get_orchestrator
+        orch = get_orchestrator()
+        await orch.close()
+        print("[INFO] Shared orchestrator closed cleanly at shutdown.")
+    except Exception as e:
+        print(f"[WARN] Shared orchestrator close during shutdown failed: {e}")
+
 @app.get("/api/health", response_model=HealthStatusResponse, status_code=status.HTTP_200_OK)
 async def get_health_status() -> dict:
     """Retrieve active backend processing status and local system resource consumption metrics."""
@@ -255,25 +273,47 @@ async def get_health_status() -> dict:
 # WEBSOCKET CHANNELS ENDPOINT REGISTRATION (Requirement 1, 2)
 # ==============================================================================
 
+def _open_task_count() -> int:
+    """Real number of open (not done) tasks, read from the DB — no fake counts."""
+    try:
+        with get_db_connection() as conn:
+            row = conn.cursor().execute(
+                "SELECT COUNT(*) AS c FROM project_tasks WHERE status != 'done';"
+            ).fetchone()
+            return int(row["c"]) if row else 0
+    except Exception as e:
+        print(f"[WS_CHAT] Could not read task count: {e}")
+        return 0
+
+
+def _widget_payload(widget_id: str) -> dict:
+    """Real per-widget data for the widget push. Uses live DB counts, never fakes."""
+    if widget_id == "todo":
+        return {"todos_count": _open_task_count()}
+    return {}
+
+
 @app.websocket("/ws/chat")
 async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "default_client"):
     """
     Main dialogue streaming channel.
-    Accepts user text, runs the orchestrator, and simulates token-by-token streaming,
-    progress alerts, and widget pop-up pushes.
+    Accepts user text, runs the shared canonical chat service (same pipeline as
+    /api/chat), and streams the result token-by-token with progress + widget pushes.
     """
     await ws_manager.connect("chat", client_id, websocket)
     from backend.app.router import get_orchestrator
-    orchestrator = get_orchestrator()
-    
+    from backend.app.services.chat_service import process_chat_message
+    orchestrator = get_orchestrator()  # shared — do NOT close it on disconnect
+
     try:
         while True:
             # Await incoming message payload from client
             raw_data = await websocket.receive_text()
             try:
                 data = json.loads(raw_data)
-                prompt = data.get("content", "").strip()
+                prompt = (data.get("content", "") or "").strip()
                 session_id = data.get("session_id", "default_sess")
+                has_confirmed = bool(data.get("has_confirmed", False))
             except Exception:
                 await websocket.send_json({"type": "error", "message": "Invalid JSON format."})
                 continue
@@ -288,70 +328,63 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 "detail": "Ultron Orchestrator is running intent heuristics..."
             })
 
-            # 2. Process query async via Orchestrator
-            # We'll retrieve simulations for errors, hour, and delete ratio from metadata or configuration
-            result = await orchestrator.process_request(
-                user_prompt=prompt,
+            # 2. Process query via the shared canonical chat service (persists to DB,
+            #    resolves/creates the session, restores the per-session personality).
+            result = await process_chat_message(
+                orchestrator=orchestrator,
+                content=prompt,
                 session_id=session_id,
-                consecutive_errors=0,
-                current_hour=datetime.datetime.now().hour,
-                delete_ratio=0.0
+                has_confirmed=has_confirmed,
             )
 
-            # 3. Simulate progressive token-by-token streaming response (Requirement 1)
-            response_content = result["content"]
+            # 3. Stream token-by-token (Requirement 1)
+            response_content = result["content"] or ""
             await websocket.send_json({"type": "stream_start"})
-            
-            # Split responses into words to simulate streaming packets securely without network choke
             words = response_content.split(" ")
             for idx, word in enumerate(words):
                 packet = f"{word} " if idx < len(words) - 1 else word
-                await websocket.send_json({
-                    "type": "token",
-                    "content": packet
-                })
-                # Negligible sleep delay to yield loop and present fluid visual streaming at 60 FPS
+                await websocket.send_json({"type": "token", "content": packet})
                 await asyncio.sleep(0.02)
-                
             await websocket.send_json({"type": "stream_end"})
 
-            # 4. If any dynamic websocket events were fired during orchestrator pipeline, publish them
+            # 4. Publish any events fired during the orchestrator pipeline
             for event in result.get("events", []):
                 await ws_manager.broadcast("events", event)
 
-            # 5. Push active widgets if required (e.g. if prompt contained 'todo' or 'git')
-            if "todo" in prompt.lower():
-                await websocket.send_json({
-                    "type": "widget",
-                    "widget_name": "TodoWidget",
-                    "action": "open",
-                    "data": {"todos_count": 5}
-                })
+            # 5. Push a real widget trigger based on the structured action
+            structured_action = result.get("structured_action") or {}
+            if structured_action.get("action") == "open_widget":
+                widget_id = structured_action.get("widget_id", "")
+                if widget_id:
+                    await websocket.send_json({
+                        "type": "widget",
+                        "widget_id": widget_id,
+                        "action": "open",
+                        "data": _widget_payload(widget_id),
+                    })
 
-            # 6. Dispatch final transaction confirmation
+            # 6. Dispatch final transaction confirmation (includes structured_action
+            #    and the resolved session_id so clients stay in sync)
             await websocket.send_json({
                 "type": "done",
                 "message_id": result["id"],
-                "active_personality": result["active_personality"],
+                "session_id": result["session_id"],
+                "active_personality": result["personality"],
                 "response_ms": result["response_ms"],
-                "coding": result.get("coding", False),
-                "intent": result.get("intent", ""),
-                "events": result.get("events", [])
+                "coding": result["coding"],
+                "intent": result["intent"],
+                "structured_action": result["structured_action"],
+                "events": result.get("events", []),
             })
 
     except WebSocketDisconnect:
         ws_manager.disconnect("chat", client_id)
-        try:
-            await orchestrator.close()
-        except Exception:
-            pass
+        # The orchestrator is SHARED across sessions and owns the persistent HTTPX
+        # client. Closing it here would break every later chat. It is only closed
+        # once, at application shutdown.
     except Exception as e:
         print(f"[WS_CHAT] Error on active chat pipeline: {e}")
         ws_manager.disconnect("chat", client_id)
-        try:
-            await orchestrator.close()
-        except Exception:
-            pass
 
 @app.websocket("/ws/events")
 async def websocket_events_endpoint(websocket: WebSocket, client_id: str = "default_client"):

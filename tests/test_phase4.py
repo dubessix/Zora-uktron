@@ -63,7 +63,7 @@ class TestPhase4OrchestratorArchitecture(unittest.IsolatedAsyncioTestCase):
         mock_completions.return_value = "Mocked completions success response"
         
         memory = MemoryEngine()
-        memory.short_term.clear()
+        memory._buffer_for("test_sess_4").clear()
         
         orchestrator = CognitiveOrchestrator(memory_engine=memory)
         
@@ -76,9 +76,9 @@ class TestPhase4OrchestratorArchitecture(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response_a["speed_track"], "heavy")
         
         # Verify clarifying turn was saved to memory history
-        self.assertEqual(len(memory.short_term.get_context_history()), 1)
-        self.assertEqual(memory.short_term.get_context_history()[0]["user"], "123")
-        self.assertIn("clarify", memory.short_term.get_context_history()[0]["ai"])
+        self.assertEqual(len(memory.get_session_context("test_sess_4")), 1)
+        self.assertEqual(memory.get_session_context("test_sess_4")[0]["user"], "123")
+        self.assertIn("clarify", memory.get_session_context("test_sess_4")[0]["ai"])
 
         # --- Case B: Detailed Prompt (Should execute full pipeline and call router) ---
         response_b = await orchestrator.process_request(
@@ -93,9 +93,9 @@ class TestPhase4OrchestratorArchitecture(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(response_b["cache_skip"]) # General knowledge query
 
         # Verify successful turn was saved to memory history
-        self.assertEqual(len(memory.short_term.get_context_history()), 2)
-        self.assertEqual(memory.short_term.get_context_history()[1]["user"], "Explain the difference between SQL and NoSQL.")
-        self.assertEqual(memory.short_term.get_context_history()[1]["ai"], "Mocked completions success response")
+        self.assertEqual(len(memory.get_session_context("test_sess_4")), 2)
+        self.assertEqual(memory.get_session_context("test_sess_4")[1]["user"], "Explain the difference between SQL and NoSQL.")
+        self.assertEqual(memory.get_session_context("test_sess_4")[1]["ai"], "Mocked completions success response")
         
         await orchestrator.close()
 

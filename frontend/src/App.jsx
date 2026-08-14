@@ -298,13 +298,27 @@ export default function App() {
         if (msg.type === "progress") return;
         if (msg.type === "token") { acc += msg.content; }
         else if (msg.type === "done") {
-          const data = { id: msg.message_id, content: acc, personality: msg.active_personality, response_ms: msg.response_ms, coding: msg.coding, intent: msg.intent, events: msg.events || [] };
+          // Forward structured_action + resolved session_id so WS chat behaves
+          // exactly like the REST path (widgets open, session stays in sync).
+          const data = {
+            id: msg.message_id,
+            content: acc,
+            personality: msg.active_personality,
+            response_ms: msg.response_ms,
+            coding: msg.coding,
+            intent: msg.intent,
+            events: msg.events || [],
+            structured_action: msg.structured_action || {},
+            session_id: msg.session_id || null
+          };
           try { ws.close(); } catch {}
           wsRef.current = null;
           resolve(data);
         }
       };
       ws.onerror = () => { try { ws.close(); } catch {} wsRef.current = null; resolve(null); };
+      // Safety timeout so a dead backend never leaves the promise hanging forever.
+      setTimeout(() => { if (wsRef.current === ws) { try { ws.close(); } catch {} wsRef.current = null; resolve(null); } }, 90000);
     });
   };
 
@@ -329,8 +343,9 @@ export default function App() {
       // C-1: stream via WebSocket for real token-by-token typing.
       const data = await sendViaWS(userText);
       if (data) {
-        if (!sessionId) setSessionId("web_" + Date.now());
-        
+        // Reconcile session with the backend's resolved session id (if any).
+        if (data.session_id) setSessionId(data.session_id);
+
         setMessages(prev => [...prev, {
           id: data.id || ("ai_" + Date.now()),
           sender: "ai",
@@ -343,6 +358,14 @@ export default function App() {
         speakResponse(data.content, data.personality || "ultron");
         setTimeout(() => setAiState("idle"), 1200);
         handleCodingResponse(data);
+        // Open widgets driven ONLY by the backend structured action (never keyword guesses).
+        const structured = data.structured_action;
+        if (structured && structured.action === "open_widget" && structured.widget_id) {
+          setWidgetState(prev => ({
+            ...prev,
+            [structured.widget_id]: { ...prev[structured.widget_id], visible: true }
+          }));
+        }
         // Log tab: collect real-time tool/activity events
         if (data.events && data.events.length) {
           const logLines = data.events.filter(e => e.type === "log").map(e => ({ level: e.log.level, message: e.log.message }));

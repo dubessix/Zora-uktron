@@ -4,18 +4,14 @@ Bridges user communication requests, message history lists, and session builders
 Supports structured AI action metadata payloads and explicit backend tool execution endpoints.
 """
 
-import time
-import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.database.db import get_db_connection
-from backend.app.database.models import save_conversation, get_conversation_history, update_session_personality
-from backend.app.session.session_manager import SessionManager
+from backend.app.database.models import get_conversation_history
 from backend.app.core.orchestrator import CognitiveOrchestrator
-from backend.app.utils.text_cleaner import clean_text
 from backend.app.tools.tool_registry import ToolRegistry
 
 # Create regional router registry
@@ -75,69 +71,32 @@ class ConversationHistoryItem(BaseModel):
 @api_router.post("/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 async def post_chat_message(request: ChatRequest) -> ChatResponse:
     """
-    Processes user text prompts, calculates timing, saves transactions to SQLite,
-    and returns a production-ready Echo Response with structured action payloads.
+    Processes user text prompts through the canonical chat-processing service
+    (shared with /ws/chat): resolves the session, restores personality, runs the
+    orchestrator, and persists the turn to SQLite.
     """
-    start_time = time.perf_counter()
+    from backend.app.services.chat_service import process_chat_message
+
     orchestrator = get_orchestrator()  # shared — memory persists across messages
-    
+
     try:
-        # 1. Resolve active session
-        session_data = SessionManager.get_or_create_session(request.session_id)
-        session_id = session_data["id"]
-        session_personality = session_data.get("personality") or "ultron"
-        
-        # 2. Process query async via Orchestrator to resolve structured actions
-        result = await orchestrator.process_request(
-            user_prompt=request.content,
-            session_id=session_id,
-            consecutive_errors=0,
-            current_hour=datetime.datetime.now().hour,
-            delete_ratio=0.0,
-            initial_personality=session_personality,
-            user_confirmed=request.has_confirmed
+        result = await process_chat_message(
+            orchestrator=orchestrator,
+            content=request.content,
+            session_id=request.session_id,
+            has_confirmed=request.has_confirmed,
         )
-        
-        # Calculate process latency
-        end_time = time.perf_counter()
-        latency_ms = int((end_time - start_time) * 1000)
-        
-        # 3. Save conversational turn directly to the database
-        with get_db_connection() as conn:
-            # Fix #9: persist active personality on the session.
-            try:
-                # Save the EFFECTIVE personality (after any Zora auto-return) so Zora
-                # doesn't get stuck on the session across requests/days.
-                update_session_personality(conn, session_id, result.get("persisted_personality", result.get("active_personality", "ultron")))
-            except Exception:
-                pass
-            save_conversation(
-                conn=conn,
-                msg_id=result["id"],
-                session_id=session_id,
-                user_message=request.content,
-                ai_response=result["content"],
-                personality=result["active_personality"],
-                tools_used=[],
-                widget_shown=None,
-                intent=result["intent"],
-                mode="developer",
-                path_used="fast",
-                response_ms=latency_ms
-            )
-            
         return ChatResponse(
             id=result["id"],
-            session_id=session_id,
-            content=clean_text(result["content"]) if result.get("content") else result["content"],
-            personality=result["active_personality"],
-            response_ms=latency_ms,
+            session_id=result["session_id"],
+            content=result["content"],
+            personality=result["personality"],
+            response_ms=result["response_ms"],
             structured_action=result["structured_action"],
-            coding=result.get("coding", False),
-            intent=result.get("intent", ""),
-            events=result.get("events", [])
+            coding=result["coding"],
+            intent=result["intent"],
+            events=result["events"],
         )
-        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
