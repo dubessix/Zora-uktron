@@ -12,6 +12,7 @@ from typing import Optional
 from backend.app.brain.api_key_manager import APIKeyManager
 from backend.app.brain.smart_cache import SmartCache
 from backend.app.brain.cache_policy import BaseCachePolicy, HeuristicKeywordCachePolicy
+from backend.app.brain.model_config import get_model
 
 class LLMRouter:
     def __init__(
@@ -121,7 +122,7 @@ class LLMRouter:
                 "Content-Type": "application/json"
             }
             payload = {
-                "model": "llama-3.1-8b-instant",
+                "model": get_model("groq"),
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -162,7 +163,9 @@ class LLMRouter:
 
     async def _execute_gemini_pipeline(self, system_prompt: str, user_prompt: str, temperature: float) -> str:
         """Dispatches async query to Gemini v1beta API. Handles automatic error rotation."""
-        model = "gemini-1.5-flash"
+        # Config-driven (env GEMINI_CHAT_MODEL / config.yaml). Default gemini-3.5-flash
+        # is a stable, long-runway replacement for the retired gemini-1.5-flash.
+        model = get_model("gemini")
         max_attempts = 2
         
         for attempt in range(max_attempts):
@@ -211,7 +214,9 @@ class LLMRouter:
         Best-of-breed coding model. Handles automatic 429 key rotation + cooling."""
         url = "https://integrate.api.nvidia.com/v1/chat/completions"
         # Nemotron 3 Ultra 550B: NVIDIA's strongest agent/coding-focused open model.
-        model = "nvidia/nemotron-3-ultra-550b-a55b:free"
+        # NOTE: the `:free` suffix is an OpenRouter convention and is NOT valid on
+        # NVIDIA's native build endpoint. Config-driven (env NVIDIA_CHAT_MODEL).
+        model = get_model("nvidia")
         max_attempts = 3
 
         for attempt in range(max_attempts):

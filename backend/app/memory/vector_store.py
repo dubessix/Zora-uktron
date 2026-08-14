@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from backend.app.database.db import get_db_connection
 from backend.app.brain.api_key_manager import APIKeyManager
+from backend.app.brain.model_config import get_model, get_embedding_dimensions
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -67,23 +68,30 @@ class VectorStore:
 
     async def generate_embedding(self, text: str) -> List[float]:
         """
-        Dispatches async request to Gemini text-embedding-004 API to generate
-        a highly precise 768-dimension float array. Token saver: repeated text is
-        served from an in-memory cache so we never burn API calls on the same
-        query twice.
+        Dispatches an async request to the Gemini embeddings API to generate a
+        vector of the configured dimensionality (default 768, matching stored
+        vectors so new memories stay comparable to legacy ones).
+
+        The embedding model + dimensions are config-driven (env
+        GEMINI_EMBEDDING_MODEL / GEMINI_EMBEDDING_DIMS, or config.yaml) — the
+        retired text-embedding-004 is no longer hardcoded. Repeated text is served
+        from an in-memory cache so we never burn API calls on the same query twice.
         """
         key = text.strip()
         if key in self._embedding_cache:
             return self._embedding_cache[key]
 
+        model = get_model("embedding")
+        dims = get_embedding_dimensions()
         api_key = self.key_manager.get_active_key("gemini")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model": "models/text-embedding-004",
+            "model": f"models/{model}",
             "content": {
                 "parts": [{"text": text}]
-            }
+            },
+            "outputDimensionality": dims,
         }
         
         # Safe fallback check for local mock test executions
@@ -91,7 +99,7 @@ class VectorStore:
             # Generate a reproducible pseudo-embedding vector for testing
             np = _lazy_numpy()
             np.random.seed(hash(text) % (2**32))
-            vec = np.random.randn(768).tolist()
+            vec = np.random.randn(dims).tolist()
             self._embedding_cache[key] = vec
             return vec
 
@@ -198,6 +206,15 @@ class VectorStore:
                 db_norm = np.linalg.norm(db_vec)
                 
                 if db_norm == 0:
+                    continue
+
+                # Robustness: if a stored vector's dimensionality differs from the
+                # current embedding (e.g. a legacy model change), skip it instead of
+                # crashing the whole recall with a dimension mismatch. These rows can
+                # be re-embedded / pruned later.
+                if db_vec.shape != target_vec.shape:
+                    print(f"[VECTOR_STORE] Skipping memory {row['id']}: dimension mismatch "
+                          f"({db_vec.shape[0]} != {target_vec.shape[0]}). Re-embed to migrate.")
                     continue
 
                 # Execute Cosine Similarity equation: dot(A, B) / (norm(A) * norm(B))

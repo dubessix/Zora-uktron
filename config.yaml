@@ -18,6 +18,15 @@ ai:
   timeout_seconds: 30
   max_retries: 3
   rate_limit_backoff_base_seconds: 2.0
+  # Model IDs are configurable (env override: GROQ_CHAT_MODEL / GEMINI_CHAT_MODEL /
+  # NVIDIA_CHAT_MODEL / GEMINI_EMBEDDING_MODEL / GEMINI_EMBEDDING_DIMS).
+  # Verified valid as of 2026-08-14.
+  models:
+    groq: "llama-3.1-8b-instant"
+    gemini: "gemini-3.5-flash"
+    nvidia: "nvidia/nvidia/nemotron-3-ultra-550b-a55b"
+    embedding: "gemini-embedding-001"
+  embedding_dimensions: 768
 
 memory:
   short_term_limit: 50
