@@ -13,6 +13,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_DIR = BASE_DIR / "data" / "memory"
 DB_PATH = DB_DIR / "ultron.db"
 
+# Phase 0 (test/data safety): allow an explicit override so tests can point at a
+# temporary database instead of the real one. Set ULTRON_TEST_DB=1 to use a
+# temp DB in a temp dir — production data is never touched during tests.
+import os as _os
+if _os.getenv("ULTRON_TEST_DB") == "1":
+    import tempfile as _tempfile
+    _tmp = Path(_tempfile.mkdtemp(prefix="ultron_test_")) / "test_ultron.db"
+    DB_DIR = _tmp.parent
+    DB_PATH = _tmp
+
 # Ensure directory existences before running transactions
 DB_DIR.mkdir(parents=True, exist_ok=True)
 
