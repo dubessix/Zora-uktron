@@ -8,6 +8,43 @@ import sqlite3
 import json
 from typing import List, Dict, Optional, Any
 
+# Schema versioning (Phase 9 durability): each integer maps to a migration step.
+# initialize_database() creates the base schema then applies any pending
+# migrations by stepping user_version forward. NEVER renumber/delete old steps —
+# always append new ones.
+SCHEMA_VERSION = 1
+
+# Ordered migrations: {from_version: sql_or_callable}. Run in order until the DB
+# user_version reaches SCHEMA_VERSION. Each is idempotent (guarded statements).
+_MIGRATIONS = {
+    # 0 -> 1 : baseline — the base schema is created by initialize_database();
+    # this empty step simply advances user_version so future migrations have a
+    # known starting point. Future schema changes append new steps below.
+    0: "",
+}
+
+
+def _apply_migrations(conn: sqlite3.Connection, current: int) -> int:
+    """Apply pending migrations sequentially, returning the new user_version."""
+    version = current
+    while version < SCHEMA_VERSION:
+        migration = _MIGRATIONS.get(version)
+        if migration is None:
+            break  # no migration defined for this step; stop
+        cursor = conn.cursor()
+        if isinstance(migration, str):
+            cursor.executescript(migration)
+        else:
+            migration(conn)
+        version += 1
+        conn.execute(f"PRAGMA user_version = {version};")
+    return version
+
+
+def get_schema_version(conn: sqlite3.Connection) -> int:
+    """Reads PRAGMA user_version (the current applied schema version)."""
+    return conn.execute("PRAGMA user_version;").fetchone()[0]
+
 def initialize_database(conn: sqlite3.Connection) -> None:
     """Creates tables for sessions, conversations, alarms, tasks, and calendar events using parameterized constraints."""
     cursor = conn.cursor()
@@ -92,6 +129,9 @@ def initialize_database(conn: sqlite3.Connection) -> None:
     """)
     
     conn.commit()
+
+    # Phase 9: apply any pending schema migrations (idempotent).
+    _apply_migrations(conn, get_schema_version(conn))
 
 def create_session(
     conn: sqlite3.Connection,

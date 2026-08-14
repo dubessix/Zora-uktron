@@ -169,6 +169,40 @@ def doctor():
         sys.exit(1)
 
 @main.command()
+@click.option("--restore", is_flag=True, help="Restore the database from a backup file.")
+@click.option("--path", type=str, default=None, help="Backup file path to restore from (with --restore).")
+def backup(restore, path):
+    """Back up or restore the local database (durability)."""
+    from backend.app.database.backup import backup_database, restore_database, check_integrity
+    if restore:
+        if not path:
+            click.echo(click.style("Error: --path <backup.db> is required with --restore.", fg="red"))
+            return
+        result = restore_database(path)
+        if result["success"]:
+            click.echo(click.style(f"✓ Restored from {result['data']['restored_from']} (safety copy: {result['data']['safety_backup']})", fg="green"))
+        else:
+            click.echo(click.style(f"✗ Restore failed: {result['error']}", fg="red"))
+        return
+    result = backup_database()
+    if result["success"]:
+        click.echo(click.style(f"✓ Backup created: {result['data']['backup_path']} ({result['data']['bytes']} bytes, verified)", fg="green"))
+    else:
+        click.echo(click.style(f"✗ Backup failed: {result['error']}", fg="red"))
+
+@main.command()
+def integrity():
+    """Check the local database integrity (durability)."""
+    from backend.app.database.backup import check_integrity
+    report = check_integrity()["data"]
+    if report["valid"]:
+        click.echo(click.style("✓ Database integrity OK.", fg="green"))
+    else:
+        click.echo(click.style(f"✗ Integrity issues: {report.get('integrity')} {report.get('error')}", fg="red"))
+    for table, count in (report.get("tables") or {}).items():
+        click.echo(f"  {table}: {count} rows")
+
+@main.command()
 def start():
     """Launch backend services, concurrent asset compilers, and default browser viewport."""
     click.echo(click.style("Bootstrapping services...", fg="cyan"))

@@ -232,6 +232,34 @@ class VectorStore:
         matches.sort(key=lambda x: x["similarity"], reverse=True)
         return matches[:limit]
 
+    def delete_vector_memory(self, msg_id: str) -> bool:
+        """Delete a specific vector memory row by id (used by memory forget)."""
+        try:
+            with get_db_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM vector_memories WHERE id = ?;", (msg_id,))
+                conn.commit()
+                return cur.rowcount > 0
+        except sqlite3.Error as e:
+            print(f"[VECTOR_STORE] Delete failed: {e}")
+            return False
+
+    def list_recent_memories(self, limit: int = 20, mem_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return recent memory rows (id/type/content/created_at) for display/export."""
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            if mem_type:
+                cur.execute(
+                    "SELECT id, type, content, created_at FROM vector_memories WHERE type = ? ORDER BY rowid DESC LIMIT ?;",
+                    (mem_type, limit),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, type, content, created_at FROM vector_memories ORDER BY rowid DESC LIMIT ?;",
+                    (limit,),
+                )
+            return [dict(r) for r in cur.fetchall()]
+
     def prune(self, max_per_type: int = 2000) -> int:
         """
         Lightweight storage-retention guard. Keeps only the most recent

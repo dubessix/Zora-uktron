@@ -140,6 +140,7 @@ class ToolRegistry:
             "manage_calendar": ("backend.app.tools.calendar_tool", "CalendarTool"),
             "security_scan": ("backend.app.tools.security_guardian_tool", "SecurityGuardianTool"),
             "daily_briefing": ("backend.app.tools.daily_briefing_tool", "DailyBriefingTool"),
+            "manage_memory": ("backend.app.tools.memory_tool", "MemoryTool"),
             "search_inside_documents": ("backend.app.tools.filesystem_search_tool", "SearchDocumentsTool"),
             "convert_file_format": ("backend.app.tools.filesystem_search_tool", "ConvertFileFormatTool"),
             "world_monitor": ("backend.app.tools.world_monitor_tool", "WorldMonitorTool"),

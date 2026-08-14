@@ -54,6 +54,9 @@ class ToolExecuteRequest(BaseModel):
 class CodingModeRequest(BaseModel):
     enabled: bool = Field(..., description="True to force NVIDIA coding mode ON, False to revert to auto-detect.")
 
+class BackupRequest(BaseModel):
+    backup_path: Optional[str] = Field(None, description="Backup file to restore from (for restore action).")
+
 class ConversationHistoryItem(BaseModel):
     id: str
     session_id: str
@@ -176,6 +179,32 @@ async def get_recent_memories(limit: int = Query(5, ge=1, le=20)):
         return {"total": total, "memories": rows}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Memory query failed: {e}")
+
+@api_router.post("/db/backup", status_code=status.HTTP_200_OK)
+async def create_db_backup():
+    """Create a verified timestamped backup of the local database (durability)."""
+    from backend.app.database.backup import backup_database
+    result = backup_database()
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
+@api_router.get("/db/integrity", status_code=status.HTTP_200_OK)
+async def db_integrity():
+    """Report the local database integrity + table row counts."""
+    from backend.app.database.backup import check_integrity
+    return check_integrity()
+
+@api_router.post("/db/restore", status_code=status.HTTP_200_OK)
+async def restore_db(request: BackupRequest):
+    """Restore the local database from a verified backup file (keeps a safety copy)."""
+    from backend.app.database.backup import restore_database
+    if not request.backup_path:
+        raise HTTPException(status_code=400, detail="backup_path is required.")
+    result = restore_database(request.backup_path)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
 
 @api_router.post("/coding-mode", status_code=status.HTTP_200_OK)
 async def set_coding_mode(request: CodingModeRequest) -> dict:
