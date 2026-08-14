@@ -79,10 +79,17 @@ class LLMRouter:
         else:
             print("[LLM_ROUTER] Cache Policy triggered bypass. Querying live brain client.")
 
-        # 3. Process Cascade Flow (ordered failover)
+        # 3. Process Cascade Flow (ordered failover). A provider with no real key
+        #    configured is SKIPPED entirely — it must not return a fake mock that
+        #    shadows a later provider which actually has a working key.
         cascade = self._CASCADE[pref]
         last_err = None
+        used_any = False
         for idx, provider in enumerate(cascade):
+            if not self.key_manager.has_real_key(provider):
+                print(f"[LLM_ROUTER] No configured key for '{provider}' — skipping to fallback.")
+                continue
+            used_any = True
             try:
                 executor = self._provider_executor(provider)
                 response = await executor(system_prompt, user_prompt, temperature)
@@ -93,6 +100,13 @@ class LLMRouter:
                 last_err = e
                 if idx < len(cascade) - 1:
                     print(f"[LLM_ROUTER] Provider '{provider}' failed: {e}. Failing over to '{cascade[idx+1]}'...")
+
+        # If NO real key exists anywhere, this is a fully-offline/local install.
+        # Return an honest local mock so the assistant still works without the
+        # internet — never pretend a provider was used.
+        if not used_any:
+            print("[LLM_ROUTER] No real API keys configured anywhere — using local offline mock.")
+            return f"[Mock {pref.upper()} Response] Query parsed successfully: {user_prompt[:20]}..."
         raise RuntimeError(f"Global key pool depletion error. All providers failed: {last_err}")
 
     async def _execute_groq_pipeline(self, system_prompt: str, user_prompt: str, temperature: float) -> str:

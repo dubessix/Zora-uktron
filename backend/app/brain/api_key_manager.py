@@ -99,6 +99,22 @@ class APIKeyManager:
 
         raise RuntimeError(f"All registered API keys for {provider} are currently in failed states.")
 
+    def has_real_key(self, provider: str) -> bool:
+        """True if a provider has at least one real (non-placeholder) key configured.
+
+        A 'placeholder' is the dummy_fallback key returned when a provider has no
+        .env keys at all — it must NOT be treated as a usable provider so the
+        failover cascade can move on to a provider that actually has a key.
+        """
+        provider = provider.lower()
+        if provider not in self._keys:
+            return False
+        return any("dummy_fallback" not in item["key"] for item in self._keys[provider])
+
+    def has_any_real_key(self) -> bool:
+        """True if ANY provider has at least one real (non-placeholder) key."""
+        return any(self.has_real_key(p) for p in self._keys)
+
     def mark_key_cooling(self, provider: str, key: str, cooldown_duration_sec: int = 60, duration_sec: Optional[int] = None) -> None:
         """
         Transitions key to COOLING state and sets dynamic lock timer.
