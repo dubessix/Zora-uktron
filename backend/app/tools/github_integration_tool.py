@@ -1,16 +1,33 @@
 """
 Ultron GitHub Integration Tool
-Implements a production-grade, un-mocked developer automation tool to manage GitHub repositories,
-stage/commit/push codebase updates, create branches, track pull requests, and query issues natively (Level 2 Security).
+Manages GitHub repositories, stage/commit/push, branches, PRs, and issue queries
+natively (Level 2 Security).
+
+Phase 5 security hardening:
+  - All git commands run ARG-BASED (create_subprocess_exec) — no shell string
+    interpolation, so a commit message or arg can never inject shell commands.
+  - The PAT is NEVER written into the remote URL or into any git config. It is
+    supplied to `git push` only through a per-subprocess credential helper that
+    reads the token from the subprocess environment, then the remote URL stays
+    clean (https://github.com/<owner>/<repo>.git).
+  - No hardcoded "dubessix" — the account owner is resolved from GITHUB_USERNAME_<n>.
+  - When no real token is configured, it reports an honest "unavailable" state
+    (never fake/dummy success data).
 """
 
 import os
 import httpx
 import asyncio
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
+
+# Block dangerous shell metacharacters in free-text args as defense-in-depth
+# (exec already prevents injection, but this stops surprises in URL/path building).
+# Spaces are intentionally allowed (normal commit messages / titles contain them).
+_UNSAFE = set(";|&`$(){}<>\"'\n\t")
+
 
 class GitHubArgs(BaseModel):
     action: str = Field(..., description="Action to perform: commit_push, create_repo, create_pr, list_issues, search_code.")
@@ -21,6 +38,7 @@ class GitHubArgs(BaseModel):
     pr_base: Optional[str] = Field("main", description="Target destination branch for PR.")
     search_query: Optional[str] = Field(None, description="Code or keyword search query.")
     account: Optional[int] = Field(1, description="GitHub account (1 or 2) to use for this action.")
+
 
 class GitHubIntegrationTool(BaseTool):
     def __init__(self) -> None:
@@ -38,19 +56,51 @@ class GitHubIntegrationTool(BaseTool):
         )
         self.workspace_root = Path(__file__).resolve().parent.parent.parent.parent
 
-    async def _execute_git_cmd(self, cmd: str) -> str:
-        """Helper to run non-blocking terminal commands."""
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
+    # -- secure, arg-based git execution -----------------------------------
+    async def _execute_git(self, args: List[str]) -> str:
+        """Run a git command with an ARG LIST (no shell), returning stdout."""
+        proc = await asyncio.create_subprocess_exec(
+            "git", *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(self.workspace_root)
+            cwd=str(self.workspace_root),
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(stderr.decode("utf-8").strip())
-        return stdout.decode("utf-8").strip()
+            raise RuntimeError(stderr.decode("utf-8", "ignore").strip())
+        return stdout.decode("utf-8", "ignore").strip()
 
+    async def _git_push_secure(self, token: str, owner: str) -> str:
+        """
+        Push to origin WITHOUT putting the token in the remote URL or git config.
+        The PAT is injected only into the subprocess environment and handed to git
+        through an inline credential helper, so it never lands in the URL, config,
+        command line, or process listing.
+        """
+        helper = "!f() { test \"$1\" = get && echo username=$GIT_PUSH_USER && echo password=$GIT_PUSH_TOKEN; }; f"
+        env = dict(os.environ)
+        env["GIT_PUSH_USER"] = owner or "git"
+        env["GIT_PUSH_TOKEN"] = token
+        proc = await asyncio.create_subprocess_exec(
+            "git", "-c", f"credential.helper={helper}", "push", "origin", "HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(self.workspace_root),
+            env=env,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(stderr.decode("utf-8", "ignore").strip())
+        return stdout.decode("utf-8", "ignore").strip()
+
+    @staticmethod
+    def _unsafe_chars_present(*values: Optional[str]) -> bool:
+        return any(
+            v and any(ch in _UNSAFE for ch in v)
+            for v in values
+        )
+
+    # -- entry point ---------------------------------------------------------
     async def execute(self, **kwargs) -> Dict[str, Any]:
         action = kwargs.get("action", "").lower()
         repo_name = kwargs.get("repo_name")
@@ -60,192 +110,135 @@ class GitHubIntegrationTool(BaseTool):
         pr_base = kwargs.get("pr_base", "main")
         search_query = kwargs.get("search_query")
 
-        # Pull PAT from environment — support up to 2 named accounts (account param selects).
-        # Ultron resolves the account owner from GITHUB_USERNAME_<n> in .env, so it
-        # knows WHOSE repo it is working on (not a generic demo account).
         account = str(kwargs.get("account", 1))
         github_token = os.getenv(f"GITHUB_TOKEN_{account}") or os.getenv("GITHUB_TOKEN")
-        account_owner = os.getenv(f"GITHUB_USERNAME_{account}") or os.getenv("GITHUB_USERNAME") or "unknown"
-        if account_owner not in ("unknown", "your_github_username"):
-            print(f"[GITHUB] Operating on account: {account_owner} (token account {account})")
-        # Treat missing OR placeholder token as "not configured" so a dummy .env
-        # value never triggers a real (failing) GitHub API call.
+        account_owner = os.getenv(f"GITHUB_USERNAME_{account}") or os.getenv("GITHUB_USERNAME")
+
+        # Honest availability: no real token -> GitHub is unavailable.
         if not github_token or "your_github" in github_token or "placeholder" in github_token.lower():
             return {
                 "success": True,
                 "data": {
-                    "items": [{"name": "db.py", "path": "backend/app/database/db.py", "url": "https://github.com"}],
-                    "count": 1
+                    "configured": False,
+                    "account": account,
+                    "owner": account_owner or "unknown",
+                    "message": (
+                        "GitHub integration is NOT configured — no GITHUB_TOKEN "
+                        f"{'(' + str(account) + ')' if account else ''} found in .env. "
+                        "Add GITHUB_TOKEN_<n> + GITHUB_USERNAME_<n> to enable GitHub actions."
+                    ),
                 },
-                "error": None
+                "error": None,
             }
+
+        owner = account_owner or "unknown"
 
         if action == "commit_push":
+            return await self._commit_and_push(github_token, owner, commit_message)
+
+        if action == "create_repo":
+            return await self._create_repo(github_token, repo_name)
+
+        if action == "create_pr":
+            return await self._create_pr(github_token, owner, repo_name, pr_title, pr_head, pr_base)
+
+        if action == "list_issues":
+            return await self._list_issues(github_token, owner, repo_name)
+
+        if action == "search_code":
+            return await self._search_code(github_token, owner, repo_name, search_query)
+
+        return {"success": False, "error": f"Unsupported action '{action}'.", "data": {}}
+
+    async def _commit_and_push(self, token: str, owner: str, commit_message: str) -> Dict[str, Any]:
+        # Reject metacharacters in the commit message (defense-in-depth).
+        if self._unsafe_chars_present(commit_message):
+            return {"success": False, "error": "Commit message contains unsafe characters.", "data": {}}
+        try:
+            await self._execute_git(["add", "."])
             try:
-                # 1. Stage changes
-                await self._execute_git_cmd("git add .")
-                
-                # 2. Commit changes (ignores if nothing to commit)
-                try:
-                    await self._execute_git_cmd(f'git commit -m "{commit_message}"')
-                except RuntimeError as e:
-                    if "nothing to commit" in str(e) or "clean" in str(e):
-                        pass
-                    else:
-                        raise
-
-                # 3. Setup remote and push securely
-                if github_token:
-                    await self._execute_git_cmd(f"git remote set-url origin https://{github_token}@github.com/dubessix/Zora-uktron.git")
-                
-                push_output = await self._execute_git_cmd("git push origin main")
-                
-                # Reset origin to secure URL
-                await self._execute_git_cmd("git remote set-url origin https://github.com/dubessix/Zora-uktron.git")
-
-                return {
-                    "success": True,
-                    "data": {
-                        "message": "Repository successfully synchronized and pushed to remote GitHub repository.",
-                        "commit": commit_message,
-                        "push_log": push_output
-                    },
-                    "error": None
-                }
-            except Exception as e:
-                # Ensure reset occurs even on failures
-                try:
-                    await self._execute_git_cmd("git remote set-url origin https://github.com/dubessix/Zora-uktron.git")
-                except Exception:
+                await self._execute_git(["commit", "-m", commit_message])
+            except RuntimeError as e:
+                if "nothing to commit" in str(e) or "clean" in str(e):
                     pass
-                return {"success": False, "error": f"Failed to commit & push changes: {e}", "data": {}}
-
-        elif action == "create_repo":
-            if not repo_name:
-                return {"success": False, "error": "repo_name is required for action='create_repo'.", "data": {}}
-            
-            # Call GitHub API to create repo
-            url = "https://api.github.com/user/repos"
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
+                else:
+                    raise
+            push_output = await self._git_push_secure(token, owner)
+            return {
+                "success": True,
+                "data": {
+                    "message": "Repository successfully synchronized and pushed.",
+                    "owner": owner,
+                    "commit": commit_message,
+                    "push_log": push_output,
+                },
+                "error": None,
             }
-            payload = {"name": repo_name, "private": True}
-            
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    res = await client.post(url, headers=headers, json=payload)
-                    if res.status_code == 201:
-                        return {
-                            "success": True,
-                            "data": {
-                                "message": f"Successfully created private repository '{repo_name}' on GitHub.",
-                                "clone_url": res.json().get("clone_url")
-                            },
-                            "error": None
-                        }
-                    else:
-                        return {"success": False, "error": f"GitHub API failed with status {res.status_code}: {res.text}", "data": {}}
-            except Exception as e:
-                return {"success": False, "error": f"API connection crash: {e}", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"Failed to commit & push changes: {e}", "data": {}}
 
-        elif action == "create_pr":
-            if not pr_title or not repo_name:
-                return {"success": False, "error": "pr_title and repo_name are required for action='create_pr'.", "data": {}}
-            
-            url = f"https://api.github.com/repos/dubessix/{repo_name}/pulls"
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            payload = {
-                "title": pr_title,
-                "head": pr_head,
-                "base": pr_base
-            }
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    res = await client.post(url, headers=headers, json=payload)
-                    if res.status_code == 201:
-                        return {
-                            "success": True,
-                            "data": {
-                                "message": f"Pull request successfully opened: {pr_title}",
-                                "url": res.json().get("html_url")
-                            },
-                            "error": None
-                        }
-                    else:
-                        return {"success": False, "error": f"GitHub PR creation failed: {res.text}", "data": {}}
-            except Exception as e:
-                return {"success": False, "error": f"API Connection crash: {e}", "data": {}}
+    async def _create_repo(self, token: str, repo_name: Optional[str]) -> Dict[str, Any]:
+        if not repo_name or self._unsafe_chars_present(repo_name):
+            return {"success": False, "error": "repo_name is required and must be safe.", "data": {}}
+        url = "https://api.github.com/user/repos"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        payload = {"name": repo_name, "private": True}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 201:
+                    return {"success": True, "data": {"message": f"Created private repo '{repo_name}'.", "clone_url": res.json().get("clone_url")}, "error": None}
+                return {"success": False, "error": f"GitHub API failed {res.status_code}: {res.text}", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"API connection crash: {e}", "data": {}}
 
-        elif action == "list_issues":
-            if not repo_name:
-                return {"success": False, "error": "repo_name is required for listing issues.", "data": {}}
-            
-            url = f"https://api.github.com/repos/dubessix/{repo_name}/issues"
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    res = await client.get(url, headers=headers)
-                    if res.status_code == 200:
-                        issues = []
-                        for issue in res.json()[:5]:
-                            issues.append({
-                                "title": issue.get("title"),
-                                "number": issue.get("number"),
-                                "state": issue.get("state"),
-                                "url": issue.get("html_url")
-                            })
-                        return {
-                            "success": True,
-                            "data": {
-                                "issues": issues,
-                                "count": len(issues)
-                            },
-                            "error": None
-                        }
-                    else:
-                        return {"success": False, "error": f"Failed to retrieve issues: {res.text}", "data": {}}
-            except Exception as e:
-                return {"success": False, "error": f"API Connection crash: {e}", "data": {}}
+    async def _create_pr(self, token: str, owner: str, repo_name: Optional[str], pr_title: Optional[str], pr_head: str, pr_base: str) -> Dict[str, Any]:
+        if not pr_title or not repo_name or self._unsafe_chars_present(pr_title, pr_head, pr_base):
+            return {"success": False, "error": "pr_title and repo_name are required (and safe).", "data": {}}
+        if owner == "unknown":
+            return {"success": False, "error": "Cannot create PR: GitHub owner (GITHUB_USERNAME_<n>) not configured.", "data": {}}
+        url = f"https://api.github.com/repos/{owner}/{repo_name}/pulls"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        payload = {"title": pr_title, "head": pr_head, "base": pr_base}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 201:
+                    return {"success": True, "data": {"message": f"PR opened: {pr_title}", "url": res.json().get("html_url")}, "error": None}
+                return {"success": False, "error": f"GitHub PR creation failed: {res.text}", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"API Connection crash: {e}", "data": {}}
 
-        elif action == "search_code":
-            if not search_query:
-                return {"success": False, "error": "search_query is required for action='search_code'.", "data": {}}
-            
-            url = f"https://api.github.com/search/code?q={search_query}+repo:dubessix/Zora-uktron"
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    res = await client.get(url, headers=headers)
-                    if res.status_code == 200:
-                        items = []
-                        for item in res.json().get("items", [])[:5]:
-                            items.append({
-                                "name": item.get("name"),
-                                "path": item.get("path"),
-                                "url": item.get("html_url")
-                            })
-                        return {
-                            "success": True,
-                            "data": {
-                                "items": items,
-                                "count": len(items)
-                            },
-                            "error": None
-                        }
-                    else:
-                        return {"success": False, "error": f"Failed to search code: {res.text}", "data": {}}
-            except Exception as e:
-                return {"success": False, "error": f"API Connection crash: {e}", "data": {}}
+    async def _list_issues(self, token: str, owner: str, repo_name: Optional[str]) -> Dict[str, Any]:
+        if not repo_name or self._unsafe_chars_present(repo_name):
+            return {"success": False, "error": "repo_name is required and safe.", "data": {}}
+        if owner == "unknown":
+            return {"success": False, "error": "Cannot query issues: GitHub owner not configured.", "data": {}}
+        url = f"https://api.github.com/repos/{owner}/{repo_name}/issues"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.get(url, headers=headers)
+                if res.status_code == 200:
+                    issues = [{"title": i.get("title"), "number": i.get("number"), "state": i.get("state"), "url": i.get("html_url")} for i in res.json()[:5]]
+                    return {"success": True, "data": {"issues": issues, "count": len(issues)}, "error": None}
+                return {"success": False, "error": f"Failed to retrieve issues: {res.text}", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"API Connection crash: {e}", "data": {}}
 
-        else:
-            return {"success": False, "error": f"Unsupported action '{action}'.", "data": {}}
+    async def _search_code(self, token: str, owner: str, repo_name: Optional[str], search_query: Optional[str]) -> Dict[str, Any]:
+        if not search_query or self._unsafe_chars_present(search_query):
+            return {"success": False, "error": "search_query is required and safe.", "data": {}}
+        if owner == "unknown" or not repo_name:
+            return {"success": False, "error": "search_code needs a configured owner + repo_name.", "data": {}}
+        url = f"https://api.github.com/search/code?q={search_query}+repo:{owner}/{repo_name}"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.get(url, headers=headers)
+                if res.status_code == 200:
+                    items = [{"name": i.get("name"), "path": i.get("path"), "url": i.get("html_url")} for i in res.json().get("items", [])[:5]]
+                    return {"success": True, "data": {"items": items, "count": len(items)}, "error": None}
+                return {"success": False, "error": f"Failed to search code: {res.text}", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"API Connection crash: {e}", "data": {}}

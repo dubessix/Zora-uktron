@@ -4,6 +4,7 @@ Verifies un-mocked Tasks tracker, Calendar solver, Daily Briefing, Security scan
 Document Search, and the GitHub Integration / parallel LLM tool calling systems.
 """
 
+import os
 import json
 import unittest
 import asyncio
@@ -210,13 +211,18 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
 
         loop = asyncio.get_event_loop()
         
-        # Test code search query
+        # Phase 5: with no real token, the tool must report an honest "not
+        # configured" state — never the old fake/dummy data. Force a placeholder
+        # so this is deterministic (no live GitHub dependency).
+        os.environ["GITHUB_TOKEN_1"] = "your_github_token_placeholder"
+        os.environ["GITHUB_USERNAME_1"] = "debjeet"
         res_search = loop.run_until_complete(tool.execute(
             action="search_code",
             search_query="get_db_connection"
         ))
         self.assertTrue(res_search["success"])
-        self.assertGreaterEqual(res_search["data"]["count"], 0)
+        self.assertIs(res_search["data"].get("configured"), False)
+        self.assertNotIn("count", res_search["data"])  # no fake data
 
     def test_parallel_llm_tool_calling(self):
         """Test: Verify parallel dynamic tool executions inside cognitive orchestrator pipeline."""
