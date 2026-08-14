@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiBase } from '../../api';
 
 /**
  * CalendarWidget Component
@@ -16,7 +17,7 @@ export default function CalendarWidget() {
 
   const fetchEvents = async () => {
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -38,7 +39,7 @@ export default function CalendarWidget() {
     if (!title.trim() || !startTime || !endTime) return;
 
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -67,7 +68,7 @@ export default function CalendarWidget() {
   const getSmartFreeTime = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,7 +92,7 @@ export default function CalendarWidget() {
 
   const deleteEvent = async (id) => {
     try {
-      await fetch('/api/tools/execute', {
+      await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,7 +108,7 @@ export default function CalendarWidget() {
 
   const bookSuggestedSlot = async (slot) => {
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

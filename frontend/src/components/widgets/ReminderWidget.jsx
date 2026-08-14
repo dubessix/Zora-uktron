@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiBase } from '../../api';
 
 /**
  * ReminderWidget Component
@@ -18,7 +19,7 @@ export default function ReminderWidget() {
   // Fetch all reminders from the backend
   const fetchReminders = async () => {
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -51,7 +52,7 @@ export default function ReminderWidget() {
     setMessage(null);
 
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,7 +84,7 @@ export default function ReminderWidget() {
   // Dismiss/Snooze/Delete Action Router
   const handleAction = async (action, id) => {
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

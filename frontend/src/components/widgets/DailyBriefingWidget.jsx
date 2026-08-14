@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiBase } from '../../api';
 
 /**
  * DailyBriefingWidget Component
@@ -12,7 +13,7 @@ export default function DailyBriefingWidget() {
   const fetchBriefing = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

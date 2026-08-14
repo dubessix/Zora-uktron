@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiBase } from '../../api';
 
 /**
  * CodeOptimizerWidget Component
@@ -22,7 +23,7 @@ export default function CodeOptimizerWidget() {
     setError(null);
 
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

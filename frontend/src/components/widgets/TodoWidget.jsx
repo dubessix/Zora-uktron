@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiBase } from '../../api';
 
 /**
  * TodoWidget Content Component
@@ -15,7 +16,7 @@ export default function TodoWidget() {
 
   const fetchTodos = async () => {
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -42,7 +43,7 @@ export default function TodoWidget() {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -72,7 +73,7 @@ export default function TodoWidget() {
   const toggleTodo = async (id, currentStatus) => {
     const nextStatus = currentStatus === 'done' ? 'todo' : 'done';
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -95,7 +96,7 @@ export default function TodoWidget() {
 
   const deleteTask = async (id) => {
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiBase } from '../../api';
 
 /**
  * SemanticCodeGraphWidget Component
@@ -17,7 +18,7 @@ export default function SemanticCodeGraphWidget() {
     setResults(null);
 
     try {
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
