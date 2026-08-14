@@ -60,9 +60,14 @@ class GitHubIntegrationTool(BaseTool):
         pr_base = kwargs.get("pr_base", "main")
         search_query = kwargs.get("search_query")
 
-        # Pull PAT from environment — support up to 2 accounts (account param selects).
+        # Pull PAT from environment — support up to 2 named accounts (account param selects).
+        # Ultron resolves the account owner from GITHUB_USERNAME_<n> in .env, so it
+        # knows WHOSE repo it is working on (not a generic demo account).
         account = str(kwargs.get("account", 1))
         github_token = os.getenv(f"GITHUB_TOKEN_{account}") or os.getenv("GITHUB_TOKEN")
+        account_owner = os.getenv(f"GITHUB_USERNAME_{account}") or os.getenv("GITHUB_USERNAME") or "unknown"
+        if account_owner not in ("unknown", "your_github_username"):
+            print(f"[GITHUB] Operating on account: {account_owner} (token account {account})")
         # Treat missing OR placeholder token as "not configured" so a dummy .env
         # value never triggers a real (failing) GitHub API call.
         if not github_token or "your_github" in github_token or "placeholder" in github_token.lower():
