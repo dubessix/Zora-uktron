@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AppShell from './components/AppShell';
 import NotificationToast from './components/NotificationToast';
 
@@ -191,9 +191,23 @@ export default function App() {
   };
 
   // P1: speak the AI response aloud via /api/speak (real TTS).
+  // A module-level ref tracks the current Audio so barge-in / new speech can stop
+  // any in-progress playback (no overlapping voices).
+  const audioRef = useRef(null);
+
+  const stopSpeaking = useCallback(() => {
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch (_e) {}
+      try { audioRef.current.src = ""; } catch (_e) {}
+      audioRef.current = null;
+    }
+  }, []);
+
   const speakResponse = async (text, personality = "ultron") => {
     if (!text || text.startsWith("[Mock")) return; // skip mock/debug lines
     try {
+      // Stop any currently-playing TTS before starting a new one (barge-in / no overlap).
+      stopSpeaking();
       const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const res = await fetch(`${apiUrl}/api/speak`, {
         method: "POST",
@@ -204,8 +218,16 @@ export default function App() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      audioRef.current = audio;
       await audio.play().catch(() => {});
-      audio.onended = () => URL.revokeObjectURL(url);
+      audio.onended = () => {
+        if (audioRef.current === audio) audioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        if (audioRef.current === audio) audioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
     } catch (err) { /* silent */ }
   };
 
@@ -223,6 +245,8 @@ export default function App() {
   // Submit a command directly (used by wake-word voice input)
   const handleVoiceCommand = async (text) => {
     if (!text.trim() || isProcessing) return;
+    // Barge-in: the user is speaking — stop any in-progress TTS immediately.
+    stopSpeaking();
     const userText = text.trim();
     setInputValue("");
     setIsProcessing(true);

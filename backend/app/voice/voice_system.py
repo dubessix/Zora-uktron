@@ -81,17 +81,24 @@ class VoiceSystem:
         })
 
         try:
-            # Generate speech packets via abstract provider (Requirement 5)
-            # Create a task to track cancellation / barge-in
+            # Generate speech packets via abstract provider (Requirement 5).
+            # Register the CURRENT async task with the interrupter so a barge-in
+            # (user starts speaking) can actually cancel this synthesis stream.
             generator = self.provider.generate_speech(
                 text=text,
                 voice_id=voice_id,
                 rate=rate,
                 pitch=pitch
             )
-            
-            async for chunk in generator:
-                yield chunk
+            current_task = asyncio.current_task()
+            if current_task is not None:
+                self.interrupter.register_task(current_task)
+
+            try:
+                async for chunk in generator:
+                    yield chunk
+            finally:
+                self.interrupter.register_task(None)
                 
             self._dispatch_voice_event("playback_finished")
             self._dispatch_voice_event("idle")
