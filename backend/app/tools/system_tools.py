@@ -4,13 +4,54 @@ Implements production-grade, asynchronous non-blocking terminal command run runt
 Natively integrates an un-mocked, stateful Self-Healing Compiler Loop (Autoreactive Debugger).
 """
 
+import os
+import shlex
+import signal
 import platform
 import asyncio
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
+
+# Phase 4: commands that contain shell metacharacters (pipes, redirects, chaining,
+# substitution) must start with an approved, developer-oriented command so the
+# shell is only ever used for legitimate build/test/dev operations.
+_APPROVED_SHELL_PREFIXES = (
+    "npm", "npx", "yarn", "pnpm", "git", "python", "python3", "pip", "pip3",
+    "pytest", "node", "cd", "echo", "ls", "cat", "grep", "find", "head", "tail",
+    "printf", "export", "source", "mkdir", "touch", "cp", "mv", "chmod", "make",
+    "cmake", "docker", "psql", "uvicorn", "gunicorn", "pipenv", "poetry", "go",
+    "cargo", "rustc", "ruby", "bundle", "rake", "php", "java", "mvn", "gradle",
+    "dotnet", "diff", "sort", "wc", "cut", "awk", "sed",
+)
+
+_SHELL_METACHARS = (";", "&", "|", ">", "<", "`", "$(")
+
+
+def _requires_shell(command: str) -> bool:
+    """True if the command uses shell metacharacters (needs a real shell)."""
+    if any(mc in command for mc in _SHELL_METACHARS):
+        return True
+    # Unbalanced quotes are unsafe to split naively -> treat as shell.
+    try:
+        shlex.split(command)
+    except ValueError:
+        return True
+    return False
+
+
+def _approved_shell_command(command: str) -> bool:
+    """For metachar-bearing commands, require an approved leading command token."""
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        parts = command.split()
+    if not parts:
+        return False
+    first = os.path.basename(parts[0]).lower()
+    return any(first == a or first.startswith(a + ".") for a in _APPROVED_SHELL_PREFIXES)
 
 class TerminalRunArgs(BaseModel):
     command: str = Field(..., description="Local system bash or shell command to execute.")
@@ -30,6 +71,23 @@ class TerminalRunTool(BaseTool):
             args_model=TerminalRunArgs,
             usage_examples=["terminal_run(command='npm run build')"]
         )
+
+    @staticmethod
+    def _kill_process_group(proc) -> None:
+        """Kill the whole process tree (process group) so no orphaned child hangs."""
+        try:
+            pgid = os.getpgid(proc.pid)
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
     def _attempt_self_healing_analysis(self, stderr: str, project_root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
         """
@@ -177,24 +235,45 @@ class TerminalRunTool(BaseTool):
         # Run commands from the project root so relative paths/errors resolve correctly.
         project_root = Path(__file__).resolve().parent.parent.parent.parent
 
+        # Phase 4: prefer ARG-BASED execution (no shell) for simple commands —
+        # no shell metacharacters to abuse. Commands that genuinely need a shell
+        # (pipes/redirects/chaining) are only allowed if they start with an
+        # approved developer command. Either way the child runs in its OWN
+        # process group so a timeout kills the whole tree (no orphaned procs).
+        use_shell = _requires_shell(command)
+        if use_shell and not _approved_shell_command(command):
+            return {
+                "success": False,
+                "error": "Command blocked: shell metacharacters require an approved leading command (npm/git/python/etc).",
+                "data": {},
+            }
+
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                cwd=str(project_root),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # Timeout guard: kill long-running commands so nothing hangs forever.
+            if use_shell:
+                proc = await asyncio.create_subprocess_shell(
+                    command,
+                    cwd=str(project_root),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,  # new process group for tree-kill
+                )
+            else:
+                argv = shlex.split(command)
+                proc = await asyncio.create_subprocess_exec(
+                    *argv,
+                    cwd=str(project_root),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,  # new process group for tree-kill
+                )
+
+            # Timeout guard: kill the whole process group so no child hangs forever.
             timed_out = False
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=20.0)
             except asyncio.TimeoutError:
                 timed_out = True
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+                self._kill_process_group(proc)
                 stdout_bytes, stderr_bytes = b"", b"Command timed out after 20s (killed to prevent hang)."
             if timed_out:
                 return {
@@ -235,10 +314,7 @@ class TerminalRunTool(BaseTool):
             }
             
         except asyncio.CancelledError:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            self._kill_process_group(proc)
             raise
             
         except Exception as e:

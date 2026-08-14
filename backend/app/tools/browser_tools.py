@@ -227,17 +227,32 @@ class DownloadFileTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         url = kwargs.get("url", "")
         save_path = Path(kwargs.get("save_path", "")).resolve()
-        
-        async with httpx.AsyncClient() as client:
+
+        # Phase 4: SSRF guard — reject localhost/private/metadata targets.
+        from backend.app.security.url_guard import validate_public_url, MAX_DOWNLOAD_BYTES
+        ok, reason = validate_public_url(url)
+        if not ok:
+            return {"success": False, "error": f"URL blocked (SSRF guard): {reason}", "data": {}}
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             try:
-                response = await client.get(url, timeout=20.0)
-                if response.status_code == 200:
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
+                async with client.stream("GET", url, timeout=20.0) as response:
+                    if response.status_code != 200:
+                        return {"success": False, "error": f"Download API returned status code: {response.status_code}", "data": {}}
+                    # Enforce a hard size cap while streaming (no unbounded writes).
+                    total = 0
                     with open(save_path, "wb") as f:
-                        f.write(response.content)
-                    return {"success": True, "data": {"message": f"Asset downloaded successfully to {save_path}"}, "error": None}
-                else:
-                    return {"success": False, "error": f"Download API returned status code: {response.status_code}", "data": {}}
+                        async for chunk in response.aiter_bytes(65536):
+                            total += len(chunk)
+                            if total > MAX_DOWNLOAD_BYTES:
+                                f.close()
+                                try:
+                                    save_path.unlink(missing_ok=True)
+                                except Exception:
+                                    pass
+                                return {"success": False, "error": f"Download exceeds size limit ({MAX_DOWNLOAD_BYTES//(1024*1024)} MB).", "data": {}}
+                            f.write(chunk)
+                return {"success": True, "data": {"message": f"Asset downloaded successfully to {save_path}", "bytes": total}, "error": None}
             except Exception as e:
                 return {"success": False, "error": f"Failed to complete asset download: {e}", "data": {}}
 
@@ -256,8 +271,14 @@ class ReadPageTool(BaseTool):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         url = kwargs.get("url", "")
-        
-        async with httpx.AsyncClient() as client:
+
+        # Phase 4: SSRF guard — reject localhost/private/metadata targets.
+        from backend.app.security.url_guard import validate_public_url
+        ok, reason = validate_public_url(url)
+        if not ok:
+            return {"success": False, "error": f"URL blocked (SSRF guard): {reason}", "data": {}}
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             try:
                 response = await client.get(url, timeout=15.0)
                 if response.status_code == 200:
