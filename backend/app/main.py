@@ -321,6 +321,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 prompt = (data.get("content", "") or "").strip()
                 session_id = data.get("session_id", "default_sess")
                 has_confirmed = bool(data.get("has_confirmed", False))
+                confirmation_token = data.get("confirmation_token")
             except Exception:
                 await websocket.send_json({"type": "error", "message": "Invalid JSON format."})
                 continue
@@ -342,6 +343,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 content=prompt,
                 session_id=session_id,
                 has_confirmed=has_confirmed,
+                confirmation_token=confirmation_token,
             )
 
             # 3. Stream token-by-token (Requirement 1)

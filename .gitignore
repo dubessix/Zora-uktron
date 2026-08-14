@@ -62,3 +62,6 @@ logs/
 
 # Pip/package caches
 .cache/
+
+# Test temp artifacts (created by the test suite at fixed paths)
+tests/*_temp_file.txt

@@ -30,6 +30,7 @@ async def process_chat_message(
     content: str,
     session_id: Optional[str] = None,
     has_confirmed: bool = False,
+    confirmation_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the full canonical chat pipeline and return a normalized result dict.
@@ -53,6 +54,7 @@ async def process_chat_message(
         delete_ratio=0.0,
         initial_personality=session_personality,
         user_confirmed=bool(has_confirmed),
+        confirmation_token=confirmation_token,
     )
 
     latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -93,4 +95,5 @@ async def process_chat_message(
         "coding": result.get("coding", False),
         "intent": result.get("intent", ""),
         "events": result.get("events", []),
+        "pending_confirmation": result.get("pending_confirmation"),
     }

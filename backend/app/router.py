@@ -32,6 +32,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Active unique conversation UUID.")
     content: str = Field(..., min_length=1, description="Raw user prompt query content.")
     has_confirmed: bool = Field(False, description="User confirmation for a pending dangerous tool (delete/terminal).")
+    confirmation_token: Optional[str] = Field(None, description="One-time token binding a confirmation to the exact file+content proposed.")
 
 class ChatResponse(BaseModel):
     id: str = Field(..., description="Unique generated message ID.")
@@ -43,6 +44,7 @@ class ChatResponse(BaseModel):
     coding: bool = Field(False, description="True if this turn was a coding turn (so UI can auto-show the coding panel).")
     events: List[dict] = Field(default_factory=list, description="Operational log/event stream for the Log tab.")
     intent: str = Field("", description="Detected intent for the turn.")
+    pending_confirmation: Optional[Dict[str, Any]] = Field(None, description="One-time pending-action token awaiting user confirmation (bound to file+content).")
 
 class ToolExecuteRequest(BaseModel):
     tool_id: str = Field(..., description="ID of the target registered tool.")
@@ -85,6 +87,7 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             content=request.content,
             session_id=request.session_id,
             has_confirmed=request.has_confirmed,
+            confirmation_token=request.confirmation_token,
         )
         return ChatResponse(
             id=result["id"],
@@ -96,6 +99,7 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             coding=result["coding"],
             intent=result["intent"],
             events=result["events"],
+            pending_confirmation=result.get("pending_confirmation"),
         )
     except Exception as e:
         raise HTTPException(

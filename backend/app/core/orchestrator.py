@@ -332,90 +332,84 @@ class CognitiveOrchestrator:
         except Exception as e:
             print(f"[COGNITIVE_ORCHESTRATOR] Warning: Memory persist skipped: {e}")
 
+    def _pending_confirmation(
+        self,
+        filepath: str,
+        session_id: Optional[str],
+        content: str,
+    ) -> Dict[str, Any]:
+        """Create a pending-action token bound to file+content and ask the user."""
+        from backend.app.security.pending_actions import get_pending_action_registry
+        from pathlib import Path
+        registry = get_pending_action_registry()
+        token = registry.create("file_write", session_id, str(Path(filepath).resolve()), content)
+        return {
+            "status": "PENDING_CONFIRMATION",
+            "tool_id": "file_write",
+            "confirmation_token": token,
+            "message": f"Overwrite existing file '{filepath}', Sir? I'll back it up first.",
+            "required_permission_level": 2,
+            "file_exists": True,
+        }
+
     async def _coding_safe_write(
         self,
         args: Dict[str, Any],
-        has_confirmed: bool = False
+        has_confirmed: bool = False,
+        session_id: Optional[str] = None,
+        confirmation_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Coding-mode safe file write with confirmation + backup.
+        Coding-mode safe file write.
 
-        - New file      -> write directly (allowed).
-        - Existing file -> if not confirmed, return PENDING_CONFIRMATION (Ultron asks).
-                           If confirmed, back up the original to <file>.bak first,
-                           then overwrite. This prevents accidental data loss.
+        Routes through the SAME validated path as the file_write tool
+        (safe_write_file): path-guard + backup + atomic write. Confirmation for
+        overwriting an existing file is BOUND to the exact file+content via a
+        one-time pending-action token — a 'yes' can never be replayed onto
+        different content.
         """
+        from pathlib import Path
+
         filepath = args.get("filepath", "")
         content = args.get("content", "")
         if not filepath:
             return {"success": False, "error": "filepath required", "data": {}}
 
-        from pathlib import Path
+        from backend.app.security.path_guard import is_path_safe
+        from backend.app.security.pending_actions import get_pending_action_registry
+        from backend.app.tools.safe_write import safe_write_file
+
         path = Path(filepath).resolve()
-        exists = path.exists()
 
-        # New file -> safe to write.
-        if not exists:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                path.write_text(content, encoding="utf-8")
-                new_lines = len(content.splitlines())
-                return {
-                    "success": True,
-                    "data": {
-                        "message": f"Created new file: {filepath}",
-                        "backup": None,
-                        "diff": {
-                            "action": "created",
-                            "file": filepath,
-                            "lines": new_lines
-                        }
-                    },
-                    "error": None
-                }
-            except Exception as e:
-                return {"success": False, "error": f"Failed to write file: {e}", "data": {}}
+        # 1. Path safety enforced before anything else.
+        if not is_path_safe(str(path)):
+            return {"success": False, "error": f"Blocked by path guard: {filepath}", "data": {}}
 
-        # Existing file -> require confirmation (unless already confirmed by user).
-        if not has_confirmed:
-            return {
-                "status": "PENDING_CONFIRMATION",
-                "tool_id": "file_write",
-                "message": f"Overwrite existing file '{filepath}', Sir? I'll back it up first.",
-                "required_permission_level": 2,
-                "file_exists": True
-            }
+        # 2. New file -> safe to write directly (no confirmation needed).
+        if not path.exists():
+            return safe_write_file(filepath, content)
 
-        # Confirmed -> back up, then overwrite.
-        try:
-            old_content = path.read_text(encoding="utf-8")
-            old_lines = old_content.splitlines()
-            new_lines = content.splitlines()
-            backup_path = path.with_suffix(path.suffix + ".bak")
-            backup_path.write_text(old_content, encoding="utf-8")
-            path.write_text(content, encoding="utf-8")
-            # Diff-style summary: how many lines added/removed/changed.
-            old_set = [l for l in old_lines if l.strip()]
-            new_set = [l for l in new_lines if l.strip()]
-            added = len(new_set) - len(old_set)
-            return {
-                "success": True,
-                "data": {
-                    "message": f"Overwrote file: {filepath}",
-                    "backup": str(backup_path),
-                    "diff": {
-                        "action": "updated",
-                        "file": filepath,
-                        "old_lines": len(old_lines),
-                        "new_lines": len(new_lines),
-                        "net_lines_change": added,
-                        "backup": str(backup_path)
-                    }
-                },
-                "error": None
-            }
-        except Exception as e:
-            return {"success": False, "error": f"Failed to write file with backup: {e}", "data": {}}
+        # 3. Existing file -> requires confirmation bound to this exact content.
+        registry = get_pending_action_registry()
+        if has_confirmed:
+            # Resolve the token: explicitly provided, or backward-compatible lookup
+            # for the EXACT same file+content that was previously proposed.
+            token = confirmation_token
+            if not token:
+                token = registry.find_recent_match(
+                    "file_write", session_id, str(path), content
+                )
+            validation = registry.validate(
+                token, "file_write", session_id, str(path), content
+            )
+            if validation["valid"]:
+                return safe_write_file(filepath, content)
+            # Content changed or token invalid/expired -> must confirm again.
+            print(f"[COGNITIVE_ORCHESTRATOR] Confirmation rejected for {filepath}: {validation.get('reason')}")
+            return self._pending_confirmation(filepath, session_id, content)
+
+        # 4. Not confirmed yet -> ask, with a one-time token bound to file+content.
+        return self._pending_confirmation(filepath, session_id, content)
 
     async def _safe_verify_code(self, filepath: str) -> Dict[str, Any]:
         """
@@ -516,7 +510,8 @@ class CognitiveOrchestrator:
         current_hour: int = 12,
         delete_ratio: float = 0.0,
         initial_personality: Optional[str] = None,
-        user_confirmed: bool = False
+        user_confirmed: bool = False,
+        confirmation_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Asynchronous coordinator running the complete pipeline.
@@ -786,12 +781,17 @@ class CognitiveOrchestrator:
                             called_tool_ids.append(t_id)
                             task_meta.append((t_id, args))
                             # Step 3 (permission-first): in coding mode, file writes go
-                            # through the safe path (confirmation + .bak backup).
+                            # through the safe path (path-guard + backup + atomic) with a
+                            # confirmation bound to the exact file+content via a one-time
+                            # token. Pass the real user_confirmed flag (previously hardcoded
+                            # to False, which made confirmed overwrites never execute).
                             if coding_turn and t_id == "file_write":
                                 tasks_to_run.append(
                                     self._coding_safe_write(
                                         args if isinstance(args, dict) else {},
-                                        has_confirmed=False
+                                        has_confirmed=user_confirmed,
+                                        session_id=session_id,
+                                        confirmation_token=confirmation_token,
                                     )
                                 )
                             else:
@@ -830,8 +830,16 @@ class CognitiveOrchestrator:
                                     "error": str(r)
                                 })
                             elif isinstance(r, dict):
+                                # A pending confirmation is NOT an error — surface it
+                                # clearly (with its token) so the user can approve.
+                                if r.get("status") == "PENDING_CONFIRMATION":
+                                    self._dispatch_log(
+                                        "info",
+                                        f"Awaiting your confirmation for {tid} "
+                                        f"(token: {(r.get('confirmation_token') or '')[:8]}…)."
+                                    )
                                 # Real-time rich log: live 'it's working' feel.
-                                if r.get("success", False):
+                                elif r.get("success", False):
                                     for level, msg in await self._tool_live_messages(tid, targs, r.get("data", {}) or {}):
                                         self._dispatch_log(level, msg)
                                 else:
@@ -941,6 +949,19 @@ class CognitiveOrchestrator:
         end_time = time.perf_counter()
         response_ms = int((end_time - start_time) * 1000)
 
+        # Surface any pending confirmation so clients can capture its one-time
+        # token and send it back with has_confirmed=true (bound to file+content).
+        pending_confirmation = None
+        for tr in tool_results:
+            if isinstance(tr, dict) and tr.get("status") == "PENDING_CONFIRMATION":
+                pending_confirmation = {
+                    "tool_id": tr.get("tool_id"),
+                    "confirmation_token": tr.get("confirmation_token"),
+                    "message": tr.get("message"),
+                    "required_permission_level": tr.get("required_permission_level"),
+                }
+                break
+
         # Compile standard memory metadata parameters
         memory_meta = {
             "personality": current_personality,
@@ -965,7 +986,8 @@ class CognitiveOrchestrator:
             "events": list(self.dispatched_events),
             "metadata": memory_meta,
             "structured_action": structured_action,
-            "coding": coding_turn
+            "coding": coding_turn,
+            "pending_confirmation": pending_confirmation,
         }
 
     async def close(self) -> None:

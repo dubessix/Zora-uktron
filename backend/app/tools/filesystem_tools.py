@@ -72,20 +72,10 @@ class FileWriteTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.get("filepath", "")
         content = kwargs.get("content", "")
-        path = Path(filepath).resolve()
-        # Security: block writes to dangerous/system paths.
-        from backend.app.security.path_guard import is_path_safe
-        if not is_path_safe(str(path)):
-            return {"success": False, "error": f"Blocked by path guard: {filepath}", "data": {}}
-        
-        try:
-            # Ensure parent directories exist
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return {"success": True, "data": {"message": f"Successfully wrote to file: {filepath}"}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to write file: {e}", "data": {}}
+        # Phase 3: route through the single safe-write path (path-guard + backup +
+        # atomic write) shared with the coding writer.
+        from backend.app.tools.safe_write import safe_write_file
+        return safe_write_file(filepath, content)
 
 class FindFilesTool(BaseTool):
     def __init__(self) -> None:
