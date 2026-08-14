@@ -22,6 +22,7 @@ const CodingWidget = lazy(() => import('./CodingWidget'));
 const MusicWidget = lazy(() => import('./MusicWidget'));
 const WorldMonitorWidget = lazy(() => import('./WorldMonitorWidget'));
 const GithubSearchWidget = lazy(() => import('./GithubSearchWidget'));
+const GitCloneWidget = lazy(() => import('./GitCloneWidget'));
 
 /**
  * Standardized Frontend Widget Registry Map (OCP Compliant)
@@ -100,6 +101,14 @@ export const WIDGET_REGISTRY = {
     defaultWidth: 320,
     defaultHeight: 240,
     Component: GithubSearchWidget
+  },
+  git_clone: {
+    id: "git_clone",
+    title: "Git Clone",
+    category: "developer",
+    defaultWidth: 340,
+    defaultHeight: 260,
+    Component: GitCloneWidget
   },
   security_guardian: {
     id: "security_guardian",

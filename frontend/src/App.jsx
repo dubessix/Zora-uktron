@@ -50,7 +50,8 @@ export default function App() {
     coding: { visible: false, x: 360, y: 300 },
     music: { visible: false, x: 380, y: 320 },
     world_monitor: { visible: false, x: 400, y: 340 },
-    github_search: { visible: false, x: 420, y: 360 }
+    github_search: { visible: false, x: 420, y: 360 },
+    git_clone: { visible: false, x: 440, y: 380 }
   });
 
   // Dynamic Notification Toasts Queue (Requirement: Notification Prioritization)
