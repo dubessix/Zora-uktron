@@ -9,6 +9,7 @@ import os
 import re
 import json
 import csv
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -57,32 +58,41 @@ class SearchDocumentsTool(BaseTool):
 
         skip_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist", "data"}
 
-        for root, dirs, files in os.walk(self.workspace_root):
-            dirs[:] = [d for d in dirs if d not in skip_dirs]
-            
-            for file in files:
-                ext = Path(file).suffix.lower()
-                if ext in allowed_exts:
-                    file_path = Path(root) / file
-                    file_rel = str(file_path.relative_to(self.workspace_root))
-                    
-                    try:
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            for lineno, line in enumerate(f, 1):
-                                if regex.search(line):
-                                    findings.append({
-                                        "file": file_rel,
-                                        "line": lineno,
-                                        "content": line.strip()
-                                    })
-                                    # Cap at 50 results to prevent context window explosion
-                                    if len(findings) >= 50:
-                                        break
-                    except Exception:
-                        continue
-                        
-            if len(findings) >= 50:
-                break
+        # Phase 3/Point-22: the document scan walks the whole workspace and reads
+        # many files — run it in a worker thread so it can't block the event loop.
+        def _run_scan():
+            results = []
+            for root, dirs, files in os.walk(self.workspace_root):
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+
+                for file in files:
+                    ext = Path(file).suffix.lower()
+                    if ext in allowed_exts:
+                        file_path = Path(root) / file
+                        try:
+                            file_rel = str(file_path.relative_to(self.workspace_root))
+                        except ValueError:
+                            file_rel = str(file_path)
+
+                        try:
+                            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                                for lineno, line in enumerate(f, 1):
+                                    if regex.search(line):
+                                        results.append({
+                                            "file": file_rel,
+                                            "line": lineno,
+                                            "content": line.strip(),
+                                        })
+                                        if len(results) >= 50:
+                                            return results
+                        except Exception:
+                            continue
+
+                    if len(results) >= 50:
+                        return results
+            return results
+
+        findings = await asyncio.to_thread(_run_scan)
 
         return {
             "success": True,

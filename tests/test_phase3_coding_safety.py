@@ -130,5 +130,24 @@ class TestPathGuardDepth(unittest.TestCase):
         self.assertTrue(is_path_safe(str(p)))
 
 
+class TestHeavyToolsRunWithoutFreezing(unittest.IsolatedAsyncioTestCase):
+    """Heavy scans are now off the event loop (asyncio.to_thread) — they must
+    still return correct results (and not block/crash the suite)."""
+
+    async def test_find_files_still_works_in_thread(self):
+        from backend.app.tools.filesystem_tools import FindFilesTool
+        tool = FindFilesTool()
+        res = await tool.execute(pattern=".py", search_root="backend/app/core")
+        self.assertTrue(res["success"])
+        # Should find at least the orchestrator itself.
+        self.assertGreater(res["data"]["matches_count"], 0)
+
+    async def test_project_context_block_is_awaitable_and_returns_text(self):
+        orch = CognitiveOrchestrator()
+        ctx = await orch._get_project_context_block()
+        self.assertIsInstance(ctx, str)
+        self.assertIn("[PROJECT_CONTEXT]", ctx)
+
+
 if __name__ == "__main__":
     unittest.main()

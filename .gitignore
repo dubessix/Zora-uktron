@@ -65,3 +65,4 @@ logs/
 
 # Test temp artifacts (created by the test suite at fixed paths)
 tests/*_temp_file.txt
+tests/*_temp_file.txt.bak

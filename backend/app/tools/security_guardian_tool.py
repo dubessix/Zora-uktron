@@ -8,6 +8,7 @@ Implements a production-grade, un-mocked local security auditing scanner (Level 
 
 import os
 import re
+import asyncio
 import psutil
 from pathlib import Path
 from typing import Dict, Any, List
@@ -142,12 +143,15 @@ class SecurityGuardianTool(BaseTool):
 
         all_findings = []
 
+        # Phase 3/Point-22: the workspace/dependency scans walk many files and read
+        # manifests — run each in a worker thread so they never block the event loop
+        # and freeze the assistant. (Each _scan_* is a plain sync callable.)
         if scan_secrets:
-            all_findings.extend(self._scan_secrets())
+            all_findings.extend(await asyncio.to_thread(self._scan_secrets))
         if scan_proc:
-            all_findings.extend(self._scan_processes())
+            all_findings.extend(await asyncio.to_thread(self._scan_processes))
         if scan_deps:
-            all_findings.extend(self._scan_dependencies())
+            all_findings.extend(await asyncio.to_thread(self._scan_dependencies))
 
         stats = {
             "total_findings": len(all_findings),

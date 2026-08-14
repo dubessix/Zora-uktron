@@ -244,8 +244,12 @@ class CognitiveOrchestrator:
                         lines.append(f"{indent}{e.name}")
         return "\n".join(lines[:120])
 
-    def _get_project_context_block(self) -> str:
-        """Combine stored project state + live scan into a prompt block for coding."""
+    async def _get_project_context_block(self) -> str:
+        """Combine stored project state + live scan into a prompt block for coding.
+
+        The directory scan runs in a worker thread (asyncio.to_thread) so a large
+        project can never block the event loop and freeze the assistant.
+        """
         parts = []
         # Stored project facts (name, stack, goals)
         stored = []
@@ -256,8 +260,12 @@ class CognitiveOrchestrator:
         if stored:
             parts.append("\n".join(stored))
 
-        # Live structure scan
-        scan = self._scan_project_context()
+        # Live structure scan — off the event loop.
+        try:
+            scan = await asyncio.to_thread(self._scan_project_context)
+        except Exception as e:
+            print(f"[COGNITIVE_ORCHESTRATOR] Warning: project scan failed: {e}")
+            scan = ""
         if scan:
             parts.append("Current project structure (top-level):\n" + scan)
 
@@ -691,7 +699,7 @@ class CognitiveOrchestrator:
         # Codex-style: inject project context ONLY on coding turns, so Ultron knows
         # the project it's editing. Skipped on normal chat to save tokens/latency.
         if coding_turn:
-            project_ctx = self._get_project_context_block()
+            project_ctx = await self._get_project_context_block()
             if project_ctx:
                 system_prompt += project_ctx
 
@@ -713,7 +721,10 @@ class CognitiveOrchestrator:
                 "\n\nNote: this is a simple conversational turn. No tool execution is needed."
             )
         else:
-            tools_metadata_str = self._compile_tools_metadata()
+            # Phase 3/Point-22: the tool-metadata dump JIT-loads every tool (imports
+            # modules + walks schemas). Run it in a worker thread so it can never
+            # block the async event loop and freeze the assistant.
+            tools_metadata_str = await asyncio.to_thread(self._compile_tools_metadata)
             system_prompt += (
                 f"\n\n[AVAILABLE_TOOLS_METADATA]\n{tools_metadata_str}\n\n"
             "First, answer the user briefly and warmly like a human personal assistant "

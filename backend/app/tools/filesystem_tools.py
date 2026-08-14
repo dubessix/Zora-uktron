@@ -5,6 +5,7 @@ Uses high-performance recursive globbing while safely ignoring cache/virtual env
 """
 
 import os
+import asyncio
 import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -104,18 +105,17 @@ class FindFilesTool(BaseTool):
         if not pattern:
             return {"success": False, "error": "Pattern parameter cannot be empty.", "data": {}}
 
-        results = []
         skip_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist", "data"}
+        is_glob = "*" in pattern or "?" in pattern or "[" in pattern
 
-        try:
-            # If pattern doesn't contain wildcards, assume substring match
-            is_glob = "*" in pattern or "?" in pattern or "[" in pattern
-            
-            # Walk and glob manually to safely ignore cache/venv folders on any OS
+        # Phase 3/Point-22: recursive workspace walking is IO-heavy — run it in a
+        # worker thread so it can't block the event loop and freeze the assistant.
+        def _run_search():
+            found = []
             for root, dirs, files in os.walk(root_path):
                 # Prune cache/virtual environments recursively
                 dirs[:] = [d for d in dirs if d not in skip_dirs]
-                
+
                 for file in files:
                     file_path = Path(root) / file
                     # Fix 20: relative_to raises ValueError for paths outside workspace;
@@ -124,28 +124,25 @@ class FindFilesTool(BaseTool):
                         file_rel = str(file_path.relative_to(self.workspace_root))
                     except ValueError:
                         file_rel = str(file_path)
-                    
-                    matched = False
-                    if is_glob:
-                        # Glob match
-                        matched = file_path.match(pattern)
-                    else:
-                        # Substring match
-                        matched = pattern.lower() in file.lower()
+
+                    matched = file_path.match(pattern) if is_glob else (pattern.lower() in file.lower())
 
                     if matched:
                         try:
                             stat = file_path.stat()
                             mtime = datetime.datetime.fromtimestamp(stat.st_mtime, datetime.timezone.utc).isoformat()
-                            results.append({
+                            found.append({
                                 "name": file,
                                 "filepath": file_rel,
                                 "size_kb": f"{stat.st_size / 1024:.1f} KB",
-                                "modified_at": mtime
+                                "modified_at": mtime,
                             })
                         except OSError:
                             continue
+            return found
 
+        try:
+            results = await asyncio.to_thread(_run_search)
             return {
                 "success": True,
                 "data": {

@@ -10,6 +10,7 @@ import os
 import ast
 import json
 import re
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -262,7 +263,9 @@ class SemanticGraphTool(BaseTool):
 
         # Load or build the graph
         if query_type == "build":
-            graph = self._scan_workspace()
+            # Phase 3/Point-22: AST-scanning the whole codebase is CPU/IO heavy —
+            # run it in a worker thread so it never blocks the event loop.
+            graph = await asyncio.to_thread(self._scan_workspace)
             return {
                 "success": True,
                 "data": {
@@ -276,7 +279,7 @@ class SemanticGraphTool(BaseTool):
                 "error": None
             }
 
-        graph = self._load_graph()
+        graph = await asyncio.to_thread(self._load_graph)
 
         if query_type == "search":
             if not target_symbol:
