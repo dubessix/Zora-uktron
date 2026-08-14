@@ -48,6 +48,27 @@ class ServiceLauncher:
         """Validate if npm installation was conducted on frontend packages."""
         return (FRONTEND_DIR / "node_modules").exists()
 
+    def wait_for_backend_health(self, timeout_sec: float = 30.0) -> bool:
+        """
+        Phase 8 health-check gate: poll the backend /api/health until it returns
+        HTTP 200 (proving the server is genuinely ready), instead of a fixed sleep.
+        Returns True if the backend became healthy within the timeout.
+        """
+        import urllib.request
+        start = time.time()
+        while time.time() - start < timeout_sec:
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{BACKEND_PORT}/api/health",
+                    timeout=2.0,
+                ) as resp:
+                    if resp.status == 200:
+                        return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return False
+
     @staticmethod
     def check_port_availability(port: int, host: str = "127.0.0.1") -> bool:
         """Return True if a TCP port is free to bind on the given host."""
@@ -154,8 +175,10 @@ class ServiceLauncher:
             daemon=True
         ).start()
 
-        # 5. Delay browser launch until ports stabilize
-        time.sleep(1.5)
+        # 5. REAL health-check gate: only open the browser once the backend has
+        #    actually become healthy (not a fixed sleep that can race a slow boot).
+        if not self.wait_for_backend_health(timeout_sec=30.0):
+            self.log("Launcher", "WARNING: backend did not become healthy within 30s. Check the logs above.", "31")
         self.log("Launcher", "Orchestration fully aligned. Launching user viewport...", "35")
         webbrowser.open(f"http://127.0.0.1:{FRONTEND_PORT}")
 

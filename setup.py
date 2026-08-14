@@ -1,9 +1,13 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 setup(
     name="ultron",
     version="1.0.0",
-    packages=find_packages(),
+    # The backend is laid out as a namespace package (no __init__.py in most
+    # subpackages). find_namespace_packages() discovers ALL of backend.app.*,
+    # so the built wheel actually contains the code (find_packages() was
+    # returning an empty list and shipping an empty wheel).
+    packages=find_namespace_packages(include=["backend*"], exclude=["*.test*"]),
     include_package_data=True,
     install_requires=[
         "fastapi>=0.111.0",
@@ -17,6 +21,7 @@ setup(
         "httpx>=0.27.0",
         "click>=8.1.0",
         "psutil>=6.0.0",
+        "edge-tts>=6.1.0",   # TTS provider (was missing -> voice broke after install)
     ],
     entry_points={
         "console_scripts": [
@@ -25,4 +30,5 @@ setup(
     },
     author="Arena AI & Debjeet",
     description="Ultron V1: Personal Developer Partner & Emotional Companion.",
+    python_requires=">=3.9",
 )

@@ -1,0 +1,73 @@
+"""
+Phase 8 regression — packaging.
+
+The wheel must actually contain the backend code (find_packages() previously
+returned an empty list -> empty wheel -> `ultron` CLI failed with
+ModuleNotFoundError: No module named 'backend'). We assert the package discovery
+used by setup.py finds the real code, and that the entry-point module is present.
+"""
+
+import unittest
+from pathlib import Path
+
+from setuptools import find_namespace_packages
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class TestPackaging(unittest.TestCase):
+
+    def test_find_namespace_packages_discovers_backend(self):
+        # Chdir-independent: run find_namespace_packages from the repo root.
+        import os
+        old = os.getcwd()
+        os.chdir(ROOT)
+        try:
+            pkgs = find_namespace_packages(include=["backend*"])
+        finally:
+            os.chdir(old)
+        self.assertIn("backend.app.core", pkgs)
+        self.assertIn("backend.app.tools", pkgs)
+        self.assertIn("backend.app", pkgs)
+
+    def test_setup_lists_edge_tts_dependency(self):
+        """The TTS provider dep was missing and broke voice after install."""
+        setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
+        self.assertIn("edge-tts", setup_text)
+
+    def test_cli_entry_point_module_exists(self):
+        self.assertTrue((ROOT / "backend" / "app" / "cli.py").exists())
+
+    def test_cli_exposes_main_entry(self):
+        import backend.app.cli as cli
+        self.assertTrue(hasattr(cli, "main"))
+
+
+class TestLauncherHealthGate(unittest.TestCase):
+
+    def test_health_gate_returns_true_when_backend_ready(self):
+        from unittest.mock import patch
+        from launcher import ServiceLauncher
+
+        class FakeResp:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        with patch("urllib.request.urlopen", return_value=FakeResp()):
+            ok = ServiceLauncher().wait_for_backend_health(timeout_sec=3.0)
+        self.assertTrue(ok)
+
+    def test_health_gate_returns_false_on_timeout(self):
+        from unittest.mock import patch
+        from launcher import ServiceLauncher
+
+        with patch("urllib.request.urlopen", side_effect=OSError("refused")):
+            ok = ServiceLauncher().wait_for_backend_health(timeout_sec=0.5)
+        self.assertFalse(ok)
+
+
+if __name__ == "__main__":
+    unittest.main()
