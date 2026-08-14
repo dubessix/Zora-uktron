@@ -88,6 +88,7 @@ class ToolRegistry:
             "weather_tool": ("backend.app.tools.weather_tool", "WeatherTool"),
             "tavily_research": ("backend.app.tools.research_tool", "TavilyResearchTool"),
             "git_status": ("backend.app.tools.git_tool", "GitStatusTool"),
+            "git_clone": ("backend.app.tools.git_tool", "GitCloneTool"),
             "system_metrics": ("backend.app.tools.system_metrics_tool", "SystemMetricsTool"),
             "create_folder": ("backend.app.tools.folder_tools", "CreateFolderTool"),
             "rename_folder": ("backend.app.tools.folder_tools", "RenameFolderTool"),

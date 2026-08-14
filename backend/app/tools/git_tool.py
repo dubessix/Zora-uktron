@@ -6,7 +6,7 @@ modified files, and commit logs.
 
 import asyncio
 from typing import Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
 class GitArgs(BaseModel):
@@ -72,3 +72,46 @@ class GitStatusTool(BaseTool):
             }
         except Exception as e:
             return {"success": False, "error": f"Failed to execute git repository status: {e}", "data": {}}
+
+
+class GitCloneArgs(BaseModel):
+    url: str = Field(..., description="Git repository URL to clone.")
+    directory: str = Field(".", description="Target directory to clone into.")
+
+class GitCloneTool(BaseTool):
+    """Developer automation: clone a repo (download code) via git."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            tool_id="git_clone",
+            name="Git Clone",
+            description="Clones a git repository (downloads code) into a local directory.",
+            category="developer",
+            tags=["git", "clone", "download", "repo"],
+            permission_level=2,  # requires confirmation
+            args_model=GitCloneArgs,
+            usage_examples=["git_clone(url='https://github.com/org/repo.git', directory='repos')"]
+        )
+
+    async def execute(self, **kwargs) -> Dict[str, Any]:
+        url = kwargs.get("url", "").strip()
+        directory = kwargs.get("directory", ".").strip()
+        if not url:
+            return {"success": False, "error": "url required", "data": {}}
+        # Risk guard: block shell metacharacters in url/dir
+        if any(ch in (url + directory) for ch in ";|&`$(){}<>"):
+            return {"success": False, "error": "Unsafe characters blocked.", "data": {}}
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "clone", url, directory,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=120)
+            code = proc.returncode
+            if code == 0:
+                return {"success": True, "data": {"message": f"Cloned {url} into {directory}"}, "error": None}
+            return {"success": False, "error": (err.decode() or "clone failed")[:200], "data": {}}
+        except asyncio.TimeoutError:
+            return {"success": False, "error": "Clone timed out (120s).", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"Clone failed: {e}", "data": {}}

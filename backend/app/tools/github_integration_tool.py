@@ -20,6 +20,7 @@ class GitHubArgs(BaseModel):
     pr_head: Optional[str] = Field("main", description="Source branch for PR.")
     pr_base: Optional[str] = Field("main", description="Target destination branch for PR.")
     search_query: Optional[str] = Field(None, description="Code or keyword search query.")
+    account: Optional[int] = Field(1, description="GitHub account (1 or 2) to use for this action.")
 
 class GitHubIntegrationTool(BaseTool):
     def __init__(self) -> None:
@@ -59,8 +60,9 @@ class GitHubIntegrationTool(BaseTool):
         pr_base = kwargs.get("pr_base", "main")
         search_query = kwargs.get("search_query")
 
-        # Pull PAT from environment
-        github_token = os.getenv("GITHUB_TOKEN")
+        # Pull PAT from environment — support up to 2 accounts (account param selects).
+        account = str(kwargs.get("account", 1))
+        github_token = os.getenv(f"GITHUB_TOKEN_{account}") or os.getenv("GITHUB_TOKEN")
         # Treat missing OR placeholder token as "not configured" so a dummy .env
         # value never triggers a real (failing) GitHub API call.
         if not github_token or "your_github" in github_token or "placeholder" in github_token.lower():
