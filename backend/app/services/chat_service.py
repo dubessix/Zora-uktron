@@ -96,4 +96,7 @@ async def process_chat_message(
         "intent": result.get("intent", ""),
         "events": result.get("events", []),
         "pending_confirmation": result.get("pending_confirmation"),
+        "provider_route": result.get("provider_route") or {
+            "provider": None, "model": None, "cached": False, "offline": False
+        },
     }

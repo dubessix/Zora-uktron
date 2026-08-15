@@ -12,7 +12,6 @@ import platform
 import psutil
 import datetime
 import httpx
-from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -22,7 +21,6 @@ from backend.app.database.db import get_db_connection
 from backend.app.database.models import initialize_database
 from backend.app.router import api_router
 from backend.app.websocket.connection_manager import WebSocketManager
-from backend.app.core.orchestrator import CognitiveOrchestrator
 
 # Initialize the global application registry
 app = FastAPI(
@@ -52,6 +50,8 @@ class HealthStatusResponse(BaseModel):
     system_metrics: dict
     environment: dict
     providers: dict
+    provider_key_states: dict
+    models: dict
 
 # Boot timestamp tracker
 START_TIME = time.time()
@@ -219,6 +219,16 @@ async def startup_event_handler():
         with get_db_connection() as conn:
             initialize_database(conn)
             print("[INFO] Database successfully initialized with WAL mode enabled.")
+
+        from backend.app.brain.model_config import validate_model_config
+        from backend.app.router import get_orchestrator
+        model_status = validate_model_config()
+        if not model_status["valid"]:
+            raise RuntimeError("Invalid model configuration: " + "; ".join(model_status["errors"]))
+        orchestrator = get_orchestrator()
+        print(f"[INFO] Effective AI models: {model_status['models']}")
+        print(f"[INFO] Provider configuration: {orchestrator.router.key_manager.config_status()}")
+
         # Launch non-blocking background scheduler, emergency monitor, and proactive intelligence tasks
         asyncio.create_task(run_reminder_scheduler())
         asyncio.create_task(run_emergency_monitor())
@@ -265,15 +275,22 @@ async def get_health_status() -> dict:
 
     # Honest provider config status (which providers have a key configured).
     # This is a config check, not a live reachability test.
-    from backend.app.brain.api_key_manager import APIKeyManager
-    providers = APIKeyManager().config_status()
+    from backend.app.brain.model_config import validate_model_config
+    from backend.app.router import get_orchestrator
+    # Report the state of the actual shared router, not a freshly-created key
+    # manager that would hide cooling/failed runtime keys.
+    key_manager = get_orchestrator().router.key_manager
+    providers = key_manager.config_status()
+    model_config = validate_model_config()
 
     return {
-        "status": "healthy",
+        "status": "healthy" if model_config["valid"] else "degraded",
         "uptime_seconds": time.time() - START_TIME,
         "system_metrics": metrics,
         "environment": env_details,
         "providers": providers,
+        "provider_key_states": key_manager.runtime_status(),
+        "models": model_config,
     }
 
 # ==============================================================================
@@ -384,6 +401,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 "intent": result["intent"],
                 "structured_action": result["structured_action"],
                 "events": result.get("events", []),
+                "provider_route": result.get("provider_route") or {},
             })
 
     except WebSocketDisconnect:

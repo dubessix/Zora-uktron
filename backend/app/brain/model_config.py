@@ -25,7 +25,7 @@ CONFIG_PATH = BASE_DIR / "config.yaml"
 _DEFAULTS = {
     "groq": "llama-3.1-8b-instant",
     "gemini": "gemini-3.5-flash",
-    "nvidia": "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+    "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
     "embedding": "gemini-embedding-001",
     "embedding_dims": 768,
 }
@@ -79,3 +79,39 @@ def get_embedding_dimensions() -> int:
         return int(str(dims).strip())
 
     return int(_DEFAULTS["embedding_dims"])
+
+
+def get_all_models() -> dict:
+    """Return the effective, user-configurable model map used at runtime."""
+    return {
+        "groq": get_model("groq"),
+        "gemini": get_model("gemini"),
+        "nvidia": get_model("nvidia"),
+        "embedding": get_model("embedding"),
+        "embedding_dims": get_embedding_dimensions(),
+    }
+
+
+def validate_model_config() -> dict:
+    """Validate obvious retired/malformed model IDs without making API calls."""
+    models = get_all_models()
+    errors = []
+    for provider in ("groq", "gemini", "nvidia", "embedding"):
+        value = str(models[provider]).strip()
+        if not value or any(ch.isspace() for ch in value):
+            errors.append(f"{provider} model ID is empty or contains whitespace")
+
+    if "gemini-1.5" in models["gemini"]:
+        errors.append("Gemini 1.5 chat models are retired")
+    if models["embedding"] in {"text-embedding-004", "embedding-001"}:
+        errors.append(f"Embedding model is retired: {models['embedding']}")
+    if models["nvidia"].startswith("nvidia/nvidia/"):
+        errors.append("NVIDIA model contains a duplicated 'nvidia/' prefix")
+    if ":free" in models["nvidia"]:
+        errors.append("NVIDIA native API model must not use an OpenRouter ':free' suffix")
+
+    dims = models["embedding_dims"]
+    if not 128 <= dims <= 3072:
+        errors.append("Embedding dimensions must be between 128 and 3072")
+
+    return {"valid": not errors, "models": models, "errors": errors}

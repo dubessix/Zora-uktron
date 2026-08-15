@@ -49,6 +49,7 @@ class TestWsPersistsToDatabase(unittest.TestCase):
         self.assertEqual(done["type"], "done")
         self.assertEqual(done["session_id"], sess)
         self.assertIn("structured_action", done)
+        self.assertIn("provider_route", done)
         self.assertIn("message_id", done)
 
         # Session must exist in the DB with a persisted personality.

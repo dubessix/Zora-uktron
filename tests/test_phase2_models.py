@@ -26,9 +26,17 @@ def _run(coro):
 
 class TestModelConfig(unittest.TestCase):
 
+    _MODEL_ENV_VARS = (
+        "GROQ_CHAT_MODEL", "GEMINI_CHAT_MODEL", "NVIDIA_CHAT_MODEL",
+        "GEMINI_EMBEDDING_MODEL", "GEMINI_EMBEDDING_DIMS",
+    )
+
     def setUp(self):
-        for var in ("GROQ_CHAT_MODEL", "GEMINI_CHAT_MODEL", "NVIDIA_CHAT_MODEL",
-                    "GEMINI_EMBEDDING_MODEL", "GEMINI_EMBEDDING_DIMS"):
+        for var in self._MODEL_ENV_VARS:
+            os.environ.pop(var, None)
+
+    def tearDown(self):
+        for var in self._MODEL_ENV_VARS:
             os.environ.pop(var, None)
 
     def test_no_retired_gemini_model(self):
@@ -39,8 +47,13 @@ class TestModelConfig(unittest.TestCase):
         self.assertEqual(get_model("embedding"), "gemini-embedding-001")
         self.assertEqual(get_embedding_dimensions(), 768)
 
-    def test_nvidia_has_no_free_suffix(self):
+    def test_nvidia_exact_native_model_id(self):
+        self.assertEqual(
+            get_model("nvidia"),
+            "nvidia/nemotron-3-ultra-550b-a55b",
+        )
         self.assertNotIn(":free", get_model("nvidia"))
+        self.assertNotIn("nvidia/nvidia/", get_model("nvidia"))
 
     def test_env_override_honored(self):
         os.environ["GEMINI_CHAT_MODEL"] = "gemini-3.1-flash-lite"

@@ -79,7 +79,6 @@ class CognitiveOrchestrator:
         brain too. Normal conversation NEVER routes to NVIDIA — saving its limit
         for coding.
         """
-        global _SHARED_CODING_MODE
         # Manual ON forces NVIDIA for all turns; otherwise only CODING intents use it.
         if _SHARED_CODING_MODE:
             return True
@@ -221,7 +220,6 @@ class CognitiveOrchestrator:
                   ".venv", "venv", "data", "uploads", "images"}
         lines = []
         stack = [(root, 0)]
-        seen = set()
         while stack:
             p, depth = stack.pop()
             if depth > max_depth:
@@ -652,7 +650,8 @@ class CognitiveOrchestrator:
                 "active_personality": current_personality,
                 "events": list(self.dispatched_events),
                 "metadata": memory_meta,
-                "structured_action": {"action": "none"}
+                "structured_action": {"action": "none"},
+                "provider_route": self.router.get_route_metadata(),
             }
 
         # Step 9: CONTEXT ASSEMBLY & SYSTEM INSTRUCTIONS (With Dynamic 65 Tools schemas!)
@@ -999,6 +998,7 @@ class CognitiveOrchestrator:
             "structured_action": structured_action,
             "coding": coding_turn,
             "pending_confirmation": pending_confirmation,
+            "provider_route": self.router.get_route_metadata(),
         }
 
     async def close(self) -> None:

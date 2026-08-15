@@ -333,7 +333,8 @@ export default function App() {
             intent: msg.intent,
             events: msg.events || [],
             structured_action: msg.structured_action || {},
-            session_id: msg.session_id || null
+            session_id: msg.session_id || null,
+            provider_route: msg.provider_route || {}
           };
           try { ws.close(); } catch {}
           wsRef.current = null;

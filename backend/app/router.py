@@ -45,6 +45,7 @@ class ChatResponse(BaseModel):
     events: List[dict] = Field(default_factory=list, description="Operational log/event stream for the Log tab.")
     intent: str = Field("", description="Detected intent for the turn.")
     pending_confirmation: Optional[Dict[str, Any]] = Field(None, description="One-time pending-action token awaiting user confirmation (bound to file+content).")
+    provider_route: Dict[str, Any] = Field(default_factory=dict, description="Actual provider/model route used for this response.")
 
 class ToolExecuteRequest(BaseModel):
     tool_id: str = Field(..., description="ID of the target registered tool.")
@@ -103,6 +104,7 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             intent=result["intent"],
             events=result["events"],
             pending_confirmation=result.get("pending_confirmation"),
+            provider_route=result.get("provider_route") or {},
         )
     except Exception as e:
         raise HTTPException(
@@ -205,6 +207,42 @@ async def restore_db(request: BackupRequest):
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result["error"])
     return result
+
+@api_router.get("/providers/status", status_code=status.HTTP_200_OK)
+async def provider_status(live: bool = Query(False, description="Make one tiny live request per configured provider.")):
+    """Report effective models, redacted key state and optional live reachability."""
+    from backend.app.brain.model_config import validate_model_config, get_model
+
+    orchestrator = get_orchestrator()
+    manager = orchestrator.router.key_manager
+    report = {
+        "configuration": validate_model_config(),
+        "providers": {},
+        "live_checked": bool(live),
+    }
+    for provider in ("groq", "gemini", "nvidia"):
+        configured = manager.has_real_key(provider)
+        item = {
+            "configured": configured,
+            "model": get_model(provider),
+            "key_states": manager.runtime_status()[provider],
+            "reachable": None,
+            "error": None,
+        }
+        if live and configured:
+            try:
+                response = await orchestrator.router._provider_executor(provider)(
+                    "Provider health check. Reply exactly OK.",
+                    "OK",
+                    0.0,
+                )
+                item["reachable"] = bool(response and response.strip())
+            except Exception as exc:
+                item["reachable"] = False
+                item["error"] = str(exc)[:240]
+        report["providers"][provider] = item
+    return report
+
 
 @api_router.post("/coding-mode", status_code=status.HTTP_200_OK)
 async def set_coding_mode(request: CodingModeRequest) -> dict:

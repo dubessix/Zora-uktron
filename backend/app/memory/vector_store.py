@@ -4,6 +4,7 @@ Enforces standard SQLite BLOB persistence and runs high-speed local NumPy Cosine
 Bypasses local transformers footprint, fully complying with 8GB RAM host limitations.
 """
 
+import hashlib
 import json
 import yaml
 import sqlite3
@@ -66,56 +67,79 @@ class VectorStore:
             """)
             conn.commit()
 
+    @staticmethod
+    def _deterministic_offline_embedding(text: str, dims: int) -> List[float]:
+        """Stable labelled-offline vector without Python hash or global RNG state."""
+        np = _lazy_numpy()
+        raw = hashlib.shake_256(text.encode("utf-8")).digest(dims * 4)
+        integers = np.frombuffer(raw, dtype=np.uint32).astype(np.float64)
+        vector = (integers / float(2**32 - 1)) * 2.0 - 1.0
+        norm = np.linalg.norm(vector)
+        if norm:
+            vector = vector / norm
+        return vector.astype(np.float32).tolist()
+
     async def generate_embedding(self, text: str) -> List[float]:
-        """
-        Dispatches an async request to the Gemini embeddings API to generate a
-        vector of the configured dimensionality (default 768, matching stored
-        vectors so new memories stay comparable to legacy ones).
-
-        The embedding model + dimensions are config-driven (env
-        GEMINI_EMBEDDING_MODEL / GEMINI_EMBEDDING_DIMS, or config.yaml) — the
-        retired text-embedding-004 is no longer hardcoded. Repeated text is served
-        from an in-memory cache so we never burn API calls on the same query twice.
-        """
-        key = text.strip()
-        if key in self._embedding_cache:
-            return self._embedding_cache[key]
-
+        """Return a config-driven Gemini embedding or a deterministic offline vector."""
+        normalized = text.strip()
         model = get_model("embedding")
         dims = get_embedding_dimensions()
-        api_key = self.key_manager.get_active_key("gemini")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "model": f"models/{model}",
-            "content": {
-                "parts": [{"text": text}]
-            },
-            "outputDimensionality": dims,
-        }
-        
-        # Safe fallback check for local mock test executions
-        if "dummy_fallback" in api_key:
-            # Generate a reproducible pseudo-embedding vector for testing
-            np = _lazy_numpy()
-            np.random.seed(hash(text) % (2**32))
-            vec = np.random.randn(dims).tolist()
-            self._embedding_cache[key] = vec
-            return vec
+        cache_key = f"{model}|{dims}|{normalized}"
+        if cache_key in self._embedding_cache:
+            return self._embedding_cache[cache_key]
+
+        if not self.key_manager.has_real_key("gemini"):
+            vector = self._deterministic_offline_embedding(normalized, dims)
+            self._cache_embedding(cache_key, vector)
+            return vector
 
         import httpx
-        async with httpx.AsyncClient() as client:
+
+        url_template = "https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent?key={key}"
+        payload = {
+            "model": f"models/{model}",
+            "content": {"parts": [{"text": text}]},
+            "outputDimensionality": dims,
+        }
+        last_error = None
+        for attempt in range(2):
+            api_key = self.key_manager.get_active_key("gemini")
+            url = url_template.format(model=model, key=api_key)
             try:
-                response = await client.post(url, headers=headers, json=payload, timeout=15.0)
-                if response.status_code == 200:
-                    res_data = response.json()
-                    vec = res_data["embedding"]["values"]
-                    self._cache_embedding(key, vec)
-                    return vec
-                else:
-                    raise RuntimeError(f"Embedding API returned status code: {response.status_code}")
-            except Exception as e:
-                raise RuntimeError(f"Failed to connect to cloud embedding client: {e}")
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(
+                        url,
+                        headers={"Content-Type": "application/json"},
+                        json=payload,
+                    )
+            except httpx.RequestError as exc:
+                last_error = exc
+                self.key_manager.mark_key_cooling("gemini", api_key, duration_sec=30)
+                continue
+
+            if response.status_code == 429 or response.status_code >= 500:
+                self.key_manager.mark_key_cooling("gemini", api_key, duration_sec=30)
+                last_error = RuntimeError(f"Embedding API temporary HTTP {response.status_code}")
+                continue
+            if response.status_code in (401, 403):
+                self.key_manager.mark_key_failed("gemini", api_key)
+                last_error = RuntimeError(f"Embedding API authentication HTTP {response.status_code}")
+                continue
+            if response.status_code != 200:
+                raise RuntimeError(f"Embedding API rejected request with HTTP {response.status_code}")
+
+            try:
+                vector = response.json()["embedding"]["values"]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RuntimeError("Embedding API returned an invalid response schema") from exc
+            if len(vector) != dims:
+                raise RuntimeError(
+                    f"Embedding API returned {len(vector)} dimensions; expected {dims}"
+                )
+            self._cache_embedding(cache_key, vector)
+            return vector
+
+        raise RuntimeError(f"Gemini embedding provider unavailable: {last_error}")
 
     def _cache_embedding(self, key: str, vec: List[float]) -> None:
         """Bounded in-memory embedding cache (token saver)."""

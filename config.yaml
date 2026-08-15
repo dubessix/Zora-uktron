@@ -24,7 +24,7 @@ ai:
   models:
     groq: "llama-3.1-8b-instant"
     gemini: "gemini-3.5-flash"
-    nvidia: "nvidia/nvidia/nemotron-3-ultra-550b-a55b"
+    nvidia: "nvidia/nemotron-3-ultra-550b-a55b"
     embedding: "gemini-embedding-001"
   embedding_dimensions: 768
 

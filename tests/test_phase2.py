@@ -115,10 +115,10 @@ class TestPhase2BrainArchitecture(unittest.IsolatedAsyncioTestCase):
         router = LLMRouter(key_manager=manager, cache=cache)
         
         # Define mock responses
-        # Attempt 1 (Groq Key 1): Returns 429 Rate Limited
-        # Attempt 2 (Groq Key 2): Returns 500 Connection Failure
-        # Attempt 3 (Groq Key 1 - Retried as earliest cooling): Returns 500 Connection Failure
-        # Cascade Fallback (Gemini Key 1): Returns 200 OK Successful response
+        # Attempt 1 (Groq Key 1): 429 -> temporary cooling.
+        # Attempt 2 (Groq Key 2): 500 -> temporary cooling.
+        # Both keys are then cooling, so Groq is not force-reused and the router
+        # cascades to Gemini, which succeeds.
         mock_response_429 = MagicMock(spec=httpx.Response)
         mock_response_429.status_code = 429
         
@@ -137,10 +137,9 @@ class TestPhase2BrainArchitecture(unittest.IsolatedAsyncioTestCase):
         
         # Set mock side effects
         mock_post.side_effect = [
-            mock_response_429, 
-            mock_response_500, 
-            mock_response_500, 
-            mock_response_success
+            mock_response_429,
+            mock_response_500,
+            mock_response_success,
         ]
         
         response = await router.get_completions(
@@ -151,8 +150,8 @@ class TestPhase2BrainArchitecture(unittest.IsolatedAsyncioTestCase):
         
         # Assertions
         self.assertEqual(response, "Gemini Fallback Complete")
-        self.assertEqual(manager._keys["groq"][0]["state"], "FAILED")
-        self.assertEqual(manager._keys["groq"][1]["state"], "FAILED")
+        self.assertEqual(manager._keys["groq"][0]["state"], "COOLING")
+        self.assertEqual(manager._keys["groq"][1]["state"], "COOLING")
         self.assertEqual(manager._keys["gemini"][0]["state"], "ACTIVE")
         
         await router.close()

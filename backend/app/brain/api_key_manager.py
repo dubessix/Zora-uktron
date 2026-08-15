@@ -1,152 +1,159 @@
-"""
-Ultron API Key State Manager
-Manages state transitions, round-robin rotation, and automated cooldown counters for Groq and Gemini API keys.
-"""
+"""Thread-safe API-key rotation and cooldown state management."""
+
+from __future__ import annotations
 
 import os
+import threading
 import time
-from typing import Dict, List, Optional, Any
-from dotenv import load_dotenv
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-# Load env variables platform-independently on module import
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
+
+class NoAPIKeyError(RuntimeError):
+    """Raised when a provider has no configured real key."""
+
+
+class APIKeyCoolingError(RuntimeError):
+    """Raised when every usable key is cooling; callers should use a fallback."""
+
+    def __init__(self, provider: str, retry_after: float) -> None:
+        self.provider = provider
+        self.retry_after = max(0.0, retry_after)
+        super().__init__(
+            f"All {provider} keys are cooling; retry after {self.retry_after:.1f}s"
+        )
+
+
+def _looks_like_placeholder(value: Optional[str]) -> bool:
+    if not value or not value.strip():
+        return True
+    lowered = value.strip().lower()
+    markers = (
+        "dummy_fallback", "placeholder", "changeme", "change_me", "replace_me",
+        "your_groq", "your_gemini", "your_nvidia", "your_api", "api_key_here",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 class APIKeyManager:
+    PROVIDERS = ("groq", "gemini", "nvidia")
+
     def __init__(self) -> None:
-        # State definitions: "ACTIVE", "COOLING", "FAILED"
+        self._lock = threading.RLock()
         self._keys: Dict[str, List[Dict[str, Any]]] = {
-            "groq": [],
-            "gemini": [],
-            "nvidia": []
+            provider: [] for provider in self.PROVIDERS
         }
-        # Cooldown track map: {key_value: timestamp_cooldown_ends}
         self._cooldowns: Dict[str, float] = {}
-        # Cursor indexes for round-robin rotation
-        self._cursors: Dict[str, int] = {
-            "groq": 0,
-            "gemini": 0,
-            "nvidia": 0
-        }
+        self._cursors: Dict[str, int] = {provider: 0 for provider in self.PROVIDERS}
         self._load_keys_from_env()
 
     def _load_keys_from_env(self) -> None:
-        """Pulls keys dynamically from current .env profile."""
-        # Load Groq keys pool
-        for i in range(1, 4):
-            key = os.getenv(f"GROQ_API_KEY_{i}")
-            if key and "your_groq_api_key" not in key:
-                self._keys["groq"].append({"key": key, "state": "ACTIVE"})
-                
-        # Load Gemini keys pool
-        for i in range(1, 3):
-            key = os.getenv(f"GEMINI_API_KEY_{i}")
-            if key and "your_gemini_api_key" not in key:
-                self._keys["gemini"].append({"key": key, "state": "ACTIVE"})
-                
-        # Load NVIDIA Build (NIM) keys pool — OpenAI-compatible coding provider.
-        for i in range(1, 4):
-            key = os.getenv(f"NVIDIA_API_KEY_{i}")
-            if key and "your_nvidia_api_key" not in key:
-                self._keys["nvidia"].append({"key": key, "state": "ACTIVE"})
+        limits = {"groq": 3, "gemini": 2, "nvidia": 3}
+        prefixes = {
+            "groq": "GROQ_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "nvidia": "NVIDIA_API_KEY",
+        }
+        with self._lock:
+            for provider, count in limits.items():
+                for index in range(1, count + 1):
+                    key = os.getenv(f"{prefixes[provider]}_{index}")
+                    if not _looks_like_placeholder(key):
+                        self._keys[provider].append({"key": key.strip(), "state": "ACTIVE"})
 
-    def _clean_cooldowns(self) -> None:
-        """Pipes through expired cooldown timers, returning keys back to ACTIVE state."""
-        current_time = time.time()
-        for provider in ["groq", "gemini", "nvidia"]:
+    def _clean_cooldowns_locked(self) -> None:
+        now = time.time()
+        for provider in self.PROVIDERS:
             for item in self._keys[provider]:
-                key_val = item["key"]
-                if item["state"] == "COOLING" and key_val in self._cooldowns:
-                    if current_time >= self._cooldowns[key_val]:
-                        item["state"] = "ACTIVE"
-                        del self._cooldowns[key_val]
+                key = item["key"]
+                if item["state"] == "COOLING" and now >= self._cooldowns.get(key, float("inf")):
+                    item["state"] = "ACTIVE"
+                    self._cooldowns.pop(key, None)
 
     def get_active_key(self, provider: str) -> str:
-        """
-        Extracts the next active, healthy key for the requested provider.
-        Utilizes round-robin selection. If no keys are active, raises RuntimeError.
-        """
-        self._clean_cooldowns()
-        
+        """Return the next ACTIVE key; never force-reuse a cooling/failed key."""
         provider = provider.lower()
-        if provider not in self._keys:
-            raise ValueError(f"Unsupported LLM provider requested: {provider}")
-            
-        pool = self._keys[provider]
-        if not pool:
-            # Fallback check in case the user has not updated their .env file yet
-            # Provide standard fallback to prevent startup crash, but log error
-            dummy_key = f"dummy_fallback_{provider}_key"
-            print(f"[WARNING] No active keys detected for provider {provider}. Utilizing local placeholder.")
-            return dummy_key
+        with self._lock:
+            if provider not in self._keys:
+                raise ValueError(f"Unsupported LLM provider requested: {provider}")
+            self._clean_cooldowns_locked()
+            pool = self._keys[provider]
+            if not pool:
+                raise NoAPIKeyError(f"No real API key configured for {provider}")
 
-        # Traverse the list starting from active cursor index
-        start_idx = self._cursors[provider]
-        for offset in range(len(pool)):
-            idx = (start_idx + offset) % len(pool)
-            if pool[idx]["state"] == "ACTIVE":
-                # Advance cursor index for next call
-                self._cursors[provider] = (idx + 1) % len(pool)
-                return pool[idx]["key"]
-                
-        # If all keys are locked, search if any are in cooling state and force-resolve the earliest expiration
-        active_cooling = [item for item in pool if item["state"] == "COOLING"]
-        if active_cooling:
-            earliest = min(active_cooling, key=lambda x: self._cooldowns.get(x["key"], float('inf')))
-            print(f"[WARNING] Key Pool Exhaustion: Forcing earliest cooling key for {provider}.")
-            return earliest["key"]
+            start = self._cursors[provider] % len(pool)
+            for offset in range(len(pool)):
+                index = (start + offset) % len(pool)
+                if pool[index]["state"] == "ACTIVE":
+                    self._cursors[provider] = (index + 1) % len(pool)
+                    return pool[index]["key"]
 
-        raise RuntimeError(f"All registered API keys for {provider} are currently in failed states.")
+            cooling = [
+                self._cooldowns.get(item["key"], float("inf"))
+                for item in pool if item["state"] == "COOLING"
+            ]
+            if cooling:
+                raise APIKeyCoolingError(provider, min(cooling) - time.time())
+            raise RuntimeError(f"All configured API keys for {provider} are failed")
 
     def has_real_key(self, provider: str) -> bool:
-        """True if a provider has at least one real (non-placeholder) key configured.
-
-        A 'placeholder' is the dummy_fallback key returned when a provider has no
-        .env keys at all — it must NOT be treated as a usable provider so the
-        failover cascade can move on to a provider that actually has a key.
-        """
         provider = provider.lower()
-        if provider not in self._keys:
-            return False
-        return any("dummy_fallback" not in item["key"] for item in self._keys[provider])
+        with self._lock:
+            return provider in self._keys and any(
+                not _looks_like_placeholder(item.get("key"))
+                for item in self._keys[provider]
+            )
 
     def has_any_real_key(self) -> bool:
-        """True if ANY provider has at least one real (non-placeholder) key."""
-        return any(self.has_real_key(p) for p in self._keys)
+        return any(self.has_real_key(provider) for provider in self.PROVIDERS)
 
     def config_status(self) -> Dict[str, str]:
-        """
-        Honest startup awareness: which providers have a real key configured.
-        Returns {"groq": "configured"|"not_configured", ...}. This is a config
-        check, NOT a live API call — actual reachability must be verified at
-        runtime by a provider call.
-        """
+        """Report configuration only; this does not claim live reachability."""
         return {
-            p: ("configured" if self.has_real_key(p) else "not_configured")
-            for p in ("groq", "gemini", "nvidia")
+            provider: ("configured" if self.has_real_key(provider) else "not_configured")
+            for provider in self.PROVIDERS
         }
 
-    def mark_key_cooling(self, provider: str, key: str, cooldown_duration_sec: int = 60, duration_sec: Optional[int] = None) -> None:
-        """
-        Transitions key to COOLING state and sets dynamic lock timer.
-        Supports both parameter naming configurations to ensure backward compatibility.
-        """
+    def runtime_status(self) -> Dict[str, Dict[str, int]]:
+        """Return redacted key-state counts for diagnostics."""
+        with self._lock:
+            self._clean_cooldowns_locked()
+            result = {}
+            for provider in self.PROVIDERS:
+                states = {"active": 0, "cooling": 0, "failed": 0}
+                for item in self._keys[provider]:
+                    states[item["state"].lower()] += 1
+                result[provider] = states
+            return result
+
+    def mark_key_cooling(
+        self,
+        provider: str,
+        key: str,
+        cooldown_duration_sec: int = 60,
+        duration_sec: Optional[int] = None,
+    ) -> None:
         provider = provider.lower()
-        actual_cooldown = duration_sec if duration_sec is not None else cooldown_duration_sec
-        
-        for item in self._keys.get(provider, []):
-            if item["key"] == key:
-                item["state"] = "COOLING"
-                self._cooldowns[key] = time.time() + actual_cooldown
-                print(f"[API_KEY_MANAGER] Provider {provider} key cooling activated for {actual_cooldown} seconds.")
-                return
+        duration = duration_sec if duration_sec is not None else cooldown_duration_sec
+        with self._lock:
+            for item in self._keys.get(provider, []):
+                if item["key"] == key:
+                    item["state"] = "COOLING"
+                    self._cooldowns[key] = time.time() + max(0, duration)
+                    print(f"[API_KEY_MANAGER] {provider} key cooling for {duration}s.")
+                    return
 
     def mark_key_failed(self, provider: str, key: str) -> None:
-        """Transitions key to FAILED state. Requires administrative intervention or app restart to restore."""
         provider = provider.lower()
-        for item in self._keys.get(provider, []):
-            if item["key"] == key:
-                item["state"] = "FAILED"
-                print(f"[API_KEY_MANAGER] CRITICAL: Key {key[:10]}... for provider {provider} marked as FAILED.")
-                return
+        with self._lock:
+            for item in self._keys.get(provider, []):
+                if item["key"] == key:
+                    item["state"] = "FAILED"
+                    self._cooldowns.pop(key, None)
+                    print(f"[API_KEY_MANAGER] A {provider} key was marked FAILED.")
+                    return
