@@ -12,12 +12,10 @@ a config change, not a code edit.
 """
 
 import os
-from pathlib import Path
 
 import yaml
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
 
 # Currently-valid, long-runway defaults (verified against provider docs 2026-08-14):
 #   - gemini-3.5-flash    : stable flagship flash, valid to ~May 2027

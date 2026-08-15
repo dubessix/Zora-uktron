@@ -9,13 +9,10 @@ import json
 import yaml
 import sqlite3
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 from backend.app.database.db import get_db_connection
 from backend.app.brain.api_key_manager import APIKeyManager
 from backend.app.brain.model_config import get_model, get_embedding_dimensions
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
 
 # Lazy-load numpy only when needed (cosine math / embeddings), so the heavy
 # NumPy dependency is NOT pulled into memory at backend boot time. This keeps

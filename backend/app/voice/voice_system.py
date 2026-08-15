@@ -6,14 +6,11 @@ loads dynamic config parameters, and coordinates speech generations.
 
 import yaml
 import asyncio
-from pathlib import Path
 from typing import Dict, Any, Optional, AsyncGenerator, List
 
 from backend.app.voice.base_voice_provider import BaseVoiceProvider
 from backend.app.voice.interrupt_handler import InterruptHandler
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
 
 def _get_default_provider() -> BaseVoiceProvider:
     """Lazily construct the default TTS provider.

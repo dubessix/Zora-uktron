@@ -4,12 +4,9 @@ Evaluates cumulative Stress Scores (Es) against dynamic configuration thresholds
 """
 
 import yaml
-from pathlib import Path
 from typing import Tuple, Optional
 from backend.app.emotion.signal_analyzer import SignalAnalyzer
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
 
 class ZoraTrigger:
     def __init__(self, analyzer: Optional[SignalAnalyzer] = None) -> None:

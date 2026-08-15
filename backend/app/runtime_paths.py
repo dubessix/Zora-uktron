@@ -16,8 +16,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-PRODUCTION_DATA_ROOT = (BASE_DIR / "data").resolve()
+from backend.app.install_paths import APPLICATION_HOME
+
+# Source checkouts keep their existing repository-local data layout. Installed
+# wheels use a writable per-user ULTRON_HOME (never site-packages/sys.prefix).
+BASE_DIR = APPLICATION_HOME
+PRODUCTION_DATA_ROOT = (APPLICATION_HOME / "data").resolve()
 
 
 def _running_test_command() -> bool:

@@ -30,10 +30,12 @@ class TestPackaging(unittest.TestCase):
         self.assertIn("backend.app.tools", pkgs)
         self.assertIn("backend.app", pkgs)
 
-    def test_setup_lists_edge_tts_dependency(self):
-        """The TTS provider dep was missing and broke voice after install."""
+    def test_requirements_list_edge_tts_dependency(self):
+        """setup.py reads this canonical dependency list for wheel metadata."""
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
-        self.assertIn("edge-tts", setup_text)
+        self.assertIn("edge-tts", requirements)
+        self.assertIn("install_requires=_requirements()", setup_text)
 
     def test_cli_entry_point_module_exists(self):
         self.assertTrue((ROOT / "backend" / "app" / "cli.py").exists())

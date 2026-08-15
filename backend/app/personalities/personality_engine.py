@@ -6,7 +6,6 @@ Manages active personality lifecycles, manual switches, and automatic returns to
 import re
 import yaml
 import datetime
-from pathlib import Path
 from typing import Dict, Optional
 from pydantic import BaseModel, Field
 
@@ -15,9 +14,7 @@ from backend.app.personalities.base_personality import (
     UltronPersonality,
     ZoraPersonality
 )
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
 
 class PersonalityState(BaseModel):
     active_personality: str = Field("ultron", description="ID of the current active personality.")

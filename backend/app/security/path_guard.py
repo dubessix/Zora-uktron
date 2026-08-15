@@ -7,9 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from backend.app.install_paths import CONFIG_PATH
 from backend.app.runtime_paths import BASE_DIR, TEST_MODE, TEST_ROOT
-
-CONFIG_PATH = BASE_DIR / "config.yaml"
 
 _DEFAULT_BLOCKED_ROOTS = [
     "/etc", "/var", "/proc", "/sys", "/boot", "/root", "/dev", "/bin",

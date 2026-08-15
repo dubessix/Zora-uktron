@@ -33,6 +33,21 @@ def _decode_ddg(url: str) -> str:
     return url
 
 
+def _is_organic_result_url(url: str) -> bool:
+    """Reject DuckDuckGo/Bing ad trackers and search-navigation links."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    query_keys = {key.lower() for key in parse_qs(parsed.query)}
+    if parsed.scheme not in {"http", "https"} or not host:
+        return False
+    if host == "duckduckgo.com" or host.endswith(".duckduckgo.com"):
+        return False
+    if host == "bing.com" or host.endswith(".bing.com"):
+        if parsed.path.lower().endswith("/aclick") or "ad_provider" in query_keys:
+            return False
+    return not ({"ad_domain", "ad_provider", "click_metadata"} & query_keys)
+
+
 async def _ddg(query: str, limit: int) -> list:
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True,
@@ -50,8 +65,11 @@ async def _ddg(query: str, limit: int) -> list:
     snippets = re.findall(r"<td class=['\"]result-snippet['\"][^>]*>(.*?)</td>", html, re.DOTALL)
     out = []
     for i, (url, title) in enumerate(links):
+        decoded_url = _decode_ddg(url.strip())
+        if not _is_organic_result_url(decoded_url):
+            continue
         snippet = _clean(snippets[i]) if i < len(snippets) else ""
-        out.append({"title": _clean(title) or "Result", "url": _decode_ddg(url.strip()), "snippet": snippet[:200]})
+        out.append({"title": _clean(title) or "Result", "url": decoded_url, "snippet": snippet[:200]})
         if len(out) >= limit:
             break
     return out
@@ -78,7 +96,6 @@ async def _wikipedia(query: str, limit: int) -> list:
     out = []
     for h in hits:
         title = h.get("title", "")
-        page_id = h.get("pageid")
         url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
         out.append({
             "title": title,

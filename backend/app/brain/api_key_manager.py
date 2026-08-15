@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 import threading
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-load_dotenv(dotenv_path=BASE_DIR / ".env")
+from backend.app.install_paths import ENV_PATH
+
+load_dotenv(dotenv_path=ENV_PATH)
 
 
 class NoAPIKeyError(RuntimeError):

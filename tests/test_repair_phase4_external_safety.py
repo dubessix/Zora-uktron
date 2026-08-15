@@ -16,6 +16,7 @@ from backend.app.tools.browser_tools import DownloadFileTool, OpenUrlTool, ReadP
 from backend.app.tools.filesystem_search_tool import ConvertFileFormatTool
 from backend.app.tools.git_tool import GitCloneTool
 from backend.app.tools.music_tools import PlayMusicTool, SetVolumeTool
+from backend.app.tools._realsearch import _is_organic_result_url
 from backend.app.tools.spotify_tools import OpenSpotifyTool
 from backend.app.tools.system_tools import CalculatorTool
 from backend.app.tools.world_monitor_tool import WorldMonitorTool
@@ -108,6 +109,15 @@ class TestSafeDownloadAndPageRead(unittest.IsolatedAsyncioTestCase):
 
 
 class TestHonestExternalOperations(unittest.IsolatedAsyncioTestCase):
+    def test_search_result_filter_rejects_ad_tracking_urls(self):
+        self.assertFalse(_is_organic_result_url(
+            "https://duckduckgo.com/y.js?ad_domain=example.com&ad_provider=bingv7aa"
+        ))
+        self.assertFalse(_is_organic_result_url(
+            "https://www.bing.com/aclick?ad_provider=bing&u=tracker"
+        ))
+        self.assertTrue(_is_organic_result_url("https://vite.dev/guide/"))
+
     async def test_browser_open_false_is_failure(self):
         with patch("backend.app.tools.browser_tools.webbrowser.open", return_value=False):
             result = await OpenUrlTool().execute(url="https://example.com")

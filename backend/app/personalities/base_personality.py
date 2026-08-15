@@ -8,8 +8,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-PROMPTS_DIR = BASE_DIR / "backend" / "app" / "personalities"
+PROMPTS_DIR = Path(__file__).resolve().parent
 
 class BasePersonality(ABC):
     def __init__(self, id_str: str, name_str: str) -> None:

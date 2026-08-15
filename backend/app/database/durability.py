@@ -18,9 +18,8 @@ from backend.app.database.backup import (
     get_approved_backup_root,
     prune_backups,
 )
-from backend.app.runtime_paths import BASE_DIR, runtime_data_path
-
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
+from backend.app.runtime_paths import runtime_data_path
 
 
 def _bounded_int(value: Any, default: int, low: int, high: int) -> int:

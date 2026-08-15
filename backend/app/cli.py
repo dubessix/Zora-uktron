@@ -4,6 +4,7 @@ Provides global administration, setup wizards, diagnostics, and launch routines.
 Supports Windows 11 & Linux Ubuntu 24.04 natively.
 """
 
+import os
 import sys
 import platform
 import shutil
@@ -11,12 +12,20 @@ import socket
 import click
 import yaml
 import psutil
-from pathlib import Path
 
-# Setup clean path resolutions
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
-ENV_PATH = BASE_DIR / ".env"
+from backend.app.install_paths import (
+    APPLICATION_HOME,
+    ASSET_ROOT,
+    CONFIG_PATH,
+    ENV_EXAMPLE_PATH,
+    ENV_PATH,
+    FRONTEND_DIR,
+    LAUNCHER_PATH,
+    ensure_user_config,
+)
+
+# Runtime state is writable under the source checkout or the user's ULTRON_HOME.
+BASE_DIR = APPLICATION_HOME
 
 def check_port_availability(port: int, host: str = "127.0.0.1") -> bool:
     """Check if a specific TCP port is open locally."""
@@ -50,47 +59,55 @@ def version():
     click.echo(click.style(f"ULTRON Core Engine — Version: {version_str}", fg="cyan", bold=True))
 
 @main.command()
-@click.option("--force", is_flag=True, help="Force override of directories and configuration profiles.")
+@click.option("--force", is_flag=True, help="Re-check/create runtime directories without deleting user data.")
 def setup(force):
-    """Execute first-time system configuration wizard and generate local workspaces."""
+    """Create a writable personal runtime home from bundled installation assets."""
     click.echo(click.style("=== ULTRON V1 INITIALIZATION SETUP ===", fg="cyan", bold=True))
-    
-    # Initialize workspace directories
+
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
     required_dirs = [
         BASE_DIR / "data" / "memory",
         BASE_DIR / "data" / "logs",
         BASE_DIR / "data" / "cache",
     ]
-    
     for directory in required_dirs:
-        if not directory.exists() or force:
-            directory.mkdir(parents=True, exist_ok=True)
+        existed = directory.exists()
+        directory.mkdir(parents=True, exist_ok=True)
+        if force or not existed:
             click.echo(f"Created system directory: {directory.relative_to(BASE_DIR)}")
-            
-    # Verify or regenerate .env template
-    if not ENV_PATH.exists() or force:
-        template_content = (
-            "GROQ_API_KEY_1=your_groq_api_key_1_here\n"
-            "GROQ_API_KEY_2=your_groq_api_key_2_here\n"
-            "GROQ_API_KEY_3=your_groq_api_key_3_here\n"
-            "GEMINI_API_KEY_1=your_gemini_api_key_1_here\n"
-            "GEMINI_API_KEY_2=your_gemini_api_key_2_here\n"
-            "ENV_STATE=production\n"
-            "SECRET_KEY=generate_a_secure_random_key_here\n"
-        )
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.write(template_content)
+
+    try:
+        user_config = ensure_user_config(overwrite=False)
+        click.echo(f"Configuration ready: {user_config}")
+    except OSError as exc:
+        raise click.ClickException(f"Could not install default config: {exc}") from exc
+
+    # Never overwrite an existing .env: it may contain the owner's live keys.
+    if not ENV_PATH.exists():
+        try:
+            if ENV_EXAMPLE_PATH.is_file():
+                shutil.copy2(ENV_EXAMPLE_PATH, ENV_PATH)
+            else:
+                ENV_PATH.write_text(
+                    "GROQ_API_KEY_1=your_groq_api_key_1_here\n"
+                    "GEMINI_API_KEY_1=your_gemini_api_key_1_here\n"
+                    "NVIDIA_API_KEY_1=your_nvidia_api_key_1_here\n",
+                    encoding="utf-8",
+                )
+        except OSError as exc:
+            raise click.ClickException(f"Could not create .env template: {exc}") from exc
         click.echo(click.style("Created secure API environment key template (.env)", fg="green"))
     else:
-        click.echo(click.style("Existing secure environment keys (.env) detected.", fg="yellow"))
+        click.echo(click.style("Existing secure environment keys (.env) preserved.", fg="yellow"))
 
-    click.echo(click.style("\nSetup checklist completed. Next steps: Configure .env then run 'ultron doctor'.", fg="green", bold=True))
+    click.echo(click.style("\nSetup completed. Configure .env, then run 'ultron doctor'.", fg="green", bold=True))
 
 @main.command()
 def doctor():
     """Execute complete software-dependency, API, hardware, and port health diagnostics."""
     click.echo(click.style("=== ULTRON SYSTEM DIAGNOSTIC ANALYSIS (DOCTOR) ===", fg="cyan", bold=True))
     all_green = True
+    warning_count = 0
 
     # 1. Host Hardware Analysis
     click.echo("\n[1/5] Checking Hardware Environment Constraints...")
@@ -99,6 +116,7 @@ def doctor():
     click.echo(f"  - Detected CPU Cores: {psutil.cpu_count(logical=True)} logical cores")
     click.echo(f"  - System RAM Capacity: {total_ram_gb:.2f} GB")
     if total_ram_gb < 7.5:
+        warning_count += 1
         click.echo(click.style("  ⚠️ Warning: Available RAM is below 8GB. Strictly avoid local LLM/STT executions.", fg="yellow"))
     else:
         click.echo(click.style("  ✓ Hardware profiles comply with 8GB RAM host standard.", fg="green"))
@@ -119,6 +137,7 @@ def doctor():
             click.echo(f"  ✓ {binary:<8}: Found at {binary_path}")
         else:
             if binary == "ffmpeg":
+                warning_count += 1
                 click.echo(click.style(f"  ⚠️ {binary:<8}: Missing. Voice converter requires ffmpeg added to PATH.", fg="yellow"))
             else:
                 click.echo(click.style(f"  ✗ {binary:<8}: Missing. Please install {binary} to proceed.", fg="red"))
@@ -156,14 +175,25 @@ def doctor():
 
     # 5. Config Profiles Audit
     click.echo("\n[5/5] Auditing Configuration Profiles...")
-    if CONFIG_PATH.exists():
-        click.echo("  ✓ config.yaml: Exists and verified.")
+    config_valid = bool(config) and isinstance(config.get("server"), dict) and isinstance(config.get("ai"), dict)
+    if CONFIG_PATH.is_file() and config_valid:
+        click.echo(f"  ✓ config.yaml: Parsed required sections from {CONFIG_PATH}.")
+    elif CONFIG_PATH.is_file():
+        click.echo(click.style("  ✗ config.yaml: Present but malformed or missing server/ai sections.", fg="red"))
+        all_green = False
     else:
         click.echo(click.style("  ✗ config.yaml: Missing! System requires a valid configuration file.", fg="red"))
         all_green = False
 
-    if all_green:
-        click.echo(click.style("\n✓ DIAGNOSTICS CLEAN: All systems green. Ready for 'ultron start'!", fg="green", bold=True))
+    if all_green and warning_count:
+        click.echo(click.style(
+            f"\n⚠ CORE CHECKS PASSED WITH {warning_count} WARNING(S). "
+            "Review optional hardware/media limitations above before daily use.",
+            fg="yellow",
+            bold=True,
+        ))
+    elif all_green:
+        click.echo(click.style("\n✓ DIAGNOSTICS PASSED: Required checks succeeded.", fg="green", bold=True))
     else:
         click.echo(click.style("\n✗ DIAGNOSTICS FAILED: Please resolve outstanding issues listed above.", fg="red", bold=True))
         sys.exit(1)
@@ -207,17 +237,44 @@ def integrity():
         click.echo(f"  {table}: {count} rows")
 
 @main.command()
-def start():
-    """Launch backend services, concurrent asset compilers, and default browser viewport."""
+@click.option("--check", "check_only", is_flag=True, help="Verify installed launch assets without starting services.")
+def start(check_only):
+    """Launch the installed backend/frontend bundle through the master launcher."""
     click.echo(click.style("Bootstrapping services...", fg="cyan"))
     import subprocess
-    launcher_script = BASE_DIR / "launcher.py"
-    if not launcher_script.exists():
-        click.echo(click.style(f"Missing master launcher.py inside {BASE_DIR}", fg="red"))
-        sys.exit(1)
-    
-    # Launch cross-platform concurrent process manager
-    subprocess.run([sys.executable, str(launcher_script)])
+
+    required_assets = [
+        LAUNCHER_PATH,
+        CONFIG_PATH,
+        FRONTEND_DIR / "package.json",
+        FRONTEND_DIR / "package-lock.json",
+        FRONTEND_DIR / "src" / "App.jsx",
+    ]
+    missing = [str(path) for path in required_assets if not path.is_file()]
+    if missing:
+        raise click.ClickException(
+            "Installation is incomplete; missing assets: " + ", ".join(missing)
+        )
+    if check_only:
+        click.echo(click.style(
+            f"Installation assets verified at {ASSET_ROOT}.",
+            fg="green",
+            bold=True,
+        ))
+        return
+
+    env = os.environ.copy()
+    env.setdefault("ULTRON_HOME", str(APPLICATION_HOME))
+    completed = subprocess.run(
+        [sys.executable, str(LAUNCHER_PATH)],
+        cwd=str(ASSET_ROOT),
+        env=env,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise click.ClickException(
+            f"Launcher exited with status {completed.returncode}. See service logs above."
+        )
 
 if __name__ == "__main__":
     main()

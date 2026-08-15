@@ -6,10 +6,8 @@ Loads list triggers dynamically from config.yaml.
 
 import re
 import yaml
-from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
+from backend.app.install_paths import CONFIG_PATH
 
 class MemoryGate:
     def __init__(self) -> None:

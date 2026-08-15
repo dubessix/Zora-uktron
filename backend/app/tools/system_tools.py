@@ -16,6 +16,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
+from backend.app.install_paths import CONFIG_PATH
 from backend.app.tools.tool_base import BaseTool
 
 # Phase 4: commands that contain shell metacharacters (pipes, redirects, chaining,
@@ -46,9 +47,8 @@ def _requires_shell(command: str) -> bool:
 
 
 def _load_approved_commands() -> set[str]:
-    config_path = Path(__file__).resolve().parent.parent.parent.parent / "config.yaml"
     try:
-        with open(config_path, "r", encoding="utf-8") as handle:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
             configured = (
                 (yaml.safe_load(handle) or {})
                 .get("security", {})
