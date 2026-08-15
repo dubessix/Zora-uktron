@@ -144,13 +144,11 @@ class WorldMonitorTool(BaseTool):
             pass
 
         return {
-            "success": True,
-            "source": "Aviation & Geopolitical Intelligence Feed Failover",
-            "headline": f"Real-time fallback data processed for search query: '{query}'.",
-            "details": [
-                f"Global risk monitoring and air defense reports for {query} indicates persistent surveillance activity.",
-                "Market sentiment fluctuations and OPEC production caps indicate strong correlation with regional logistics."
-            ]
+            "success": False,
+            "source": "DuckDuckGo live search",
+            "error": f"No verifiable live results were available for '{query}'.",
+            "headline": "Live intelligence unavailable; no fallback facts were fabricated.",
+            "details": [],
         }
 
     async def execute(self, **kwargs) -> Dict[str, Any]:

@@ -41,9 +41,9 @@ class TavilyResearchTool(BaseTool):
                     # Open the most relevant answer page in the browser (not a search URL).
                     top_url = results[0]["url"]
                     try:
-                        webbrowser.open(top_url)
+                        browser_opened = bool(webbrowser.open(top_url))
                     except Exception:
-                        pass
+                        browser_opened = False
                     sources = [
                         {"name": r["title"], "url": r["url"], "snippet": r["snippet"]}
                         for r in results
@@ -55,21 +55,22 @@ class TavilyResearchTool(BaseTool):
                             "topic": query_str,
                             "summary": summary or f"Here are the top web results for '{query_str}'.",
                             "sources": sources,
-                            "opened_in_browser": top_url
+                            "opened_in_browser": top_url if browser_opened else None,
+                            "browser_opened": browser_opened
                         },
                         "error": None
                     }
             except Exception:
                 pass
             return {
-                "success": True,
+                "success": False,
                 "data": {
+                    "status": "unavailable",
                     "topic": query_str,
-                    "summary": f"No live web results could be fetched for '{query_str}' right now.",
                     "sources": [],
-                    "opened_in_browser": None
+                    "opened_in_browser": None,
                 },
-                "error": None
+                "error": f"No live web results could be verified for '{query_str}'.",
             }
 
         url = "https://api.tavily.com/search"
@@ -97,13 +98,15 @@ class TavilyResearchTool(BaseTool):
                         })
                     # Open the top result page so the user sees the actual answer,
                     # not a search page.
+                    browser_opened = False
                     if results:
-                        opened_in_browser = results[0].get("url")
+                        top_result_url = results[0].get("url")
                         try:
                             import webbrowser
-                            webbrowser.open(opened_in_browser)
+                            browser_opened = bool(webbrowser.open(top_result_url))
                         except Exception:
-                            pass
+                            browser_opened = False
+                        opened_in_browser = top_result_url if browser_opened else None
                         
                     return {
                         "success": True,
@@ -111,7 +114,8 @@ class TavilyResearchTool(BaseTool):
                             "topic": query_str,
                             "summary": answer,
                             "sources": sources,
-                            "opened_in_browser": opened_in_browser
+                            "opened_in_browser": opened_in_browser,
+                            "browser_opened": browser_opened
                         },
                         "error": None
                     }

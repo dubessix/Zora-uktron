@@ -191,12 +191,20 @@ class ConvertFileFormatTool(BaseTool):
             else:
                 return {"success": False, "error": f"Unsupported conversion from extension '{src_ext}' to '{dest_ext}'. Only JSON <-> CSV supported.", "data": {}}
 
+            try:
+                source_display = str(src_path.relative_to(self.workspace_root))
+            except ValueError:
+                source_display = str(src_path)
+            try:
+                destination_display = str(dest_path.relative_to(self.workspace_root))
+            except ValueError:
+                destination_display = str(dest_path)
             return {
                 "success": True,
                 "data": {
                     "message": f"Successfully converted format from '{src_path.name}' to '{dest_path.name}'.",
-                    "source": str(src_path.relative_to(self.workspace_root)),
-                    "destination": str(dest_path.relative_to(self.workspace_root))
+                    "source": source_display,
+                    "destination": destination_display,
                 },
                 "error": None
             }

@@ -9,6 +9,9 @@ import webbrowser
 import httpx
 import platform
 import asyncio
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Dict, Any
 from pydantic import BaseModel, Field
@@ -32,42 +35,45 @@ class ReadPageArgs(BaseModel):
 # --- Helper Key Senders ---
 
 async def send_browser_shortcut(key_combo: str) -> bool:
-    """Sends native system-wide keyboard shortcuts to control the active browser window."""
-    system_type = platform.system()
+    """Send a shortcut only when the required executable exits successfully."""
     try:
-        if system_type == "Windows":
-            # Send keys via powershell wscript.shell interface
-            powershell_cmd = f"powershell -c \"$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys('{key_combo}')\""
-            proc = await asyncio.create_subprocess_shell(
-                powershell_cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
+        if platform.system() == "Windows":
+            powershell = shutil.which("powershell") or shutil.which("pwsh")
+            if not powershell:
+                return False
+            script = (
+                "$wshell = New-Object -ComObject wscript.shell; "
+                f"$wshell.SendKeys('{key_combo}')"
             )
-            await proc.wait()
-            return True
+            proc = await asyncio.create_subprocess_exec(
+                powershell, "-NoProfile", "-Command", script,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
         else:
-            # Send keys via xdotool utility on Linux Ubuntu
-            # Map Windows key notation to xdotool syntax
-            xdo_key = key_combo.lower()
-            if "^w" in xdo_key or "ctrl+w" in xdo_key:
-                cmd = "xdotool key ctrl+w"
-            elif "f5" in xdo_key:
-                cmd = "xdotool key F5"
-            elif "%{left}" in xdo_key or "alt+left" in xdo_key:
-                cmd = "xdotool key alt+Left"
-            elif "%{right}" in xdo_key or "alt+right" in xdo_key:
-                cmd = "xdotool key alt+Right"
+            xdotool = shutil.which("xdotool")
+            if not xdotool:
+                return False
+            lowered = key_combo.lower()
+            if "^w" in lowered or "ctrl+w" in lowered:
+                key = "ctrl+w"
+            elif "f5" in lowered:
+                key = "F5"
+            elif "%{left}" in lowered or "alt+left" in lowered:
+                key = "alt+Left"
+            elif "%{right}" in lowered or "alt+right" in lowered:
+                key = "alt+Right"
+            elif "%{f4}" in lowered or "alt+f4" in lowered:
+                key = "alt+F4"
             else:
                 return False
-                
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+            proc = await asyncio.create_subprocess_exec(
+                xdotool, "key", key,
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
+                stderr=asyncio.subprocess.DEVNULL,
             )
-            await proc.wait()
-            return True
-    except Exception:
+        return await proc.wait() == 0
+    except (OSError, ValueError):
         return False
 
 # --- Tool Implementations ---
@@ -87,9 +93,15 @@ class OpenUrlTool(BaseTool):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         url = kwargs.get("url", "")
+        from backend.app.security.url_guard import validate_browser_url
+        ok, reason = validate_browser_url(url)
+        if not ok:
+            return {"success": False, "error": f"Browser URL blocked: {reason}", "data": {}}
         try:
-            webbrowser.open(url)
-            return {"success": True, "data": {"message": f"Successfully launched URL in default browser: {url}"}, "error": None}
+            opened = bool(webbrowser.open(url))
+            if not opened:
+                return {"success": False, "error": "Default browser rejected the launch request.", "data": {}}
+            return {"success": True, "data": {"message": f"Browser accepted URL: {url}", "url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to launch URL: {e}", "data": {}}
 
@@ -108,9 +120,15 @@ class OpenNewTabTool(BaseTool):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         url = kwargs.get("url", "")
+        from backend.app.security.url_guard import validate_browser_url
+        ok, reason = validate_browser_url(url)
+        if not ok:
+            return {"success": False, "error": f"Browser URL blocked: {reason}", "data": {}}
         try:
-            webbrowser.open_new_tab(url)
-            return {"success": True, "data": {"message": f"Successfully launched new browser tab: {url}"}, "error": None}
+            opened = bool(webbrowser.open_new_tab(url))
+            if not opened:
+                return {"success": False, "error": "Default browser rejected the new-tab request.", "data": {}}
+            return {"success": True, "data": {"message": f"Browser accepted new tab: {url}", "url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to open tab: {e}", "data": {}}
 
@@ -229,38 +247,72 @@ class DownloadFileTool(BaseTool):
         save_path = Path(kwargs.get("save_path", "")).resolve()
 
         from backend.app.security.path_guard import check_path
+        from backend.app.security.url_guard import (
+            MAX_DOWNLOAD_BYTES, MAX_REDIRECTS, response_peer_is_approved,
+            validate_public_url_details, validate_redirect,
+        )
+
         path_decision = check_path(str(save_path))
         if not path_decision["safe"]:
             return {"success": False, "error": f"Download destination blocked ({path_decision['reason']}): {save_path}", "data": {}}
 
-        # Phase 4: SSRF guard — reject localhost/private/metadata targets.
-        from backend.app.security.url_guard import validate_public_url, MAX_DOWNLOAD_BYTES
-        ok, reason = validate_public_url(url)
-        if not ok:
-            return {"success": False, "error": f"URL blocked (SSRF guard): {reason}", "data": {}}
+        current_url = url
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = None
+        try:
+            async with httpx.AsyncClient(follow_redirects=False, timeout=20.0) as client:
+                for redirect_count in range(MAX_REDIRECTS + 1):
+                    details = validate_public_url_details(current_url)
+                    if not details["safe"]:
+                        return {"success": False, "error": f"URL blocked (SSRF guard): {details['reason']}", "data": {}}
 
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            try:
-                async with client.stream("GET", url, timeout=20.0) as response:
-                    if response.status_code != 200:
-                        return {"success": False, "error": f"Download API returned status code: {response.status_code}", "data": {}}
-                    # Enforce a hard size cap while streaming (no unbounded writes).
-                    total = 0
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(save_path, "wb") as f:
-                        async for chunk in response.aiter_bytes(65536):
-                            total += len(chunk)
-                            if total > MAX_DOWNLOAD_BYTES:
-                                f.close()
-                                try:
-                                    save_path.unlink(missing_ok=True)
-                                except Exception:
-                                    pass
-                                return {"success": False, "error": f"Download exceeds size limit ({MAX_DOWNLOAD_BYTES//(1024*1024)} MB).", "data": {}}
-                            f.write(chunk)
-                return {"success": True, "data": {"message": f"Asset downloaded successfully to {save_path}", "bytes": total}, "error": None}
-            except Exception as e:
-                return {"success": False, "error": f"Failed to complete asset download: {e}", "data": {}}
+                    async with client.stream("GET", current_url) as response:
+                        peer_ok, peer_reason = response_peer_is_approved(response, details["addresses"])
+                        if not peer_ok:
+                            return {"success": False, "error": f"URL blocked (SSRF peer guard): {peer_reason}", "data": {}}
+                        if response.status_code in {301, 302, 303, 307, 308}:
+                            if redirect_count >= MAX_REDIRECTS:
+                                return {"success": False, "error": "Too many redirects.", "data": {}}
+                            redirected = validate_redirect(current_url, response.headers.get("location", ""))
+                            if not redirected["safe"]:
+                                return {"success": False, "error": f"Redirect blocked (SSRF guard): {redirected['reason']}", "data": {}}
+                            current_url = redirected["url"]
+                            continue
+                        if response.status_code != 200:
+                            return {"success": False, "error": f"Download returned HTTP {response.status_code}", "data": {}}
+
+                        declared = response.headers.get("content-length")
+                        if declared and declared.isdigit() and int(declared) > MAX_DOWNLOAD_BYTES:
+                            return {"success": False, "error": "Download Content-Length exceeds size limit.", "data": {}}
+                        total = 0
+                        fd, temp_name = tempfile.mkstemp(
+                            dir=str(save_path.parent), prefix=f".{save_path.name}.", suffix=".download"
+                        )
+                        temp_path = Path(temp_name)
+                        with os.fdopen(fd, "wb") as handle:
+                            async for chunk in response.aiter_bytes(65536):
+                                total += len(chunk)
+                                if total > MAX_DOWNLOAD_BYTES:
+                                    raise ValueError("Download exceeds size limit")
+                                handle.write(chunk)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                        os.replace(temp_path, save_path)
+                        temp_path = None
+                        return {
+                            "success": True,
+                            "data": {
+                                "message": f"Downloaded verified asset to {save_path}",
+                                "bytes": total,
+                                "source_url": current_url,
+                            },
+                            "error": None,
+                        }
+            return {"success": False, "error": "Download redirect loop ended unexpectedly.", "data": {}}
+        except Exception as e:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            return {"success": False, "error": f"Failed to complete asset download: {e}", "data": {}}
 
 class ReadPageTool(BaseTool):
     def __init__(self) -> None:
@@ -276,29 +328,48 @@ class ReadPageTool(BaseTool):
         )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        url = kwargs.get("url", "")
+        current_url = kwargs.get("url", "")
+        from backend.app.security.url_guard import (
+            MAX_PAGE_BYTES, MAX_REDIRECTS, response_peer_is_approved,
+            validate_public_url_details, validate_redirect,
+        )
 
-        # Phase 4: SSRF guard — reject localhost/private/metadata targets.
-        from backend.app.security.url_guard import validate_public_url
-        ok, reason = validate_public_url(url)
-        if not ok:
-            return {"success": False, "error": f"URL blocked (SSRF guard): {reason}", "data": {}}
-
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            try:
-                response = await client.get(url, timeout=15.0)
-                if response.status_code == 200:
-                    html_content = response.text
-                    clean_text = re.sub(r'<(script|style).*?>.*?</\1>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
-                    clean_text = re.sub(r'<[^>]*?>', '', clean_text)
-                    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-                    
-                    summary = clean_text[:2000] + "..." if len(clean_text) > 2000 else clean_text
-                    return {"success": True, "data": {"content": summary}, "error": None}
-                else:
-                    return {"success": False, "error": f"Web server returned status code: {response.status_code}", "data": {}}
-            except Exception as e:
-                return {"success": False, "error": f"Failed to scrape web page: {e}", "data": {}}
+        try:
+            async with httpx.AsyncClient(follow_redirects=False, timeout=15.0) as client:
+                for redirect_count in range(MAX_REDIRECTS + 1):
+                    details = validate_public_url_details(current_url)
+                    if not details["safe"]:
+                        return {"success": False, "error": f"URL blocked (SSRF guard): {details['reason']}", "data": {}}
+                    async with client.stream("GET", current_url) as response:
+                        peer_ok, peer_reason = response_peer_is_approved(response, details["addresses"])
+                        if not peer_ok:
+                            return {"success": False, "error": f"URL blocked (SSRF peer guard): {peer_reason}", "data": {}}
+                        if response.status_code in {301, 302, 303, 307, 308}:
+                            if redirect_count >= MAX_REDIRECTS:
+                                return {"success": False, "error": "Too many redirects.", "data": {}}
+                            redirected = validate_redirect(current_url, response.headers.get("location", ""))
+                            if not redirected["safe"]:
+                                return {"success": False, "error": f"Redirect blocked (SSRF guard): {redirected['reason']}", "data": {}}
+                            current_url = redirected["url"]
+                            continue
+                        if response.status_code != 200:
+                            return {"success": False, "error": f"Web server returned HTTP {response.status_code}", "data": {}}
+                        chunks = []
+                        total = 0
+                        async for chunk in response.aiter_bytes(65536):
+                            total += len(chunk)
+                            if total > MAX_PAGE_BYTES:
+                                return {"success": False, "error": "Web page exceeds read size limit.", "data": {}}
+                            chunks.append(chunk)
+                        html_content = b"".join(chunks).decode(response.encoding or "utf-8", "ignore")
+                        clean_text = re.sub(r'<(script|style).*?>.*?</\1>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+                        clean_text = re.sub(r'<[^>]*?>', '', clean_text)
+                        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                        summary = clean_text[:2000] + "..." if len(clean_text) > 2000 else clean_text
+                        return {"success": True, "data": {"content": summary, "source_url": current_url}, "error": None}
+            return {"success": False, "error": "Web redirect loop ended unexpectedly.", "data": {}}
+        except Exception as e:
+            return {"success": False, "error": f"Failed to scrape web page: {e}", "data": {}}
 
 # Import re for regex text cleaners
 import re

@@ -10,6 +10,8 @@ import signal
 import platform
 import asyncio
 import re
+import shutil
+import subprocess
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -381,6 +383,36 @@ class TerminalRunTool(BaseTool):
             await self._terminate_process_group(proc)
             return {"success": False, "error": f"Execution failed: {exc}", "data": {}}
 
+
+async def _launch_verified(candidates, args=None):
+    """Verify an executable exists and that process creation succeeds without a shell."""
+    executable = next((shutil.which(name) for name in candidates if shutil.which(name)), None)
+    if not executable:
+        return {"success": False, "error": f"Required executable unavailable: {', '.join(candidates)}", "data": {}}
+    argv = [executable, *(args or [])]
+    try:
+        process = await asyncio.to_thread(
+            subprocess.Popen,
+            argv,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return {"success": False, "error": f"Failed to start {executable}: {exc}", "data": {}}
+    return {
+        "success": True,
+        "data": {
+            "status": "dispatched_unverified",
+            "executable": executable,
+            "pid": process.pid,
+            "message": "Application process was created; GUI readiness cannot be verified.",
+        },
+        "error": None,
+    }
+
+
 class CalculatorTool(BaseTool):
     def __init__(self) -> None:
         super().__init__(
@@ -395,24 +427,8 @@ class CalculatorTool(BaseTool):
         )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        system_type = platform.system()
-        cmd = "calc" if system_type == "Windows" else "gnome-calculator"
-        
-        try:
-            await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            return {"success": True, "data": {"message": "Calculator successfully launched."}, "error": None}
-        except Exception as e:
-            if system_type != "Windows":
-                try:
-                    await asyncio.create_subprocess_shell("kcalc", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                    return {"success": True, "data": {"message": "Calculator successfully launched via kcalc."}, "error": None}
-                except Exception:
-                    pass
-            return {"success": False, "error": f"Failed to launch calculator application: {e}", "data": {}}
+        candidates = ["calc.exe"] if platform.system() == "Windows" else ["gnome-calculator", "kcalc"]
+        return await _launch_verified(candidates)
 
 class ChromeLauncherTool(BaseTool):
     def __init__(self) -> None:
@@ -428,24 +444,12 @@ class ChromeLauncherTool(BaseTool):
         )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        system_type = platform.system()
-        cmd = "start chrome" if system_type == "Windows" else "google-chrome"
-        
-        try:
-            await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            return {"success": True, "data": {"message": "Google Chrome browser launched successfully."}, "error": None}
-        except Exception as e:
-            if system_type != "Windows":
-                try:
-                    await asyncio.create_subprocess_shell("chromium-browser", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                    return {"success": True, "data": {"message": "Chromium browser launched successfully."}, "error": None}
-                except Exception:
-                    pass
-            return {"success": False, "error": f"Failed to launch Chrome browser: {e}", "data": {}}
+        candidates = (
+            ["chrome.exe", "chrome"]
+            if platform.system() == "Windows"
+            else ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]
+        )
+        return await _launch_verified(candidates)
 
 class VSCodeLauncherTool(BaseTool):
     def __init__(self) -> None:
@@ -461,12 +465,4 @@ class VSCodeLauncherTool(BaseTool):
         )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        try:
-            await asyncio.create_subprocess_shell(
-                "code",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            return {"success": True, "data": {"message": "Visual Studio Code editor successfully launched."}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to launch Visual Studio Code: {e}", "data": {}}
+        return await _launch_verified(["code", "code-insiders"])

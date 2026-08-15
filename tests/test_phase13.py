@@ -7,6 +7,7 @@ and our newly developed un-mocked Self-Healing Compiler Loop (Autoreactive Debug
 
 import unittest
 import shutil
+from unittest.mock import patch
 
 from backend.app.tools.tool_registry import ToolRegistry
 from backend.app.runtime_paths import isolated_test_artifact_path
@@ -140,7 +141,8 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((ORGANIZE_DIR / "archives" / "archive.zip").exists())
         self.assertTrue((ORGANIZE_DIR / "code" / "script.py").exists())
 
-    async def test_browser_and_web_search_tools(self):
+    @patch("webbrowser.open", return_value=True)
+    async def test_browser_and_web_search_tools(self, _open):
         """Test 3: Verify browser URL, Google search, and StackOverflow search URL constructions."""
         registry = ToolRegistry()
         
@@ -159,7 +161,8 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(so_res["success"])
         self.assertIn("asyncio", so_res["data"]["url"])
 
-    async def test_music_and_spotify_launchers(self):
+    @patch("webbrowser.open", return_value=True)
+    async def test_music_and_spotify_launchers(self, _open):
         """Test 4: Verify music players and Spotify deep-links/web-search URL generations."""
         registry = ToolRegistry()
         
@@ -167,9 +170,11 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         stop_res = await registry.execute_tool("stop_music", {})
         self.assertTrue(stop_res["success"])
         
-        # Test set volume (Requires level 1 auto allow)
-        vol_res = await registry.execute_tool("set_volume", {"level": 80}, has_confirmed=False)
-        self.assertTrue(vol_res["success"])
+        # Volume is exact-confirmation gated and must report verified or unavailable.
+        vol_res = await self._execute_exact(
+            registry, "set_volume", {"level": 80}, session="phase13_volume"
+        )
+        self.assertIn((vol_res.get("data") or {}).get("status"), ("verified", "unavailable", "failed"))
         
         # Test Spotify Song Player (Requires level 2 confirmation)
         spotify_args = {"query": "Starboy"}

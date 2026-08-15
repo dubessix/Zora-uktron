@@ -7,6 +7,7 @@ Verifies Spotify client installation state natively via process scanning, return
 import webbrowser
 import urllib.parse
 import platform
+import asyncio
 import psutil
 import shutil
 import os
@@ -66,6 +67,41 @@ def is_spotify_client_installed() -> Tuple[bool, str]:
 
     return False, "Spotify desktop client is not installed or not running. Fallback to Spotify Web Player required."
 
+def _open_verified(url: str) -> None:
+    if not webbrowser.open(url):
+        raise RuntimeError("Default browser rejected the Spotify launch request.")
+
+
+async def _send_spotify_control(linux_method: str, windows_key: int) -> Dict[str, Any]:
+    if platform.system() == "Windows":
+        executable = shutil.which("powershell") or shutil.which("pwsh")
+        if not executable:
+            return {"success": False, "error": "PowerShell unavailable."}
+        script = (
+            "$wshell = New-Object -ComObject wscript.shell; "
+            f"$wshell.SendKeys([char]{windows_key})"
+        )
+        argv = [executable, "-NoProfile", "-Command", script]
+    else:
+        executable = shutil.which("dbus-send")
+        if not executable:
+            return {"success": False, "error": "dbus-send unavailable."}
+        argv = [
+            executable, "--print-reply", "--dest=org.mpris.MediaPlayer2.spotify",
+            "/org/mpris/MediaPlayer2", f"org.mpris.MediaPlayer2.Player.{linux_method}",
+        ]
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        return {
+            "success": False,
+            "error": stderr.decode("utf-8", "ignore")[:500] or f"Control exited {proc.returncode}",
+        }
+    return {"success": True, "stdout": stdout.decode("utf-8", "ignore")[:500]}
+
+
 # --- Tool Implementations ---
 
 class OpenSpotifyTool(BaseTool):
@@ -86,11 +122,11 @@ class OpenSpotifyTool(BaseTool):
         url = "spotify:"
         try:
             if installed:
-                webbrowser.open(url)
+                _open_verified(url)
                 return {"success": True, "data": {"status": "installed", "message": f"Successfully launched local Spotify application. {reason}"}, "error": None}
             else:
                 # Fallback to Web Player if client is missing
-                webbrowser.open("https://open.spotify.com")
+                _open_verified("https://open.spotify.com")
                 return {"success": True, "data": {"status": "fallback_web", "message": f"Local client missing. Launched Spotify Web Player. {reason}"}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to open Spotify: {e}", "data": {}}
@@ -118,10 +154,10 @@ class SpotifyPlaySongTool(BaseTool):
         
         try:
             if installed:
-                webbrowser.open(url)
+                _open_verified(url)
                 return {"success": True, "data": {"status": "installed", "message": f"Launched song search inside local client. {reason}"}, "error": None}
             else:
-                webbrowser.open(fallback_web_url)
+                _open_verified(fallback_web_url)
                 return {"success": True, "data": {"status": "fallback_web", "message": f"Launched song search inside Web Player. {reason}"}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to launch Spotify: {e}", "data": {}}
@@ -147,10 +183,10 @@ class SpotifySearchArtistTool(BaseTool):
         fallback_web_url = f"https://open.spotify.com/search/{escaped}"
         try:
             if installed:
-                webbrowser.open(url)
+                _open_verified(url)
                 return {"success": True, "data": {"status": "installed", "message": f"Launched artist search inside local client. {reason}"}, "error": None}
             else:
-                webbrowser.open(fallback_web_url)
+                _open_verified(fallback_web_url)
                 return {"success": True, "data": {"status": "fallback_web", "message": f"Launched artist search inside Web Player. {reason}"}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to launch Spotify: {e}", "data": {}}
@@ -176,10 +212,10 @@ class SpotifyPlayPlaylistTool(BaseTool):
         fallback_web_url = f"https://open.spotify.com/search/{escaped}"
         try:
             if installed:
-                webbrowser.open(url)
+                _open_verified(url)
                 return {"success": True, "data": {"status": "installed", "message": f"Launched playlist search inside local client. {reason}"}, "error": None}
             else:
-                webbrowser.open(fallback_web_url)
+                _open_verified(fallback_web_url)
                 return {"success": True, "data": {"status": "fallback_web", "message": f"Launched playlist search inside Web Player. {reason}"}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to launch Spotify: {e}", "data": {}}
@@ -201,20 +237,10 @@ class SpotifyPauseTool(BaseTool):
         installed, _ = is_spotify_client_installed()
         if not installed:
             return {"success": False, "error": "Spotify client is not running. Cannot pause.", "data": {}}
-        try:
-            # Emits native media play/pause keystroke to control client
-            import asyncio
-            import platform
-            system_type = platform.system()
-            if system_type == "Windows":
-                # Media Play/Pause keycode is 179
-                await asyncio.create_subprocess_shell("powershell -c \"$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys([char]179)\"")
-            else:
-                # dbus-send command for native Linux Spotify control
-                await asyncio.create_subprocess_shell("dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            return {"success": True, "data": {"message": "Spotify pause toggled successfully."}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to toggle pause: {e}", "data": {}}
+        result = await _send_spotify_control("PlayPause", 179)
+        if not result["success"]:
+            return {"success": False, "error": result["error"], "data": {"status": "unavailable"}}
+        return {"success": True, "data": {"status": "verified", "message": "Spotify pause command succeeded."}, "error": None}
 
 class SpotifyResumeTool(BaseTool):
     def __init__(self) -> None:
@@ -233,17 +259,10 @@ class SpotifyResumeTool(BaseTool):
         installed, _ = is_spotify_client_installed()
         if not installed:
             return {"success": False, "error": "Spotify client is not running. Cannot resume.", "data": {}}
-        try:
-            import asyncio
-            import platform
-            system_type = platform.system()
-            if system_type == "Windows":
-                await asyncio.create_subprocess_shell("powershell -c \"$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys([char]179)\"")
-            else:
-                await asyncio.create_subprocess_shell("dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            return {"success": True, "data": {"message": "Spotify resume command dispatched successfully."}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to resume Spotify: {e}", "data": {}}
+        result = await _send_spotify_control("Play", 179)
+        if not result["success"]:
+            return {"success": False, "error": result["error"], "data": {"status": "unavailable"}}
+        return {"success": True, "data": {"status": "verified", "message": "Spotify resume command succeeded."}, "error": None}
 
 class SpotifyNextTool(BaseTool):
     def __init__(self) -> None:
@@ -262,18 +281,10 @@ class SpotifyNextTool(BaseTool):
         installed, _ = is_spotify_client_installed()
         if not installed:
             return {"success": False, "error": "Spotify client is not running.", "data": {}}
-        try:
-            import asyncio
-            import platform
-            system_type = platform.system()
-            if system_type == "Windows":
-                # Next track keycode is 176
-                await asyncio.create_subprocess_shell("powershell -c \"$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys([char]176)\"")
-            else:
-                await asyncio.create_subprocess_shell("dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Next", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            return {"success": True, "data": {"message": "Spotify next track command dispatched."}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to skip next: {e}", "data": {}}
+        result = await _send_spotify_control("Next", 176)
+        if not result["success"]:
+            return {"success": False, "error": result["error"], "data": {"status": "unavailable"}}
+        return {"success": True, "data": {"status": "verified", "message": "Spotify next command succeeded."}, "error": None}
 
 class SpotifyPreviousTool(BaseTool):
     def __init__(self) -> None:
@@ -292,18 +303,10 @@ class SpotifyPreviousTool(BaseTool):
         installed, _ = is_spotify_client_installed()
         if not installed:
             return {"success": False, "error": "Spotify client is not running.", "data": {}}
-        try:
-            import asyncio
-            import platform
-            system_type = platform.system()
-            if system_type == "Windows":
-                # Previous track keycode is 177
-                await asyncio.create_subprocess_shell("powershell -c \"$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys([char]177)\"")
-            else:
-                await asyncio.create_subprocess_shell("dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            return {"success": True, "data": {"message": "Spotify previous track command dispatched."}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to skip previous: {e}", "data": {}}
+        result = await _send_spotify_control("Previous", 177)
+        if not result["success"]:
+            return {"success": False, "error": result["error"], "data": {"status": "unavailable"}}
+        return {"success": True, "data": {"status": "verified", "message": "Spotify previous command succeeded."}, "error": None}
 
 class SpotifyVolumeTool(BaseTool):
     def __init__(self) -> None:
@@ -324,20 +327,23 @@ class SpotifyVolumeTool(BaseTool):
         installed, _ = is_spotify_client_installed()
         if not installed:
             return {"success": False, "error": "Spotify client is not running.", "data": {}}
-        try:
-            import asyncio
-            import platform
-            system_type = platform.system()
-            if system_type == "Windows":
-                # Modify system volume since Spotify follows system mixer
-                await asyncio.create_subprocess_shell(f"powershell -c \"(Get-WmiObject -Query 'Select * from Win32_ActiveSession').SetVolume({level_clamped})\"")
-            else:
-                # dbus-send volume properties modification for Spotify Linux
-                volume_fraction = level_clamped / 100.0
-                await asyncio.create_subprocess_shell(f"dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Set string:'org.mpris.MediaPlayer2.Player' string:'Volume' double:{volume_fraction}", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            return {"success": True, "data": {"message": f"Spotify volume set successfully to {level_clamped}%"}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Failed to update volume: {e}", "data": {}}
+        if platform.system() == "Windows":
+            return {"success": False, "error": "Verified exact Spotify volume is unavailable on Windows.", "data": {"status": "unavailable"}}
+        executable = shutil.which("dbus-send")
+        if not executable:
+            return {"success": False, "error": "dbus-send unavailable.", "data": {"status": "unavailable"}}
+        fraction = level_clamped / 100.0
+        proc = await asyncio.create_subprocess_exec(
+            executable, "--print-reply", "--dest=org.mpris.MediaPlayer2.spotify",
+            "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties.Set",
+            "string:org.mpris.MediaPlayer2.Player", "string:Volume",
+            f"variant:double:{fraction}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            return {"success": False, "error": stderr.decode("utf-8", "ignore")[:500] or f"Volume control exited {proc.returncode}", "data": {"status": "failed"}}
+        return {"success": True, "data": {"status": "verified", "level": level_clamped, "stdout": stdout.decode("utf-8", "ignore")[:500]}, "error": None}
 
 class SpotifyCurrentTrackTool(BaseTool):
     def __init__(self) -> None:
@@ -357,39 +363,37 @@ class SpotifyCurrentTrackTool(BaseTool):
         if not installed:
             return {"success": False, "error": f"Spotify client is not running. {reason}", "data": {}}
         
-        system_type = platform.system()
-        try:
-            if system_type == "Windows":
-                # Read active window title matching Spotify
-                import asyncio
-                proc = await asyncio.create_subprocess_shell(
-                    "powershell -c \"(Get-Process | Where-Object {$_.ProcessName -eq 'Spotify' -and $_.MainWindowTitle -ne ''}).MainWindowTitle\"",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, _ = await proc.communicate()
-                track_name = stdout.decode("utf-8").strip() or "Spotify (Paused/Ad)"
-                return {"success": True, "data": {"current_track": track_name}, "error": None}
-            else:
-                # DBus metadata query for Linux Spotify client
-                import asyncio
-                proc = await asyncio.create_subprocess_shell(
-                    "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get string:'org.mpris.MediaPlayer2.Player' string:'Metadata'",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, _ = await proc.communicate()
-                output = stdout.decode("utf-8")
-                # Parse title from dbus output
-                import re
-                title_match = re.search(r'string\s+"xesam:title"\s+\n\s+variant\s+string\s+"([^"]+)"', output, re.DOTALL)
-                artist_match = re.search(r'string\s+"xesam:artist"\s+\n\s+variant\s+array\s+\[\s+string\s+"([^"]+)"', output, re.DOTALL)
-                
-                title = title_match.group(1) if title_match else "Spotify Track"
-                artist = artist_match.group(1) if artist_match else ""
-                
-                track_info = f"{title} - {artist}" if artist else title
-                return {"success": True, "data": {"current_track": track_info}, "error": None}
-        except Exception as e:
-            print(f"[SPOTIFY] Metadata inspection failed (non-fatal): {e}")
-            return {"success": True, "data": {"current_track": "Spotify active, failed to inspect metadata. (Windows/Linux DBus lock)"}, "error": None}
+        if platform.system() == "Windows":
+            executable = shutil.which("powershell") or shutil.which("pwsh")
+            if not executable:
+                return {"success": False, "error": "PowerShell unavailable.", "data": {"status": "unavailable"}}
+            script = "(Get-Process | Where-Object {$_.ProcessName -eq 'Spotify' -and $_.MainWindowTitle -ne ''}).MainWindowTitle"
+            argv = [executable, "-NoProfile", "-Command", script]
+        else:
+            executable = shutil.which("dbus-send")
+            if not executable:
+                return {"success": False, "error": "dbus-send unavailable.", "data": {"status": "unavailable"}}
+            argv = [
+                executable, "--print-reply", "--dest=org.mpris.MediaPlayer2.spotify",
+                "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties.Get",
+                "string:org.mpris.MediaPlayer2.Player", "string:Metadata",
+            ]
+        proc = await asyncio.create_subprocess_exec(
+            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            return {"success": False, "error": stderr.decode("utf-8", "ignore")[:500] or f"Metadata query exited {proc.returncode}", "data": {"status": "failed"}}
+        output = stdout.decode("utf-8", "ignore").strip()
+        if not output:
+            return {"success": False, "error": "Spotify returned no track metadata.", "data": {"status": "unavailable"}}
+        if platform.system() == "Windows":
+            return {"success": True, "data": {"status": "verified", "current_track": output}, "error": None}
+        import re
+        title_match = re.search(r'string\s+"xesam:title"\s+\n\s+variant\s+string\s+"([^"]+)"', output, re.DOTALL)
+        artist_match = re.search(r'string\s+"xesam:artist"\s+\n\s+variant\s+array\s+\[\s+string\s+"([^"]+)"', output, re.DOTALL)
+        if not title_match:
+            return {"success": False, "error": "Spotify metadata did not contain a track title.", "data": {"status": "unavailable"}}
+        title = title_match.group(1)
+        artist = artist_match.group(1) if artist_match else ""
+        return {"success": True, "data": {"status": "verified", "current_track": f"{title} - {artist}" if artist else title}, "error": None}

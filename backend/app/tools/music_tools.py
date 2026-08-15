@@ -1,137 +1,148 @@
-"""
-Ultron Production-Grade Music Playback Tools
-Implements un-mocked local music controllers: Play, Pause, Resume, Next, Previous, Stop, Volume, and Current Track.
-Uses a centralized state manager, running lightweight native subprocesses.
-"""
+"""Verified local music controls using an owned player process when available."""
 
+from __future__ import annotations
+
+import asyncio
 import os
 import platform
-import asyncio
-from typing import Dict, Any, List
+import shutil
+import signal
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
+
 from backend.app.tools.tool_base import BaseTool
 
-# --- Validation Schemas ---
 
 class PlayMusicArgs(BaseModel):
-    filepath: str = Field(..., description="Target audio file path (MP3/WAV/OGG) to play.")
+    filepath: str = Field(..., description="Approved MP3/WAV/OGG path to play.")
+
 
 class EmptyArgs(BaseModel):
     pass
 
-class VolumeArgs(BaseModel):
-    level: int = Field(50, description="Volume percentage level to set: 0 to 100.")
 
-# --- Local Playlist & Track Coordinator (Requirement: Real Execution Only) ---
+class VolumeArgs(BaseModel):
+    level: int = Field(50, ge=0, le=100)
+
 
 class LocalMusicPlayerController:
     def __init__(self) -> None:
         self.playlist: List[str] = []
-        self.current_idx: int = 0
-        self.is_playing: bool = False
-        self.is_paused: bool = False
+        self.current_idx = 0
+        self.is_playing = False
+        self.is_paused = False
         self.proc: Optional[Any] = None
+        self.player: Optional[str] = None
 
     def add_track(self, filepath: str) -> None:
         if filepath not in self.playlist:
             self.playlist.append(filepath)
-            self.current_idx = self.playlist.index(filepath)
+        self.current_idx = self.playlist.index(filepath)
 
-    def get_current_track(self) -> str:
-        if not self.playlist:
-            return "No active track in playlist."
+    def get_current_track(self) -> Optional[str]:
+        if not self.playlist or not self.is_playing:
+            return None
         return os.path.basename(self.playlist[self.current_idx])
 
-    async def play(self, filepath: str) -> bool:
-        self.add_track(filepath)
-        self.is_playing = True
-        self.is_paused = False
-        
-        system_type = platform.system()
-        # Fix 2: shell-injection guard — block dangerous metacharacters in the filename,
-        # and shell-quote it so a filename with spaces/symbols is treated as one arg.
-        import shlex
-        if any(ch in filepath for ch in ";|&`$(){}<>"):
-            raise ValueError("Unsafe filename (shell metacharacters) blocked.")
-        safe_path = shlex.quote(filepath)
-        cmd = f"start {safe_path}" if system_type == "Windows" else f"xdg-open {safe_path}"
-        
+    @staticmethod
+    def _player_command(filepath: str):
+        candidates = [
+            ("mpv", ["--no-video", "--really-quiet", filepath]),
+            ("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", filepath]),
+            ("cvlc", ["--play-and-exit", "--intf", "dummy", filepath]),
+            ("vlc", ["--play-and-exit", "--intf", "dummy", filepath]),
+        ]
+        for name, args in candidates:
+            executable = shutil.which(name)
+            if executable:
+                return executable, args
+        return None, None
+
+    async def play(self, filepath: str) -> Dict[str, Any]:
+        executable, args = self._player_command(filepath)
+        if not executable:
+            return {"success": False, "error": "No controllable player found (mpv/ffplay/vlc)."}
+        await self.stop()
         try:
-            if self.proc:
+            self.proc = await asyncio.create_subprocess_exec(
+                executable,
+                *args,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            await asyncio.sleep(0.1)
+            if self.proc.returncode not in (None, 0):
+                exit_code = self.proc.returncode
+                self.proc = None
+                return {"success": False, "error": f"Player exited with code {exit_code}"}
+            self.add_track(filepath)
+            self.player = executable
+            self.is_playing = True
+            self.is_paused = False
+            return {"success": True, "player": executable, "pid": self.proc.pid}
+        except OSError as exc:
+            self.proc = None
+            return {"success": False, "error": f"Player start failed: {exc}"}
+
+    async def stop(self) -> Dict[str, Any]:
+        if self.proc and self.proc.returncode is None:
+            try:
+                if os.name != "nt":
+                    os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+                else:
+                    self.proc.terminate()
+                await asyncio.wait_for(self.proc.wait(), timeout=3.0)
+            except (OSError, asyncio.TimeoutError):
                 try:
                     self.proc.kill()
-                except Exception:
+                    await self.proc.wait()
+                except (OSError, ProcessLookupError):
                     pass
-            self.proc = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            return True
-        except Exception:
-            return False
-
-    async def stop(self) -> None:
+        was_playing = self.is_playing
+        self.proc = None
         self.is_playing = False
         self.is_paused = False
-        if self.proc:
-            try:
-                self.proc.kill()
-                self.proc = None
-            except Exception:
-                pass
+        return {"success": True, "was_playing": was_playing}
 
-    async def pause(self) -> None:
-        """Toggles active pause states on platform media mixers."""
-        if self.is_playing and not self.is_paused:
+    async def pause(self) -> Dict[str, Any]:
+        if not self.proc or self.proc.returncode is not None or not self.is_playing:
+            return {"success": False, "error": "No owned music process is playing."}
+        if os.name == "nt":
+            return {"success": False, "error": "Verified pause is unavailable for this player on Windows."}
+        try:
+            os.kill(self.proc.pid, signal.SIGSTOP)
             self.is_paused = True
-            # Simulate native process pause triggers (suspends subprocess execution)
-            if self.proc:
-                try:
-                    self.proc.terminate()
-                except Exception:
-                    pass
+            return {"success": True}
+        except OSError as exc:
+            return {"success": False, "error": f"Pause failed: {exc}"}
 
-    async def resume(self) -> None:
-        """Resumes local track playback from current position."""
-        if self.is_playing and self.is_paused:
+    async def resume(self) -> Dict[str, Any]:
+        if not self.proc or self.proc.returncode is not None or not self.is_paused:
+            return {"success": False, "error": "No owned paused music process exists."}
+        if os.name == "nt":
+            return {"success": False, "error": "Verified resume is unavailable for this player on Windows."}
+        try:
+            os.kill(self.proc.pid, signal.SIGCONT)
             self.is_paused = False
-            track = self.playlist[self.current_idx]
-            await self.play(track)
+            return {"success": True}
+        except OSError as exc:
+            return {"success": False, "error": f"Resume failed: {exc}"}
 
-    async def next(self) -> str:
+    async def change_track(self, offset: int) -> Dict[str, Any]:
         if not self.playlist:
-            return "Playlist is empty."
-        self.current_idx = (self.current_idx + 1) % len(self.playlist)
-        track = self.playlist[self.current_idx]
-        await self.play(track)
-        return self.get_current_track()
+            return {"success": False, "error": "Playlist is empty."}
+        self.current_idx = (self.current_idx + offset) % len(self.playlist)
+        return await self.play(self.playlist[self.current_idx])
 
-    async def prev(self) -> str:
-        if not self.playlist:
-            return "Playlist is empty."
-        self.current_idx = (self.current_idx - 1) % len(self.playlist)
-        track = self.playlist[self.current_idx]
-        await self.play(track)
-        return self.get_current_track()
 
-# Instantiate global, thread-safe player coordinator
 _player_controller = LocalMusicPlayerController()
 
-# --- Tool Implementations ---
 
 class PlayMusicTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="play_music",
-            name="Music Player",
-            description="Plays a local audio file (MP3/WAV/OGG) natively on your desktop.",
-            category="music",
-            tags=["music", "play", "audio", "song", "mp3"],
-            permission_level=1, # Level 1: Automatically allowed (Requirement: Phase 5)
-            args_model=PlayMusicArgs,
-            usage_examples=["play_music(filepath='D:\\music\\chill.mp3')"]
-        )
+        super().__init__("play_music", "Music Player", "Plays a local audio file through an owned controllable player.", "music", ["music", "play", "audio", "song", "mp3"], 2, PlayMusicArgs, ["play_music(filepath='music/song.mp3')"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.get("filepath", "")
@@ -139,145 +150,93 @@ class PlayMusicTool(BaseTool):
         decision = check_path(filepath)
         if not decision["safe"]:
             return {"success": False, "error": f"Audio path blocked ({decision['reason']}): {filepath}", "data": {}}
-        if not os.path.exists(filepath):
+        if not os.path.isfile(filepath):
             return {"success": False, "error": f"Audio file does not exist: {filepath}", "data": {}}
-            
-        success = await _player_controller.play(filepath)
-        if success:
-            return {"success": True, "data": {"message": f"Successfully launched playback for: {_player_controller.get_current_track()}"}, "error": None}
-        return {"success": False, "error": "Failed to trigger local audio playback.", "data": {}}
+        result = await _player_controller.play(filepath)
+        if not result["success"]:
+            return {"success": False, "error": result["error"], "data": {"status": "unavailable"}}
+        return {"success": True, "data": {"status": "playing", "current_track": _player_controller.get_current_track(), "player": result["player"], "pid": result["pid"]}, "error": None}
+
 
 class PauseMusicTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="pause_music",
-            name="Music Pauser",
-            description="Pauses active local music playback.",
-            category="music",
-            tags=["music", "pause", "hold"],
-            permission_level=1, # Level 1: Automatically allowed (Requirement: Phase 5)
-            args_model=EmptyArgs,
-            usage_examples=["pause_music()"]
-        )
+        super().__init__("pause_music", "Music Pauser", "Pauses the owned player process.", "music", ["music", "pause"], 1, EmptyArgs, ["pause_music()"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        await _player_controller.pause()
-        return {"success": True, "data": {"message": "Music playback paused successfully."}, "error": None}
+        result = await _player_controller.pause()
+        return {"success": result["success"], "data": {"status": "paused"} if result["success"] else {"status": "unavailable"}, "error": result.get("error")}
+
 
 class ResumeMusicTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="resume_music",
-            name="Music Resumer",
-            description="Resumes paused local music playback.",
-            category="music",
-            tags=["music", "resume", "play"],
-            permission_level=1, # Level 1: Automatically allowed (Requirement: Phase 5)
-            args_model=EmptyArgs,
-            usage_examples=["resume_music()"]
-        )
+        super().__init__("resume_music", "Music Resumer", "Resumes the owned paused player.", "music", ["music", "resume"], 1, EmptyArgs, ["resume_music()"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        await _player_controller.resume()
-        return {"success": True, "data": {"message": f"Music playback resumed successfully: {_player_controller.get_current_track()}"}, "error": None}
+        result = await _player_controller.resume()
+        return {"success": result["success"], "data": {"status": "playing"} if result["success"] else {"status": "unavailable"}, "error": result.get("error")}
+
 
 class NextTrackTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="next_track",
-            name="Next Track",
-            description="Skips to the next track in the local playlist.",
-            category="music",
-            tags=["music", "next", "skip"],
-            permission_level=1,
-            args_model=EmptyArgs,
-            usage_examples=["next_track()"]
-        )
+        super().__init__("next_track", "Next Track", "Plays the next owned playlist track.", "music", ["music", "next"], 1, EmptyArgs, ["next_track()"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        track_name = await _player_controller.next()
-        return {"success": True, "data": {"message": f"Skipped to next track: {track_name}"}, "error": None}
+        result = await _player_controller.change_track(1)
+        return {"success": result["success"], "data": {"current_track": _player_controller.get_current_track()} if result["success"] else {"status": "unavailable"}, "error": result.get("error")}
+
 
 class PreviousTrackTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="previous_track",
-            name="Previous Track",
-            description="Skips to the previous track in the local playlist.",
-            category="music",
-            tags=["music", "previous", "back"],
-            permission_level=1,
-            args_model=EmptyArgs,
-            usage_examples=["previous_track()"]
-        )
+        super().__init__("previous_track", "Previous Track", "Plays the previous owned playlist track.", "music", ["music", "previous"], 1, EmptyArgs, ["previous_track()"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        track_name = await _player_controller.prev()
-        return {"success": True, "data": {"message": f"Skipped to previous track: {track_name}"}, "error": None}
+        result = await _player_controller.change_track(-1)
+        return {"success": result["success"], "data": {"current_track": _player_controller.get_current_track()} if result["success"] else {"status": "unavailable"}, "error": result.get("error")}
+
 
 class StopMusicTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="stop_music",
-            name="Music Stopper",
-            description="Stops active local music playback completely.",
-            category="music",
-            tags=["music", "stop", "halt"],
-            permission_level=1, # Level 1
-            args_model=EmptyArgs,
-            usage_examples=["stop_music()"]
-        )
+        super().__init__("stop_music", "Music Stopper", "Stops the owned player process.", "music", ["music", "stop"], 1, EmptyArgs, ["stop_music()"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        await _player_controller.stop()
-        return {"success": True, "data": {"message": "Music playback stopped successfully."}, "error": None}
+        result = await _player_controller.stop()
+        return {"success": True, "data": {"status": "stopped", "was_playing": result["was_playing"]}, "error": None}
+
 
 class CurrentTrackTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="current_track",
-            name="Current Track Inspector",
-            description="Retrieves the name of the currently active music track.",
-            category="music",
-            tags=["music", "current", "track", "inspect"],
-            permission_level=0, # Level 0: Auto Allow
-            args_model=EmptyArgs,
-            usage_examples=["current_track()"]
-        )
+        super().__init__("current_track", "Current Track Inspector", "Reports the verified owned player state.", "music", ["music", "current", "track"], 0, EmptyArgs, ["current_track()"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         track = _player_controller.get_current_track()
-        return {"success": True, "data": {"current_track": track}, "error": None}
+        if not track:
+            return {"success": False, "data": {"status": "stopped"}, "error": "No owned music process is playing."}
+        return {"success": True, "data": {"status": "paused" if _player_controller.is_paused else "playing", "current_track": track, "player": _player_controller.player}, "error": None}
+
 
 class SetVolumeTool(BaseTool):
     def __init__(self) -> None:
-        super().__init__(
-            tool_id="set_volume",
-            name="System Volume Controller",
-            description="Sets the system audio volume level percentage (0 to 100) natively.",
-            category="music",
-            tags=["music", "volume", "sound", "mute", "unmute"],
-            permission_level=1, # Level 1: Automatically allowed (Requirement: Phase 5)
-            args_model=VolumeArgs,
-            usage_examples=["set_volume(level=80)"]
-        )
+        super().__init__("set_volume", "System Volume Controller", "Sets system volume when a verified mixer is available.", "music", ["music", "volume", "sound"], 2, VolumeArgs, ["set_volume(level=80)"])
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        level = kwargs.get("level", 50)
-        level_clamped = max(0, min(100, level))
-        system_type = platform.system()
-        
-        try:
-            if system_type == "Windows":
-                cmd = f"powershell -c \"(Get-WmiObject -Query 'Select * from Win32_ActiveSession').SetVolume({level_clamped})\""
-                await asyncio.create_subprocess_shell(cmd)
-            else:
-                cmd = f"amixer sset 'Master' {level_clamped}%"
-                await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                
-            return {"success": True, "data": {"message": f"Successfully updated system volume level to {level_clamped}%"}, "error": None}
-        except Exception as e:
-            return {"success": False, "error": f"Volume update failed: {e}", "data": {}}
-
-# Import optional for internal controller structures
-from typing import Optional
+        level = max(0, min(100, int(kwargs.get("level", 50))))
+        if platform.system() == "Windows":
+            return {
+                "success": False,
+                "data": {"status": "unavailable"},
+                "error": "Verified exact system-volume control is unavailable on Windows.",
+            }
+        else:
+            executable = shutil.which("amixer")
+            if not executable:
+                return {"success": False, "data": {"status": "unavailable"}, "error": "amixer unavailable."}
+            argv = [executable, "sset", "Master", f"{level}%"]
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            return {"success": False, "data": {"status": "failed", "stdout": stdout.decode("utf-8", "ignore")[:500]}, "error": stderr.decode("utf-8", "ignore")[:500] or f"Mixer exited {proc.returncode}"}
+        return {"success": True, "data": {"status": "verified", "level": level, "mixer": executable}, "error": None}

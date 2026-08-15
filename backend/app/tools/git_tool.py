@@ -98,9 +98,15 @@ class GitCloneTool(BaseTool):
         directory = kwargs.get("directory", ".").strip()
         if not url:
             return {"success": False, "error": "url required", "data": {}}
-        # Risk guard: block shell metacharacters in url/dir
         if any(ch in (url + directory) for ch in ";|&`$(){}<>"):
             return {"success": False, "error": "Unsafe characters blocked.", "data": {}}
+
+        from backend.app.security.url_guard import validate_public_url
+        if not url.lower().startswith("https://"):
+            return {"success": False, "error": "Git clone URL must use public HTTPS.", "data": {}}
+        url_ok, url_reason = validate_public_url(url)
+        if not url_ok:
+            return {"success": False, "error": f"Git clone URL blocked: {url_reason}", "data": {}}
 
         from pathlib import Path
         from backend.app.security.path_guard import check_path
@@ -110,7 +116,7 @@ class GitCloneTool(BaseTool):
             return {"success": False, "error": f"Clone destination blocked ({decision['reason']}): {destination}", "data": {}}
         try:
             proc = await asyncio.create_subprocess_exec(
-                "git", "clone", url, directory,
+                "git", "-c", "http.followRedirects=false", "clone", url, directory,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             out, err = await asyncio.wait_for(proc.communicate(), timeout=120)

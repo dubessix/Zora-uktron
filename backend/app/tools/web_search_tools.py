@@ -15,6 +15,11 @@ from backend.app.tools.tool_base import BaseTool
 class SearchArgs(BaseModel):
     query: str = Field(..., description="Target search query keywords.")
 
+def _open_verified(url: str) -> None:
+    if not webbrowser.open(url):
+        raise RuntimeError("Default browser rejected the search launch request.")
+
+
 # --- Tool Implementations ---
 
 class GoogleSearchTool(BaseTool):
@@ -39,7 +44,7 @@ class GoogleSearchTool(BaseTool):
             results = await real_web_search(query, limit=1)
             if results:
                 url = results[0]["url"]
-                webbrowser.open(url)
+                _open_verified(url)
                 return {"success": True, "data": {
                     "url": url,
                     "title": results[0]["title"],
@@ -51,7 +56,7 @@ class GoogleSearchTool(BaseTool):
         # Fallback: open the Google search page.
         url = f"https://www.google.com/search?q={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url, "message": "Google search page successfully launched."}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run Google search: {e}", "data": {}}
@@ -74,7 +79,7 @@ class GitHubSearchTool(BaseTool):
         escaped = urllib.parse.quote_plus(query)
         url = f"https://github.com/search?q={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run GitHub search: {e}", "data": {}}
@@ -97,7 +102,7 @@ class StackOverflowSearchTool(BaseTool):
         escaped = urllib.parse.quote_plus(query)
         url = f"https://stackoverflow.com/search?q={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run StackOverflow search: {e}", "data": {}}
@@ -120,7 +125,7 @@ class RedditSearchTool(BaseTool):
         escaped = urllib.parse.quote_plus(query)
         url = f"https://www.reddit.com/search/?q={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run Reddit search: {e}", "data": {}}
@@ -143,7 +148,7 @@ class ImageSearchTool(BaseTool):
         escaped = urllib.parse.quote_plus(query)
         url = f"https://www.google.com/search?tbm=isch&q={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run Image search: {e}", "data": {}}
@@ -166,7 +171,7 @@ class NewsSearchTool(BaseTool):
         escaped = urllib.parse.quote_plus(query)
         url = f"https://news.google.com/search?q={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run News search: {e}", "data": {}}
@@ -189,7 +194,7 @@ class VideoSearchTool(BaseTool):
         escaped = urllib.parse.quote_plus(query)
         url = f"https://www.youtube.com/results?search_query={escaped}"
         try:
-            webbrowser.open(url)
+            _open_verified(url)
             return {"success": True, "data": {"url": url}, "error": None}
         except Exception as e:
             return {"success": False, "error": f"Failed to run Video search: {e}", "data": {}}

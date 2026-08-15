@@ -74,25 +74,9 @@ class WeatherTool(BaseTool):
                 else:
                     return {"success": False, "error": f"Weather API returned status code: {response.status_code}", "data": {}}
             except Exception as e:
-                # Local safe fallback if host has no active internet connection
-                print(f"[WEATHER] Live API unavailable, using local fallback: {e}")
+                print(f"[WEATHER] Live API unavailable: {e}")
                 return {
-                    "success": True,
-                    "data": {
-                        "location": f"Lat: {lat}, Lon: {lon} (Mock Fallback)",
-                        "temp": "28.0°C",
-                        "condition": "Scattered Clouds",
-                        "windspeed": "12 km/h",
-                        "hourly": [
-                            {"time": "02 PM", "temp": "29°C"},
-                            {"time": "05 PM", "temp": "27°C"},
-                            {"time": "08 PM", "temp": "25°C"}
-                        ],
-                        "weekly": [
-                            {"day": "MON", "temp": "28°C", "cond": "Cloudy"},
-                            {"day": "TUE", "temp": "30°C", "cond": "Sunny"},
-                            {"day": "WED", "temp": "27°C", "cond": "Rain"}
-                        ]
-                    },
-                    "error": None
+                    "success": False,
+                    "data": {"status": "unavailable", "location": f"Lat: {lat}, Lon: {lon}"},
+                    "error": f"Live weather unavailable: {e}",
                 }
