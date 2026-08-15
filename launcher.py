@@ -443,7 +443,7 @@ class ServiceLauncher:
             return
         self.log("Launcher", "Starting production frontend static server on loopback.", "36")
         self.frontend_process = self._start_process(
-            frontend_command, self.frontend_dir, "Frontend", "36", env=child_env
+            frontend_command, self.asset_root, "Frontend", "36", env=child_env
         )
 
     def _wait_for_http(

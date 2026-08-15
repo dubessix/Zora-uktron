@@ -90,6 +90,13 @@ class ReminderTool(BaseTool):
         recurrence = kwargs.get("recurrence", "one_time").lower()
         recurrence_details = kwargs.get("recurrence_details")
 
+        if action not in {"create", "list", "snooze", "dismiss", "delete"}:
+            return {"success": False, "error": f"Unsupported action '{action}'.", "data": {}}
+        if alert_type not in {"reminder", "alarm"}:
+            return {"success": False, "error": f"Unsupported alert type '{alert_type}'.", "data": {}}
+        if recurrence not in {"one_time", "daily", "weekly"}:
+            return {"success": False, "error": f"Unsupported recurrence '{recurrence}'.", "data": {}}
+
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
@@ -212,8 +219,12 @@ class ReminderTool(BaseTool):
                     elif rec == "weekly":
                         next_target = current_target + datetime.timedelta(days=7)
                     else:
-                        next_target = current_target + datetime.timedelta(minutes=5) # Fallback
-                        
+                        return {
+                            "success": False,
+                            "error": f"Stored reminder has unsupported recurrence '{rec}'.",
+                            "data": {"id": reminder_id},
+                        }
+
                     # Reset target time and set back to pending for next trigger
                     cursor.execute(
                         """

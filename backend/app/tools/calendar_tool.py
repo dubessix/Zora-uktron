@@ -19,7 +19,7 @@ class CalendarArgs(BaseModel):
     start_time: Optional[str] = Field(None, description="Start date/time (ISO format, YYYY-MM-DDTHH:MM:SS).")
     end_time: Optional[str] = Field(None, description="End date/time (ISO format, YYYY-MM-DDTHH:MM:SS).")
     category: Optional[str] = Field("general", description="Category classification: work, development, physical, study, break.")
-    duration_hours: Optional[float] = Field(2.0, description="Duration in hours requested for smart_schedule search.")
+    duration_hours: Optional[float] = Field(2.0, gt=0, le=12, description="Duration in hours requested for smart_schedule search.")
 
 class CalendarTool(BaseTool):
     def __init__(self) -> None:
@@ -37,6 +37,13 @@ class CalendarTool(BaseTool):
             ]
         )
 
+    @staticmethod
+    def _to_local_aware(value: datetime.datetime) -> datetime.datetime:
+        local_tz = datetime.datetime.now().astimezone().tzinfo
+        if value.tzinfo is None:
+            return value.replace(tzinfo=local_tz)
+        return value.astimezone(local_tz)
+
     def _find_free_slots(self, current_events: List[Dict[str, Any]], duration_hours: float) -> List[Dict[str, Any]]:
         """
         SMART SCHEDULING SOLVER (Requirement 3)
@@ -44,7 +51,7 @@ class CalendarTool(BaseTool):
         2. Merges and structures overlapping busy events.
         3. Computes inverse free blocks and returns slots larger than requested duration.
         """
-        now = datetime.datetime.now()
+        now = datetime.datetime.now().astimezone()
         start_search = now.replace(hour=9, minute=0, second=0, microsecond=0)
         
         # Build search intervals for the next 5 days
@@ -58,8 +65,8 @@ class CalendarTool(BaseTool):
         busy_intervals = []
         for ev in current_events:
             try:
-                ev_start = datetime.datetime.fromisoformat(ev["start_time"])
-                ev_end = datetime.datetime.fromisoformat(ev["end_time"])
+                ev_start = self._to_local_aware(datetime.datetime.fromisoformat(ev["start_time"]))
+                ev_end = self._to_local_aware(datetime.datetime.fromisoformat(ev["end_time"]))
                 busy_intervals.append((ev_start, ev_end))
             except Exception:
                 continue
@@ -135,6 +142,12 @@ class CalendarTool(BaseTool):
         end_time_str = kwargs.get("end_time")
         category = kwargs.get("category", "general").lower()
         duration_hours = kwargs.get("duration_hours", 2.0)
+        try:
+            duration_hours = float(duration_hours)
+        except (TypeError, ValueError):
+            return {"success": False, "error": "duration_hours must be numeric.", "data": {}}
+        if not 0 < duration_hours <= 12:
+            return {"success": False, "error": "duration_hours must be greater than 0 and at most 12.", "data": {}}
 
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -145,8 +158,8 @@ class CalendarTool(BaseTool):
                 
                 # Simple validation checks
                 try:
-                    dt_start = datetime.datetime.fromisoformat(start_time_str)
-                    dt_end = datetime.datetime.fromisoformat(end_time_str)
+                    dt_start = self._to_local_aware(datetime.datetime.fromisoformat(start_time_str))
+                    dt_end = self._to_local_aware(datetime.datetime.fromisoformat(end_time_str))
                     if dt_start >= dt_end:
                         return {"success": False, "error": "Event start_time cannot be greater or equal to end_time.", "data": {}}
                 except ValueError:

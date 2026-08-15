@@ -128,8 +128,16 @@ async def run_reminder_scheduler():
                         elif rec == "weekly":
                             next_target = current_target + datetime.timedelta(days=7)
                         else:
-                            next_target = current_target + datetime.timedelta(minutes=5)
-                        
+                            cursor.execute(
+                                "UPDATE reminders_alarms SET status = 'invalid_recurrence' WHERE id = ?;",
+                                (item_id,),
+                            )
+                            conn.commit()
+                            print(
+                                f"[SCHEDULER] Reminder '{item_id}' disabled: unsupported recurrence '{rec}'."
+                            )
+                            continue
+
                         cursor.execute(
                             """
                             UPDATE reminders_alarms 

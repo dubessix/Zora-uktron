@@ -157,6 +157,17 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
         launcher.start_services.assert_not_called()
         browser.assert_not_called()
 
+    def test_source_frontend_server_starts_from_importable_asset_root(self):
+        root, launcher = _layout()
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        backend = FakeProcess()
+        frontend = FakeProcess(pid=424243)
+        launcher._start_process = Mock(side_effect=[backend, frontend])
+        launcher.start_services()
+        self.assertEqual(launcher._start_process.call_args_list[0].args[1], launcher.asset_root)
+        self.assertEqual(launcher._start_process.call_args_list[1].args[1], launcher.asset_root)
+        self.assertIn("backend.app.static_server", launcher._start_process.call_args_list[1].args[0])
+
     def test_backend_health_failure_never_opens_browser_and_stops_children(self):
         root, launcher = self._ready_launcher()
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

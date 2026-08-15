@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import time
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from backend.app.database.db import get_db_connection
+from backend.app.main import run_reminder_scheduler
 from backend.app.tools.daily_briefing_tool import DailyBriefingTool, _greeting_for_hour
 from backend.app.tools.tool_registry import ToolRegistry
 
@@ -61,6 +65,50 @@ class TestAnyTimeFirstOpenBriefing(unittest.TestCase):
         self.assertIn('"reminder_scheduler"', source)
         self.assertIn('"emergency_monitor"', source)
         self.assertIn('"durability_scheduler"', source)
+
+
+class TestReminderTiming(unittest.IsolatedAsyncioTestCase):
+    async def test_future_due_reminder_triggers_within_poll_window(self):
+        reminder_id = f"timing-{uuid.uuid4()}"
+        target = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=0.2)
+        with get_db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO reminders_alarms
+                (id, type, title, target_time, recurrence, status)
+                VALUES (?, 'reminder', 'timing check', ?, 'one_time', 'pending');
+                """,
+                (reminder_id, target.isoformat()),
+            )
+            conn.commit()
+
+        class CaptureManager:
+            def __init__(self):
+                self.event = asyncio.Event()
+                self.payload = None
+
+            async def broadcast(self, channel, payload):
+                if channel == "events" and payload.get("reminder", {}).get("id") == reminder_id:
+                    self.payload = payload
+                    self.event.set()
+
+        capture = CaptureManager()
+        started = time.monotonic()
+        with patch("backend.app.main.ws_manager", capture):
+            task = asyncio.create_task(run_reminder_scheduler())
+            try:
+                await asyncio.wait_for(capture.event.wait(), timeout=6.5)
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        elapsed = time.monotonic() - started
+        self.assertLessEqual(elapsed, 6.0)
+        self.assertEqual(capture.payload["type"], "reminder_triggered")
+        with get_db_connection() as conn:
+            status = conn.execute(
+                "SELECT status FROM reminders_alarms WHERE id = ?;", (reminder_id,)
+            ).fetchone()[0]
+        self.assertEqual(status, "triggered")
 
 
 class TestFrontendSmartIdleContract(unittest.TestCase):

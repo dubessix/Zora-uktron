@@ -6,6 +6,7 @@ Creates automated .bak backup files before applying any refactoring changes (Lev
 """
 
 import ast
+import asyncio
 import re
 from pathlib import Path
 from typing import Dict, Any
@@ -76,6 +77,15 @@ class CodeOptimizerTool(BaseTool):
             elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 if node.func.id in ("eval", "exec"):
                     findings.append(f"Security Alert: Dangerous usage of '{node.func.id}' found at line {node.lineno}.")
+            elif (
+                isinstance(node, ast.Compare)
+                and isinstance(node.left, ast.Call)
+                and isinstance(node.left.func, ast.Name)
+                and node.left.func.id == "type"
+            ):
+                findings.append(
+                    f"Exact type comparison found at line {node.lineno}; review manually before changing semantics."
+                )
 
         # Simple complexity grade
         total_structural_nodes = metrics["num_classes"] * 5 + metrics["num_functions"]
@@ -97,7 +107,6 @@ class CodeOptimizerTool(BaseTool):
         lines = content.splitlines()
         optimized_lines = []
         is_python = filepath.endswith(".py")
-        is_js_ts = filepath.endswith((".js", ".jsx", ".ts", ".tsx"))
 
         for line in lines:
             stripped = line.strip()
@@ -109,27 +118,26 @@ class CodeOptimizerTool(BaseTool):
                 if stripped and not stripped.startswith("#") and "for " in line and "append(" in line:
                     # Log optimization candidate
                     pass
-                # 2. Replacing redundant string concatenations with f-strings
-                if " + " in line and ('"' in line or "'" in line) and "f" not in line and not line.startswith("import"):
-                    line = re.sub(r'["\']\s*\+\s*([a-zA-Z0-9_]+)\s*\+\s*["\']', r'{\1}', line)
-                    if "{" in line and "}" in line and not line.lstrip().startswith("f"):
-                        # Insert f-prefix
-                        leading_spaces = len(line) - len(line.lstrip())
-                        line = line[:leading_spaces] + "f" + line[leading_spaces:]
+                # 2. A deliberately narrow transformation: simple assignment of
+                # two literal fragments around one variable. More ambiguous
+                # refactors remain findings/preview only.
+                string_concat = re.compile(
+                    r"^(?P<prefix>\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*)"
+                    r"(?P<quote>['\"])(?P<left>[^'\"]*)(?P=quote)\s*\+\s*"
+                    r"(?P<variable>[A-Za-z_][A-Za-z0-9_]*)\s*\+\s*"
+                    r"(?P=quote)(?P<right>[^'\"]*)(?P=quote)\s*$"
+                )
+                match = string_concat.match(line)
+                if match:
+                    groups = match.groupdict()
+                    quote = groups["quote"]
+                    line = (
+                        f"{groups['prefix']}f{quote}{groups['left']}"
+                        f"{{{groups['variable']}}}{groups['right']}{quote}"
+                    )
 
-                # 3. Replacing redundant type check checks
-                if "type(" in line and " == " in line:
-                    line = line.replace("type(", "isinstance(").replace(" == ", ", ")
-                    # Add ending bracket if suitable
-                    
-            # --- JS/TS Specific Enhancements ---
-            if is_js_ts:
-                # 1. Optimizing var to const/let
-                if line.lstrip().startswith("var "):
-                    line = line.replace("var ", "const ", 1)
-                # 2. Replacing standard function calls with arrow functions inside callbacks
-                if "function(" in line:
-                    line = line.replace("function()", "() =>").replace("function (", "(")
+            # JS/TS findings remain analysis-only until a language-aware,
+            # semantics-preserving transformer is available.
             
             optimized_lines.append(line)
 
@@ -157,6 +165,18 @@ class CodeOptimizerTool(BaseTool):
         # 1. Run Structural AST Analysis
         analysis = self._analyze_ast(original_content, str(path))
         
+        if not analysis.get("success"):
+            return {
+                "success": False,
+                "error": analysis.get("error") or "Target source analysis failed.",
+                "data": {
+                    "filepath": str(path),
+                    "ast_metrics": analysis.get("metrics", {}),
+                    "ast_findings": analysis.get("findings", []),
+                    "original_preserved": True,
+                },
+            }
+
         # 2. Run Heuristic Code Refactoring & Optimization Engine
         optimized_content = self._perform_heuristic_optimization(original_content, str(path), opt_type)
         
@@ -166,25 +186,24 @@ class CodeOptimizerTool(BaseTool):
         backup_path_str = None
         message = "Analysis and refactoring recommendations generated successfully."
         
+        write_verification = None
         if apply_changes and has_changed:
-            backup_path = path.with_suffix(path.suffix + ".bak")
-            try:
-                # Create backup
-                with open(backup_path, "w", encoding="utf-8") as b_file:
-                    b_file.write(original_content)
-                backup_path_str = str(backup_path)
-                
-                # Overwrite original with optimized code
-                with open(path, "w", encoding="utf-8") as out_file:
-                    out_file.write(optimized_content)
-                
-                message = f"File successfully optimized and saved. Backup file created at: {backup_path.name}"
-            except Exception as e:
+            from backend.app.tools.safe_write import safe_write_file
+
+            write_result = await asyncio.to_thread(
+                safe_write_file,
+                str(path),
+                optimized_content,
+            )
+            if not write_result.get("success"):
                 return {
                     "success": False,
-                    "error": f"Failed to apply optimizations to filesystem: {e}",
-                    "data": {}
+                    "error": f"Optimization candidate was not applied: {write_result.get('error')}",
+                    "data": write_result.get("data", {}),
                 }
+            backup_path_str = write_result["data"].get("backup")
+            write_verification = write_result["data"].get("verification")
+            message = f"Verified optimization applied. Backup: {backup_path_str}"
 
         return {
             "success": True,
@@ -193,6 +212,7 @@ class CodeOptimizerTool(BaseTool):
                 "filepath": str(path),
                 "has_changes_detected": has_changed,
                 "backup_created": backup_path_str,
+                "write_verification": write_verification,
                 "ast_metrics": analysis.get("metrics", {}),
                 "ast_findings": analysis.get("findings", []),
                 "optimization_applied_type": opt_type,

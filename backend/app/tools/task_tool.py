@@ -52,9 +52,9 @@ class TaskTool(BaseTool):
         parent_task_id = kwargs.get("parent_task_id")
 
         if priority not in ("high", "medium", "low"):
-            priority = "medium"
+            return {"success": False, "error": f"Unsupported priority '{priority}'.", "data": {}}
         if status_val not in ("todo", "in_progress", "done"):
-            status_val = "todo"
+            return {"success": False, "error": f"Unsupported task status '{status_val}'.", "data": {}}
 
         with get_db_connection() as conn:
             cursor = conn.cursor()

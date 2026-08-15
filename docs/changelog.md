@@ -42,4 +42,13 @@
 - Hidden browser tabs use a slower health poll and refresh immediately on return.
 - AI, coding tools, reminders, emergency monitoring, durability, permissions, database schema, and tool contracts remain unchanged.
 
+### Independent clean-source audit fixes
+
+- Fixed source-checkout production frontend startup so `backend.app.static_server` is imported from the repository root without injected `PYTHONPATH`.
+- Code Optimizer now rejects invalid AST input, applies writes through atomic syntax verification/backups, and leaves ambiguous semantic transformations analysis-only.
+- Invalid task status/priority and reminder recurrence are rejected rather than silently replaced.
+- Calendar free-slot calculations normalize aware/naive timestamps and reject invalid duration bounds.
+- Exact-commit fresh archive import, tool load, test, audit, build, launcher, REST, WebSocket, CRUD, confirmation, optimizer, live-data, and TTS-byte smoke checks passed.
+- A future-due reminder was observed through the real scheduler broadcast and persisted as triggered within the five-second polling window.
+
 Git commit history is the source of truth for exact changes and hashes.
