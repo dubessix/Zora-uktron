@@ -11,10 +11,15 @@ import json
 import asyncio
 import sqlite3
 import importlib
+from contextlib import nullcontext
 from typing import Dict, Any, List, Optional
 from pydantic import ValidationError
 
-from backend.app.database.db import get_db_connection
+from backend.app.database.db import (
+    DatabaseMaintenanceError,
+    get_db_connection,
+    maintenance_coordinator,
+)
 from backend.app.tools.tool_base import BaseTool, ToolResult
 from backend.app.security.confirmation_gate import ConfirmationGate
 from backend.app.security.pending_actions import get_pending_action_registry
@@ -51,22 +56,25 @@ class ToolRegistry:
 
     def _initialize_audit_table(self) -> None:
         """Initializes self-contained tool_audit_logs table on boot."""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS tool_audit_logs (
-                    id TEXT PRIMARY KEY,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    tool_name TEXT NOT NULL,
-                    arguments TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    success BOOLEAN NOT NULL,
-                    session_id TEXT,
-                    permission_level INTEGER NOT NULL,
-                    error TEXT
-                );
-            """)
-            conn.commit()
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS tool_audit_logs (
+                        id TEXT PRIMARY KEY,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        tool_name TEXT NOT NULL,
+                        arguments TEXT NOT NULL,
+                        duration_ms INTEGER NOT NULL,
+                        success BOOLEAN NOT NULL,
+                        session_id TEXT,
+                        permission_level INTEGER NOT NULL,
+                        error TEXT
+                    );
+                """)
+                conn.commit()
+        except (DatabaseMaintenanceError, OSError) as e:
+            print(f"[TOOL_REGISTRY] Audit table unavailable during maintenance: {e}")
 
     def _log_audit_transaction(
         self,
@@ -81,20 +89,41 @@ class ToolRegistry:
         """Logs tool transactions cleanly into persistent SQLite database."""
         log_id = str(uuid.uuid4())
         args_str = json.dumps(_redact_audit_arguments(arguments), default=str)
-        with get_db_connection() as conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO tool_audit_logs (
-                        id, tool_name, arguments, duration_ms, success, session_id, permission_level, error
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    (log_id, tool_name, args_str, duration_ms, success, session_id, permission_level, error)
-                )
-                conn.commit()
-            except sqlite3.Error as e:
-                print(f"[TOOL_REGISTRY] Warning: Failed to write to audit logger: {e}")
+        try:
+            with get_db_connection() as conn:
+                try:
+                    cursor = conn.cursor()
+                    # A confirmed database restore can replace the file after this
+                    # registry instance initialized. Re-create the audit table in
+                    # the restored DB before recording the restore result.
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS tool_audit_logs (
+                            id TEXT PRIMARY KEY,
+                            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            tool_name TEXT NOT NULL,
+                            arguments TEXT NOT NULL,
+                            duration_ms INTEGER NOT NULL,
+                            success BOOLEAN NOT NULL,
+                            session_id TEXT,
+                            permission_level INTEGER NOT NULL,
+                            error TEXT
+                        );
+                    """)
+                    cursor.execute(
+                        """
+                        INSERT INTO tool_audit_logs (
+                            id, tool_name, arguments, duration_ms, success, session_id, permission_level, error
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        (log_id, tool_name, args_str, duration_ms, success, session_id, permission_level, error)
+                    )
+                    conn.commit()
+                except sqlite3.Error as e:
+                    print(f"[TOOL_REGISTRY] Warning: Failed to write to audit logger: {e}")
+        except (DatabaseMaintenanceError, OSError) as e:
+            # A restore intentionally pauses all DB writes. Audit logging must not
+            # turn that expected maintenance state into a false tool success/crash.
+            print(f"[TOOL_REGISTRY] Audit deferred during database unavailability: {e}")
 
     def _register_default_tools_lazy(self) -> None:
         """
@@ -169,8 +198,9 @@ class ToolRegistry:
             "search_inside_documents": ("backend.app.tools.filesystem_search_tool", "SearchDocumentsTool"),
             "convert_file_format": ("backend.app.tools.filesystem_search_tool", "ConvertFileFormatTool"),
             "world_monitor": ("backend.app.tools.world_monitor_tool", "WorldMonitorTool"),
-            "github_integration": ("backend.app.tools.github_integration_tool", "GitHubIntegrationTool")
-                }
+            "github_integration": ("backend.app.tools.github_integration_tool", "GitHubIntegrationTool"),
+            "database_restore": ("backend.app.tools.database_tools", "DatabaseRestoreTool"),
+        }
 
     def register(self, tool: BaseTool) -> None:
         """Register a new custom tool dynamically (OCP compliant)."""
@@ -325,28 +355,37 @@ class ToolRegistry:
                     **created,
                 }
 
-        # 3. Async execution under timeout and retry boundaries
+        # 3. Async execution under timeout and retry boundaries. Write/system
+        # tools participate in the same maintenance gate as DB connections: a
+        # restore waits for an in-flight action, and new actions fail clearly.
         raw_result = None
         execution_error = None
-        
-        for attempt in range(max_retries + 1):
-            try:
-                # Wrap execution inside async timeout guard
-                raw_result = await asyncio.wait_for(
-                    tool.execute(**args_payload),
-                    timeout=timeout
-                )
-                execution_error = None
-                break
-            except asyncio.TimeoutError:
-                execution_error = f"TimeoutError: Execution exceeded limit of {timeout}s."
-                print(f"[TOOL_REGISTRY] Timeout on '{tool_id}' (Attempt {attempt + 1}/{max_retries + 1}).")
-            except Exception as e:
-                execution_error = f"ExecutionCrash: {e}"
-                print(f"[TOOL_REGISTRY] Crash on '{tool_id}' (Attempt {attempt + 1}/{max_retries + 1}).")
+        operation_guard = (
+            maintenance_coordinator.database_access()
+            if permission_level >= 1 and tool_id != "database_restore"
+            else nullcontext()
+        )
+        try:
+            with operation_guard:
+                for attempt in range(max_retries + 1):
+                    try:
+                        raw_result = await asyncio.wait_for(
+                            tool.execute(**args_payload),
+                            timeout=timeout
+                        )
+                        execution_error = None
+                        break
+                    except asyncio.TimeoutError:
+                        execution_error = f"TimeoutError: Execution exceeded limit of {timeout}s."
+                        print(f"[TOOL_REGISTRY] Timeout on '{tool_id}' (Attempt {attempt + 1}/{max_retries + 1}).")
+                    except Exception as e:
+                        execution_error = f"ExecutionCrash: {e}"
+                        print(f"[TOOL_REGISTRY] Crash on '{tool_id}' (Attempt {attempt + 1}/{max_retries + 1}).")
 
-            if attempt < max_retries:
-                await asyncio.sleep(0.5)
+                    if attempt < max_retries:
+                        await asyncio.sleep(0.5)
+        except DatabaseMaintenanceError as e:
+            execution_error = f"DatabaseMaintenance: {e}"
 
         end_time = time.perf_counter()
         duration_ms = int((end_time - start_time) * 1000)

@@ -53,6 +53,20 @@ cache:
   max_items: 200
   expiry_hours: 24
 
+durability:
+  # One verified SQLite snapshot per day. The newest 30 generations are kept.
+  automatic_backups: true
+  backup_interval_hours: 24
+  backup_generations: 30
+  integrity_check_interval_hours: 24
+  wal_checkpoint_interval_hours: 6
+  # Retention affects generated audit/cache/log data only—never chats or memories.
+  audit_retention_days: 90
+  cache_retention_days: 7
+  log_retention_days: 30
+  scheduler_poll_seconds: 900
+  restore_lock_timeout_seconds: 30
+
 voice:
   enabled: false
   auto_start: false

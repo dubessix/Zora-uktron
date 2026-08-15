@@ -14,7 +14,6 @@ from pathlib import Path
 from backend.app.database import db as _db
 from backend.app.database.backup import backup_database, restore_database, check_integrity
 from backend.app.database.models import get_schema_version, SCHEMA_VERSION
-from backend.app.memory.memory_engine import MemoryEngine
 
 
 def _run(coro):
@@ -43,6 +42,7 @@ class TestBackupRestore(unittest.TestCase):
         # Point DB to a fresh temp path so we never touch real data.
         self._tmp = Path(tempfile.mkdtemp(prefix="ultron_dur_"))
         self._orig_db = _db.DB_PATH
+        self._orig_dir = _db.DB_DIR
         _db.DB_PATH = self._tmp / "ultron.db"
         _db.DB_DIR = self._tmp
         from backend.app.database.db import get_db_connection
@@ -52,6 +52,7 @@ class TestBackupRestore(unittest.TestCase):
 
     def tearDown(self):
         _db.DB_PATH = self._orig_db
+        _db.DB_DIR = self._orig_dir
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_backup_creates_verified_copy(self):
@@ -64,12 +65,11 @@ class TestBackupRestore(unittest.TestCase):
 
     def test_restore_replaces_db_and_keeps_safety_copy(self):
         from backend.app.database.db import get_db_connection
-        from backend.app.database.models import initialize_database
         # Seed some rows, backup, then corrupt/empty, then restore.
         with get_db_connection() as conn:
             _write_real_row(conn)
             _write_real_row(conn)
-        result = backup_database(dest_dir=self._tmp / "bk")
+        result = backup_database()
         backup_path = result["data"]["backup_path"]
 
         # Wipe the live DB.

@@ -17,10 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import database, routing, and websocket engines
-from backend.app.database.db import get_db_connection
+from backend.app.database.db import DatabaseMaintenanceError, get_db_connection
 from backend.app.database.models import initialize_database
 from backend.app.router import api_router
 from backend.app.websocket.connection_manager import WebSocketManager
+from backend.app.background_tasks import get_background_task_manager
 
 # Initialize the global application registry
 app = FastAPI(
@@ -229,10 +230,15 @@ async def startup_event_handler():
         print(f"[INFO] Effective AI models: {model_status['models']}")
         print(f"[INFO] Provider configuration: {orchestrator.router.key_manager.config_status()}")
 
-        # Launch non-blocking background scheduler, emergency monitor, and proactive intelligence tasks
-        asyncio.create_task(run_reminder_scheduler())
-        asyncio.create_task(run_emergency_monitor())
-        asyncio.create_task(run_proactive_intelligence_loop())
+        # Every process-owned loop is named, deduplicated, and cancelled/awaited
+        # during shutdown. Repeated startup hooks cannot create duplicate schedulers.
+        from backend.app.database.durability import run_durability_scheduler
+
+        tasks = get_background_task_manager()
+        tasks.start_singleton("reminder_scheduler", run_reminder_scheduler)
+        tasks.start_singleton("emergency_monitor", run_emergency_monitor)
+        tasks.start_singleton("proactive_intelligence", run_proactive_intelligence_loop)
+        tasks.start_singleton("durability_scheduler", run_durability_scheduler)
     except Exception as e:
         print(f"[ERROR] Database migration crash during startup execution: {e}")
         raise SystemExit("Core startup database initialization failure.") from e
@@ -240,13 +246,13 @@ async def startup_event_handler():
 
 @app.on_event("shutdown")
 async def shutdown_event_handler():
-    """
-    Close the shared orchestrator exactly once at application shutdown.
+    """Cancel owned loops, then close the shared orchestrator exactly once."""
+    try:
+        stopped = await get_background_task_manager().cancel_all(timeout_seconds=10.0)
+        print(f"[INFO] Background tasks stopped: {stopped}")
+    except Exception as e:
+        print(f"[WARN] Background task shutdown failed: {e}")
 
-    The orchestrator is shared across ALL sessions and owns the persistent HTTPX
-    client + smart-cache state. It must NOT be closed per-WebSocket-disconnect
-    (that previously killed the client mid-session and broke later chat).
-    """
     try:
         from backend.app.router import get_orchestrator
         orch = get_orchestrator()
@@ -413,6 +419,15 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
         # The orchestrator is SHARED across sessions and owns the persistent HTTPX
         # client. Closing it here would break every later chat. It is only closed
         # once, at application shutdown.
+    except DatabaseMaintenanceError as e:
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "status": "database_maintenance",
+                "message": str(e),
+            })
+        finally:
+            ws_manager.disconnect("chat", client_id)
     except Exception as e:
         print(f"[WS_CHAT] Error on active chat pipeline: {e}")
         ws_manager.disconnect("chat", client_id)

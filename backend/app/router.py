@@ -4,12 +4,13 @@ Bridges user communication requests, message history lists, and session builders
 Supports structured AI action metadata payloads and explicit backend tool execution endpoints.
 """
 
+import asyncio
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.app.database.db import get_db_connection
+from backend.app.database.db import DatabaseMaintenanceError, get_db_connection
 from backend.app.database.models import get_conversation_history
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.tools.tool_registry import ToolRegistry
@@ -65,7 +66,10 @@ class CodingModeRequest(BaseModel):
     enabled: bool = Field(..., description="True to force NVIDIA coding mode ON, False to revert to auto-detect.")
 
 class BackupRequest(BaseModel):
-    backup_path: Optional[str] = Field(None, description="Backup file to restore from (for restore action).")
+    backup_path: Optional[str] = Field(None, description="Approved backup file to restore from.")
+    session_id: Optional[str] = Field(None, description="Session that owns the exact confirmation.")
+    has_confirmed: bool = Field(False, description="True only with an exact one-time token.")
+    confirmation_token: Optional[str] = Field(None, description="Token bound to this exact backup path.")
 
 class ConversationHistoryItem(BaseModel):
     id: str
@@ -117,11 +121,16 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             pending_confirmation=result.get("pending_confirmation"),
             provider_route=result.get("provider_route") or {},
         )
+    except DatabaseMaintenanceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process chat message cleanly: {str(e)}"
-        )
+        ) from e
     # Shared orchestrator is intentionally NOT closed here — it persists across
     # messages for memory. (Its persistent httpx client lives for the process.)
 
@@ -155,6 +164,7 @@ async def confirm_pending_action(request: ConfirmActionRequest) -> Dict[str, Any
     result = await registry.execute_pending_action(
         confirmation_token=request.confirmation_token,
         session_id=request.session_id,
+        timeout=180.0,
     )
     return result
 
@@ -166,11 +176,16 @@ async def get_session_history(session_id: str = Query(..., description="Target s
         with get_db_connection() as conn:
             history = get_conversation_history(conn, session_id)
             return history
+    except DatabaseMaintenanceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve conversation logs: {str(e)}"
-        )
+        ) from e
 
 class SpeakRequest(BaseModel):
     text: str = Field(..., min_length=1, description="Text to speak.")
@@ -206,29 +221,48 @@ async def get_recent_memories(
 
 @api_router.post("/db/backup", status_code=status.HTTP_200_OK)
 async def create_db_backup():
-    """Create a verified timestamped backup of the local database (durability)."""
+    """Create a verified online backup without blocking the async event loop."""
     from backend.app.database.backup import backup_database
-    result = backup_database()
+    from backend.app.database.durability import load_durability_settings
+
+    settings = load_durability_settings()
+    result = await asyncio.to_thread(
+        backup_database,
+        None,
+        settings.backup_generations,
+    )
     if not result["success"]:
-        raise HTTPException(status_code=500, detail=result["error"])
+        code = 503 if "maintenance" in (result.get("error") or "").lower() else 500
+        raise HTTPException(status_code=code, detail=result["error"])
     return result
+
 
 @api_router.get("/db/integrity", status_code=status.HTTP_200_OK)
 async def db_integrity():
-    """Report the local database integrity + table row counts."""
+    """Report local database integrity and core table row counts."""
     from backend.app.database.backup import check_integrity
-    return check_integrity()
+
+    result = await asyncio.to_thread(check_integrity)
+    if not result["success"] and "maintenance" in (result.get("error") or "").lower():
+        raise HTTPException(status_code=503, detail=result["error"])
+    return result
+
 
 @api_router.post("/db/restore", status_code=status.HTTP_200_OK)
 async def restore_db(request: BackupRequest):
-    """Restore the local database from a verified backup file (keeps a safety copy)."""
-    from backend.app.database.backup import restore_database
+    """Create/validate exact confirmation before executing a locked restore."""
     if not request.backup_path:
         raise HTTPException(status_code=400, detail="backup_path is required.")
-    result = restore_database(request.backup_path)
-    if not result["success"]:
-        raise HTTPException(status_code=500, detail=result["error"])
-    return result
+    registry = ToolRegistry()
+    return await registry.execute_tool(
+        tool_id="database_restore",
+        args={"backup_path": request.backup_path},
+        has_confirmed=request.has_confirmed,
+        confirmation_token=request.confirmation_token,
+        session_id=request.session_id,
+        max_retries=0,
+        timeout=180.0,
+    )
 
 @api_router.get("/providers/status", status_code=status.HTTP_200_OK)
 async def provider_status(live: bool = Query(False, description="Make one tiny live request per configured provider.")):

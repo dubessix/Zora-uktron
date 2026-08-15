@@ -1027,14 +1027,17 @@ class CognitiveOrchestrator:
         # Sync transaction back to short term memory (session-scoped)
         self.memory.save_chat_turn(session_id, user_prompt, ai_response)
 
-        # Jarvis-style long-term persistence (non-blocking background task)
-        asyncio.create_task(
+        # Jarvis-style long-term persistence remains non-blocking, but is now
+        # tracked and cancelled/awaited during application shutdown.
+        from backend.app.background_tasks import get_background_task_manager
+        get_background_task_manager().create(
             self._persist_turn_to_memory(
                 user_prompt,
                 ai_response,
                 project_id=project_id,
                 session_id=session_id,
-            )
+            ),
+            name="memory_persist",
         )
 
         # Step 13: ZORA OVERLAY LIFECYCLE DECREMENT

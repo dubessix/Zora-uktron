@@ -171,12 +171,16 @@ def doctor():
 @main.command()
 @click.option("--restore", is_flag=True, help="Restore the database from a backup file.")
 @click.option("--path", type=str, default=None, help="Backup file path to restore from (with --restore).")
-def backup(restore, path):
-    """Back up or restore the local database (durability)."""
-    from backend.app.database.backup import backup_database, restore_database, check_integrity
+@click.option("--yes", is_flag=True, help="Confirm the exact local restore non-interactively.")
+def backup(restore, path, yes):
+    """Back up or explicitly restore the local database (durability)."""
+    from backend.app.database.backup import backup_database, restore_database
     if restore:
         if not path:
             click.echo(click.style("Error: --path <backup.db> is required with --restore.", fg="red"))
+            return
+        if not yes and not click.confirm(f"Restore the exact approved backup '{path}'?"):
+            click.echo("Restore cancelled; database was not changed.")
             return
         result = restore_database(path)
         if result["success"]:

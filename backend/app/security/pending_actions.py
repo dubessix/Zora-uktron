@@ -26,7 +26,7 @@ def _safe_summary(arguments: Dict[str, Any]) -> dict:
     summary = {"argument_names": sorted((arguments or {}).keys())}
     for key in (
         "filepath", "folderpath", "source_path", "destination_path", "save_path",
-        "directory", "command", "action", "url", "repo_name",
+        "directory", "command", "action", "url", "repo_name", "backup_path",
     ):
         if key in arguments:
             value = str(arguments[key])
