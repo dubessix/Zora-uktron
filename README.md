@@ -1,255 +1,152 @@
-<div align="center">
+# Ultron / Zora Personal Assistant V1
 
-# 🦾 ULTRON — Personal AI Operating System & Coding Partner
+Ultron is a local-first personal assistant for one owner. It combines chat, project-scoped memory, coding/file tools, terminal controls, reminders, tasks, calendar, weather/research integrations, voice output, widgets, backups, and a localhost-only desktop web interface.
 
-**A Jarvis-style personal assistant, developer partner, and emotional companion.**
+## Release status
 
-Built on **FastAPI + React**, Ultron combines a cognitive orchestrator, multi-provider
-LLM routing (Groq · Gemini · NVIDIA), long-term memory, real-time WebSockets, voice,
-and a Codex-style autonomous **coding-agent mode**.
+This repository is a **Personal V1 release candidate**, not a claim of zero defects. Automated Linux verification passes, while final acceptance on the owner's Windows/browser/microphone/Spotify hardware and live AI provider accounts is still required.
 
-</div>
+## Requirements
 
----
+- Python 3.10+
+- Node.js 20.19+ or 22.12+
+- npm and Git
+- ffmpeg is optional for media workflows
+- 8 GB RAM is recommended for the intended laptop profile; cloud AI is used instead of local LLMs
 
-## ✨ Features
-
-### 🧠 Cognitive Core
-- **Cognitive Orchestrator** — intent analysis → confidence check → speed-track decision → memory sync → tool execution.
-- **Multi-provider LLM routing** — Groq (fast chat) · Gemini (fallback) · **NVIDIA Build (coding)** with key rotation, rate-limit cooling, and automatic failover.
-- **Smart caching** with configurable cache policy + disk persistence.
-
-### 💾 Jarvis-style Memory
-- Short-term, episodic, semantic, emotional, persistent (SQLite) and project memory layers.
-- Vector store (NumPy cosine similarity) with duplicate detection + bounded retention (stays tiny over years).
-- Long-term recall injected into the system prompt — Ultron "remembers" past sessions.
-
-### 💻 Coding-Agent Mode (Codex-style)
-- **NVIDIA coding brain** — used *only* on coding turns; normal chat stays fast on Groq.
-- **Auto-detect** coding intent **+ manual toggle** (`/api/coding-mode`).
-- **Permission-first** file writes with automatic **`.bak` backup** on overwrite.
-- **Project-aware** context injection (structure + stored facts).
-- **Multi-file** task loop with an 8-step limit (never runs away).
-- **Safe, timeout-bounded** syntax verification after writes.
-- **Diff-style feedback** — created/updated, line counts, backup path.
-- **Error self-healing** for Python + Node/JS + backend — real file/line resolution and concrete fix hints (pip vs npm).
-
-### 🌐 Real-Time + Voice
-- WebSockets: `/ws/chat`, `/ws/events`, `/ws/logs`, `/ws/dashboard`.
-- Browser-native wake-word voice (Hinglish / English / Hindi) with mic toggle.
-- Reminder scheduler, USGS emergency monitor, and proactive intelligence loops.
-
-### 🛠 65+ Tools
-Filesystem, git/GitHub, browser, weather, research/web search, tasks, reminders,
-calendar, code optimizer, semantic code graph, security guardian, system metrics,
-music/Spotify, world monitor, and more.
-
-### 🎨 Frontend (React + Vite + Tailwind)
-Glassmorphic 3-panel dashboard with draggable widgets, dynamic **Ultron (emerald) /
-Zora (pink)** identity, and a conversation-following coding panel.
-
----
-
-## 🧱 Architecture
-
-```
-Zora-uktron/
-├── backend/app/
-│   ├── main.py                 # FastAPI app + WebSocket endpoints + background loops
-│   ├── router.py               # REST routes: /api/chat, /api/history, /api/tools/execute, /api/coding-mode
-│   ├── cli.py                  # 'ultron' click CLI (setup, doctor, version)
-│   ├── core/                   # orchestrator, intent_analyzer, confidence, decision
-│   ├── brain/                  # llm_router, api_key_manager, smart_cache, cache_policy
-│   ├── memory/                 # short_term, episodic, semantic, emotional, persistent, project, vector_store, gate
-│   ├── skills/                 # modular coding-agent instruction blocks (clean, maintainable)
-│   ├── personalities/          # ultron.md, zora.md + engine
-│   ├── tools/                  # 65+ tools + tool_registry + security gates
-│   ├── voice/                  # edge-tts provider + interrupt handler
-│   ├── websocket/              # connection manager
-│   └── emotion/  security/  session/  database/
-├── frontend/                   # React + Vite + Tailwind dashboard
-├── docs/                       # architecture, API reference, memory, testing, etc.
-├── launcher.py                 # boots backend + frontend together
-├── config.yaml                 # all system configuration
-└── requirements.txt
-```
-
-> Full maps: [`docs/project_structure.md`](docs/project_structure.md) · [`docs/architecture.md`](docs/architecture.md)
-
----
-
-## 🚀 Quick Start (First Run)
-
-> Requirement: **Python 3.10+**, **Node 18+**, **npm**, and an internet connection.
+## Install from source
 
 ```bash
-# 1. Clone & enter
 git clone https://github.com/dubessix/Zora-uktron.git
 cd Zora-uktron
-
-# 2. Install Python dependencies
-pip install -r requirements.txt
-
-# 3. Install frontend dependencies
-cd frontend && npm install && cd ..
-
-# 4. Configure .env (copy from the template)
-#    Edit .env and add your real API keys (see below). Placeholder keys work —
-#    Ultron will run in mock mode instead of crashing.
-
-# 5. Launch everything (backend :8000 + frontend :5173 + browser)
-python launcher.py
+python -m venv .venv
 ```
 
-The launcher checks ports, starts both services, and opens
-`http://127.0.0.1:5173` in your default browser.
-
----
-
-## 🔑 Environment Variables (`.env`)
-
-Create a `.env` file in the project root:
-
-```env
-# --- AI Providers ---
-GROQ_API_KEY_1=your_groq_key            # primary chat provider
-GEMINI_API_KEY_1=your_gemini_key        # fallback provider (also used for memory embeddings)
-NVIDIA_API_KEY_1=your_nvidia_key        # coding-agent provider (build.nvidia.com, free nvapi- key)
-
-# --- Security / Environment ---
-ENV_STATE=production
-SECRET_KEY=your_random_long_string
-
-# --- Optional Tools (mock until set) ---
-GITHUB_TOKEN=your_github_pat
-TAVILY_API_KEY=your_tavily_key
-
-# --- Frontend (optional; default http://127.0.0.1:8000) ---
-VITE_API_URL=http://127.0.0.1:8000
-```
-
-- **Groq:** https://console.groq.com (free tier, generous)
-- **Gemini:** https://aistudio.google.com (free embedding + flash)
-- **NVIDIA (coding):** https://build.nvidia.com — free `nvapi-` key, no credit card.
-  Ultron uses `nvidia/nemotron-3-ultra-550b-a55b:free` **only on coding turns**.
-- Without real keys, the system still boots and runs using **mock responses** — it never crashes.
-
----
-
-## 🎭 Personas
-
-Ultron's personality engine auto-switches between two personas:
-
-| Persona | Role | Accent | Provider |
-|---------|------|--------|----------|
-| **Ultron** | Engineering / coding / SaaS co-founder | English, Jarvis-style, 25–40 words | Groq + **NVIDIA** (coding) |
-| **Zora** | Emotional support / cognitive companion | Hinglish / English / Bengali / Hindi | Groq |
-
-Switch manually with "switch to zora" / "back to work", or Ultron auto-handoffs
-to Zora on high stress. Coding tasks automatically use the NVIDIA brain.
-
----
-
-## 🖥 Using Coding-Agent Mode
-
-Ask Ultron naturally, for example:
-
-> "Ultron, build an auth API with JWT login."
-> "Can you review the CSS?"
-> "Run the backend and fix any error."
-
-Ultron will:
-1. Detect it as a **coding turn** and use the **NVIDIA** coding brain.
-2. **Plan in steps** and ask permission before writing ("Shall I create auth.py?").
-3. **Back up** any existing file (`.bak`) before overwriting.
-4. **Verify** syntax after writing (timeout-bounded, safe).
-5. Report a **diff summary** (created/updated, lines, backup path).
-6. Offer the next step ("Next, shall I build the /login route?").
-
-You can also force coding mode from the UI (the 💻 button) or the API:
-```bash
-curl -X POST http://127.0.0.1:8000/api/coding-mode -H "Content-Type: application/json" -d '{"enabled":true}'
-```
-
----
-
-## 🧪 Testing
+Linux/macOS:
 
 ```bash
-pip install pytest pyflakes
-python -m pytest tests/ -q        # 79 tests, all green
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m backend.app.cli setup
+python -m backend.app.cli doctor
 ```
 
----
+Windows PowerShell:
 
-## 📡 API Overview
+```powershell
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m backend.app.cli setup
+python -m backend.app.cli doctor
+```
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/chat` | Send a message (returns `coding` flag for coding turns) |
-| GET  | `/api/health` | Health + system metrics |
-| GET  | `/api/history?session_id=` | Conversation history |
-| POST | `/api/tools/execute` | Execute a registered tool |
-| POST | `/api/coding-mode` | Toggle NVIDIA coding mode |
-| WS   | `/ws/chat` | Streamed chat (tokens, widgets, done) |
-| WS   | `/ws/events` | Server-pushed events (reminders, alerts) |
-| WS   | `/ws/logs` | Log streaming |
-| WS   | `/ws/dashboard` | Live CPU/RAM metrics |
+The wheel also exposes the `ultron` console command:
 
-> Full contract: [`docs/websocket_contract.md`](docs/websocket_contract.md) · [`docs/api_reference.md`](docs/api_reference.md)
+```bash
+ultron setup
+ultron doctor
+ultron start --check
+ultron start
+```
 
----
+`setup` preserves an existing `.env` and user `config.yaml`. Installed wheels use a writable per-user `ULTRON_HOME`; source checkouts use the repository root unless `ULTRON_HOME` is set.
 
-## 🧭 Documentation
+## Configuration
 
-| Doc | Purpose |
-|-----|---------|
-| [`docs/architecture.md`](docs/architecture.md) | System architecture |
-| [`docs/memory_architecture.md`](docs/memory_architecture.md) | Memory layers |
-| [`docs/api_reference.md`](docs/api_reference.md) | REST/WS API reference |
-| [`docs/websocket_contract.md`](docs/websocket_contract.md) | WebSocket contract |
-| [`docs/testing_strategy.md`](docs/testing_strategy.md) | Testing strategy |
-| [`docs/frontend_structure.md`](docs/frontend_structure.md) | Frontend layout |
-| [`docs/ultron_daily_operating_manual.md`](docs/ultron_daily_operating_manual.md) | Operating manual |
-| [`ultron_cross_platform_launch_guide.md`](ultron_cross_platform_launch_guide.md) | Windows/Linux launch guide |
-| [`docs/ARCH_SETUP.md`](docs/ARCH_SETUP.md) | Complete Arch Linux beginner's setup |
+Effective model IDs are in `config.yaml` and may be overridden with environment variables:
 
----
+| Purpose | Default | Override |
+|---|---|---|
+| Groq chat | `llama-3.1-8b-instant` | `GROQ_CHAT_MODEL` |
+| Gemini chat | `gemini-3.5-flash` | `GEMINI_CHAT_MODEL` |
+| NVIDIA coding | `nvidia/nemotron-3-ultra-550b-a55b` | `NVIDIA_CHAT_MODEL` |
+| Gemini embedding | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` |
+| Embedding dimensions | `768` | `GEMINI_EMBEDDING_DIMS` |
 
-## 🧰 Requirements
+Provider secrets belong only in the git-ignored `.env` or process environment. Tokens are never stored in repository files, Git remotes, or progress-tracker JSON.
 
-See [`requirements.txt`](requirements.txt). Core stack:
-`fastapi · uvicorn · websockets · python-dotenv · PyYAML · pydantic · numpy · httpx · click · psutil · edge-tts`
+## Daily operation
 
-> Runs comfortably on **8GB RAM / dual-core / 0-GPU** hosts — no local LLM, no GPU needed.
+```bash
+ultron start
+```
 
----
+The launcher:
 
-## 🔒 Security Notes
+1. takes a single-instance lock;
+2. validates loopback ports and configuration;
+3. runs `npm ci` only when the lockfile changes;
+4. rebuilds production frontend assets only when source/API configuration changes;
+5. starts FastAPI and the production static frontend on `127.0.0.1`;
+6. opens the browser only after both schema-validated health checks pass;
+7. monitors both child processes and stops the sibling if either exits;
+8. performs bounded graceful shutdown with forced cleanup as a last resort.
 
-- `.env`, `data/`, `node_modules/`, `dist/`, and `.cache/` are gitignored — never commit keys.
-- File overwrites in coding mode are always backed up (`.bak`).
-- Destructive operations require confirmation (permission levels).
-- All SQL is parameterized.
+Default URLs:
 
----
+- Frontend: `http://127.0.0.1:5173`
+- Backend health: `http://127.0.0.1:8000/api/health`
 
-## 🤝 Contributing
+## Core behavior
 
-1. Fork the repo.
-2. Create a feature branch (`git checkout -b feat/xyz`).
-3. Commit your changes.
-4. Open a Pull Request.
+- No configured AI key: returns an explicit `[Offline]` message; it does not fabricate an LLM answer.
+- Optional hardware sensor missing: returns `Unavailable`; it does not invent temperature, battery, latency, or uptime.
+- Destructive/system tools: require a one-time token bound to the exact action, session, and canonical arguments.
+- Filesystem tools: are restricted to `security.allowed_directories` and reject sensitive/system paths and symlink escapes.
+- Database restore: accepts approved backup paths only, enters maintenance mode, creates a verified safety copy, and rolls back automatically if post-restore integrity fails.
+- Automatic backups: run daily by default with bounded generation retention.
 
----
+## Main APIs
 
-## 📄 License
+REST:
 
-This project is provided for personal/educational use. See the repo owner for
-commercial licensing.
+- `POST /api/chat`
+- `POST /api/tools/execute`
+- `POST /api/actions/confirm`
+- `GET /api/history`
+- `POST /api/speak`
+- `GET /api/memory/recent`
+- `POST /api/db/backup`
+- `GET /api/db/integrity`
+- `POST /api/db/restore`
+- `GET /api/providers/status`
+- `POST /api/personality`
+- `POST /api/coding-mode`
+- `GET /api/health`
 
----
+WebSocket:
 
-<div align="center">
-  <sub>Built with FastAPI, React, and a lot of coffee · **Ultron & Zora**</sub>
-</div>
+- `/ws/chat`
+- `/ws/events`
+- `/ws/logs`
+- `/ws/dashboard`
+
+Voice recognition is browser-side Web Speech API; synthesized output uses `POST /api/speak`.
+
+## Verification
+
+```bash
+python -m pytest -q
+python -m unittest discover -s tests -p 'test*.py'
+python -m coverage run -m pytest -q
+python -m coverage report -m
+python -m pip_audit -r requirements-dev.txt --progress-spinner off
+ruff check backend tests launcher.py setup.py
+bandit -q -r backend
+cd frontend && npm audit --audit-level=low && npm run build
+```
+
+Tests redirect SQLite, cache, backups, and generated artifacts to isolated temporary storage. The test session hashes production `data/` before and after execution.
+
+## Current limitations
+
+The following require real owner hardware/credentials and must not be inferred from sandbox tests:
+
+- Groq, Gemini, NVIDIA, Tavily, and GitHub authenticated calls
+- Windows process-group/taskkill behavior
+- desktop browser dispatch
+- microphone/Web Speech API
+- Edge-TTS audio playback
+- Spotify desktop controls
+
+See `SETUP_GUIDE.md`, `docs/api_reference.md`, `docs/testing_strategy.md`, and `docs/development_progress.md` for the current operational reference.

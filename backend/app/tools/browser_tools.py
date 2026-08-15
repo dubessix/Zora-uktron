@@ -5,6 +5,7 @@ Uses lightweight cross-platform shell key senders (xdotool on Linux, powershell 
 to trigger active browser controls without heavy Selenium/Playwright dependencies, protecting 8GB RAM bounds.
 """
 
+import re
 import webbrowser
 import httpx
 import platform
@@ -370,6 +371,3 @@ class ReadPageTool(BaseTool):
             return {"success": False, "error": "Web redirect loop ended unexpectedly.", "data": {}}
         except Exception as e:
             return {"success": False, "error": f"Failed to scrape web page: {e}", "data": {}}
-
-# Import re for regex text cleaners
-import re

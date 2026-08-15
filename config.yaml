@@ -4,7 +4,7 @@
 ultron:
   name: "ULTRON"
   version: "1.0.0"
-  status: "pre-development"
+  status: "personal-v1-release-candidate"
 
 server:
   host: "127.0.0.1"

@@ -99,7 +99,7 @@ class VectorStore:
             "outputDimensionality": dims,
         }
         last_error = None
-        for attempt in range(2):
+        for _attempt in range(2):
             api_key = self.key_manager.get_active_key("gemini")
             url = url_template.format(model=model, key=api_key)
             try:
@@ -151,7 +151,7 @@ class VectorStore:
         mem_type: str,
         content: str,
         embedding: List[float],
-        metadata: Dict[str, Any] = None
+        metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Saves a serialized vector memory row. Implements duplicate checks:

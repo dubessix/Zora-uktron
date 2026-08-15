@@ -99,7 +99,7 @@ class CodeOptimizerTool(BaseTool):
         is_python = filepath.endswith(".py")
         is_js_ts = filepath.endswith((".js", ".jsx", ".ts", ".tsx"))
 
-        for idx, line in enumerate(lines):
+        for line in lines:
             stripped = line.strip()
             
             # --- Python Specific Enhancements ---

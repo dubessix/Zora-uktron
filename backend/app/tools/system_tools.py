@@ -149,15 +149,21 @@ class TerminalRunTool(BaseTool):
         # Python first
         m = python_pattern.search(stderr)
         if m:
-            file_path_str = m.group(1); line_num = int(m.group(2)); lang = "python"
+            file_path_str = m.group(1)
+            line_num = int(m.group(2))
+            lang = "python"
         else:
             m = node_at.search(stderr)
             if m:
-                file_path_str = m.group(1); line_num = int(m.group(2)); lang = "node"
+                file_path_str = m.group(1)
+                line_num = int(m.group(2))
+                lang = "node"
             else:
                 m = node_top.search(stderr)
                 if m:
-                    file_path_str = m.group(1); line_num = int(m.group(2)); lang = "node"
+                    file_path_str = m.group(1)
+                    line_num = int(m.group(2))
+                    lang = "node"
 
         # --- General error-type hint (works even if no file can be resolved) ---
         fix_hint = "Review and fix the reported error."

@@ -20,6 +20,17 @@ _CORE_TABLES = (
     "calendar_events",
     "tool_audit_logs",
 )
+_CORE_TABLE_COUNT_QUERIES = {
+    table: query for table, query in (
+        ("sessions", "SELECT COUNT(*) FROM sessions;"),
+        ("conversations", "SELECT COUNT(*) FROM conversations;"),
+        ("vector_memories", "SELECT COUNT(*) FROM vector_memories;"),
+        ("reminders_alarms", "SELECT COUNT(*) FROM reminders_alarms;"),
+        ("project_tasks", "SELECT COUNT(*) FROM project_tasks;"),
+        ("calendar_events", "SELECT COUNT(*) FROM calendar_events;"),
+        ("tool_audit_logs", "SELECT COUNT(*) FROM tool_audit_logs;"),
+    )
+}
 _REQUIRED_RESTORE_TABLES = {
     "sessions",
     "conversations",
@@ -72,7 +83,7 @@ def _verify_connection(conn: sqlite3.Connection) -> Dict[str, Any]:
         for table in _CORE_TABLES:
             if table in tables:
                 report["tables"][table] = conn.execute(
-                    f"SELECT COUNT(*) FROM {table};"
+                    _CORE_TABLE_COUNT_QUERIES[table]
                 ).fetchone()[0]
     except sqlite3.Error as exc:
         report["error"] = str(exc)

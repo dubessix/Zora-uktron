@@ -187,7 +187,7 @@ def save_conversation(
     user_message: str,
     ai_response: str,
     personality: str,
-    tools_used: List[str] = None,
+    tools_used: Optional[List[str]] = None,
     widget_shown: Optional[str] = None,
     intent: str = "Conversation",
     mode: str = "developer",

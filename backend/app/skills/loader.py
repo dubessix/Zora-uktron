@@ -5,7 +5,6 @@ orchestrator can inject them into the system prompt only when needed — keeping
 the base personality files clean and the prompt small.
 """
 from pathlib import Path
-from typing import Optional
 
 SKILLS_DIR = Path(__file__).resolve().parent
 

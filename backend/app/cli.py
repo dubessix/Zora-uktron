@@ -7,8 +7,11 @@ Supports Windows 11 & Linux Ubuntu 24.04 natively.
 import os
 import sys
 import platform
+import runpy
 import shutil
 import socket
+import subprocess
+
 import click
 import yaml
 import psutil
@@ -143,6 +146,30 @@ def doctor():
                 click.echo(click.style(f"  ✗ {binary:<8}: Missing. Please install {binary} to proceed.", fg="red"))
                 all_green = False
 
+    node_path = shutil.which("node")
+    if node_path:
+        try:
+            node_version = subprocess.run(
+                [node_path, "--version"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5.0,
+            ).stdout.strip().lstrip("v")
+            major, minor, *_ = [int(part) for part in node_version.split(".")]
+            node_supported = (major == 20 and minor >= 19) or (major == 22 and minor >= 12) or major > 22
+            if node_supported:
+                click.echo(f"  ✓ node version: {node_version} supports the production frontend build.")
+            else:
+                click.echo(click.style(
+                    f"  ✗ node version {node_version} is unsupported; install Node 20.19+ or 22.12+.",
+                    fg="red",
+                ))
+                all_green = False
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            click.echo(click.style(f"  ✗ Could not verify node version: {exc}", fg="red"))
+            all_green = False
+
     # 3. Local Port Availability
     click.echo("\n[3/5] Verifying Port Configurations...")
     config = load_yaml_config()
@@ -241,7 +268,6 @@ def integrity():
 def start(check_only):
     """Launch the installed backend/frontend bundle through the master launcher."""
     click.echo(click.style("Bootstrapping services...", fg="cyan"))
-    import subprocess
 
     required_assets = [
         LAUNCHER_PATH,
@@ -263,17 +289,21 @@ def start(check_only):
         ))
         return
 
-    env = os.environ.copy()
-    env.setdefault("ULTRON_HOME", str(APPLICATION_HOME))
-    completed = subprocess.run(
-        [sys.executable, str(LAUNCHER_PATH)],
-        cwd=str(ASSET_ROOT),
-        env=env,
-        check=False,
-    )
-    if completed.returncode != 0:
+    os.environ.setdefault("ULTRON_HOME", str(APPLICATION_HOME))
+    try:
+        launcher_scope = runpy.run_path(
+            str(LAUNCHER_PATH),
+            run_name="ultron_installed_launcher",
+        )
+        launcher_main = launcher_scope.get("main")
+        if not callable(launcher_main):
+            raise RuntimeError("launcher.py does not expose main().")
+        return_code = int(launcher_main())
+    except Exception as exc:
+        raise click.ClickException(f"Launcher failed: {exc}") from exc
+    if return_code != 0:
         raise click.ClickException(
-            f"Launcher exited with status {completed.returncode}. See service logs above."
+            f"Launcher exited with status {return_code}. See service logs above."
         )
 
 if __name__ == "__main__":

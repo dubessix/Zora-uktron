@@ -39,10 +39,10 @@ class GitStatusTool(BaseTool):
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15.0)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             process.kill()
             await process.wait()
-            raise RuntimeError("Git command timed out.")
+            raise RuntimeError("Git command timed out.") from exc
         return (
             int(process.returncode),
             stdout.decode("utf-8", "replace").strip(),

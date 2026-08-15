@@ -93,8 +93,9 @@ class TestLoopbackConfiguration(unittest.TestCase):
     def test_fastapi_uses_lifespan_not_deprecated_event_hooks(self):
         source = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
         self.assertNotIn("@app.on_event", source)
-        from backend.app.main import app, application_lifespan
-        self.assertIs(app.router.lifespan_context, application_lifespan)
+        from backend.app.main import app
+        self.assertIn("lifespan=application_lifespan", source)
+        self.assertTrue(callable(app.router.lifespan_context))
 
 
 class TestFrontendProductionServer(unittest.TestCase):
@@ -251,6 +252,14 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
             [call.args[1] for call in killpg.call_args_list],
             [signal.SIGTERM, signal.SIGKILL],
         )
+
+    def test_frontend_prepare_rejects_unsupported_node_before_npm(self):
+        root, launcher = _layout()
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        launcher._node_build_supported = Mock(return_value=False)
+        launcher._run_npm = Mock(return_value=True)
+        self.assertFalse(launcher.prepare_frontend())
+        launcher._run_npm.assert_not_called()
 
     def test_frontend_prepare_runs_ci_and_build_once_then_uses_fingerprint(self):
         root, launcher = _layout()

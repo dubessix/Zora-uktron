@@ -1,156 +1,172 @@
-# ULTRON (Zora-Uktron) — Complete Setup Guide
+# Ultron Personal V1 Setup Guide
 
-A step-by-step guide to get Ultron running on your machine (Windows 11 or Ubuntu 24.04),
-optimized for 8GB RAM / dual-core / no GPU.
+## 1. Prerequisites
 
----
+Required:
 
-## ✅ Requirements
-- **Python 3.10+** (tested on 3.13)
-- **Node.js 18+** and **npm**
-- **git**
-- Internet connection (for AI APIs and search)
+- Python 3.10 or newer
+- Node.js 20.19+ or 22.12+
+- npm
+- Git
 
-> No GPU needed. All AI runs in the cloud.
+Optional:
 
----
+- ffmpeg for media conversion/playback workflows
+- Spotify desktop for local Spotify controls
+- a Chromium/Edge browser for the Web Speech API
 
-## Step 1 — Clone the repository
-```bash
-git clone https://github.com/dubessix/Zora-uktron.git
-cd Zora-uktron
-```
+## 2. Create the Python environment
 
----
-
-## Step 2 — Install Python dependencies
-```bash
-pip install -r requirements.txt
-```
-This installs: fastapi, uvicorn, websockets, python-dotenv, PyYAML, pydantic,
-pydantic-settings, numpy, httpx, click, psutil, edge-tts.
-
-*(Optional) create a virtual environment:*
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux:   source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
----
+Linux/macOS:
 
-## Step 3 — Install frontend dependencies
 ```bash
+source .venv/bin/activate
+```
+
+Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Install:
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements.txt
+```
+
+For development/audits:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+## 3. Initialize personal runtime files
+
+```bash
+python -m backend.app.cli setup
+```
+
+For a wheel installation use:
+
+```bash
+ultron setup
+```
+
+This creates writable database/cache/log directories, a user `config.yaml`, and a template `.env`. Re-running setup does not overwrite an existing `.env` or config.
+
+## 4. Configure providers
+
+Edit the generated `.env` locally. Example variable names:
+
+```dotenv
+GROQ_API_KEY_1=
+GEMINI_API_KEY_1=
+NVIDIA_API_KEY_1=
+TAVILY_API_KEY=
+GITHUB_TOKEN_1=
+GITHUB_USERNAME_1=
+```
+
+Do not commit `.env`, paste credentials into source/config files, or place tokens in Git remote URLs.
+
+Without a provider key, chat returns an explicit offline/unprocessed response. Local non-LLM tools remain available through their widgets/API.
+
+## 5. Configure allowed directories
+
+The secure default in `config.yaml` is the project/application home only:
+
+```yaml
+security:
+  allowed_directories: ["."]
+```
+
+Add only personal roots that tools should access:
+
+```yaml
+security:
+  allowed_directories:
+    - "."
+    - "~/Documents"
+    - "~/Downloads"
+    - "D:/Projects"
+```
+
+Sensitive/system paths and symlink escapes remain blocked.
+
+## 6. Verify installation
+
+```bash
+python -m backend.app.cli doctor
+python -m backend.app.cli start --check
+```
+
+or:
+
+```bash
+ultron doctor
+ultron start --check
+```
+
+`doctor` reports required failures separately from optional warnings. It validates Node version, binaries, ports, writable storage, and YAML configuration; it does not claim live AI/microphone/Spotify readiness.
+
+## 7. Start and stop
+
+```bash
+ultron start
+```
+
+The UI is loopback-only at `http://127.0.0.1:5173`. Press `Ctrl+C` in the launcher terminal to stop both child services. If a child exits unexpectedly, the launcher stops the sibling and returns a non-zero status.
+
+## 8. Backups
+
+Manual backup:
+
+```bash
+ultron backup
+```
+
+Integrity check:
+
+```bash
+ultron integrity
+```
+
+Restore is restricted to the approved backup directory and asks for the exact path confirmation:
+
+```bash
+ultron backup --restore --path <approved-backup.db>
+```
+
+Automatic daily backups and retention are configured under `durability:` in `config.yaml`.
+
+## 9. Verification commands
+
+```bash
+python -m pytest -q
+python -m unittest discover -s tests -p 'test*.py'
+python -m pip_audit -r requirements-dev.txt --progress-spinner off
+ruff check backend tests launcher.py setup.py
+bandit -q -r backend
 cd frontend
-npm install
-cd ..
+npm ci
+npm audit --audit-level=low
+npm run build
 ```
 
----
+## 10. Owner-hardware acceptance
 
-## Step 4 — Configure `.env`
-An `.env` file already exists with placeholders. Edit it and add real keys.
+Before calling the laptop installation accepted, manually verify:
 
-```env
-# --- Primary AI (Groq) — fast chat brain ---
-GROQ_API_KEY_1=your_groq_api_key_1_here
-
-# --- Fallback (Gemini) — embeddings + backup ---
-GEMINI_API_KEY_1=your_gemini_api_key_1_here
-
-# --- NVIDIA Build (NIM) — coding brain ---
-NVIDIA_API_KEY_1=your_nvidia_api_key_1_here
-
-# --- Environment ---
-ENV_STATE=production
-SECRET_KEY=a_long_random_string_here
-
-# --- Optional tools ---
-GITHUB_TOKEN=your_github_token_here
-TAVILY_API_KEY=your_tavily_api_key_here
-```
-
-### Where to get each key (all free)
-| Provider | Purpose | URL |
-|----------|---------|-----|
-| **Groq** | fast chat | https://console.groq.com → API Keys |
-| **Gemini** | embeddings + fallback | https://aistudio.google.com → Get API key |
-| **NVIDIA** | coding brain | https://build.nvidia.com → API Keys (free `nvapi-` key) |
-| **GitHub** (optional) | GitHub integration | https://github.com/settings/tokens → Generate PAT |
-| **Tavily** (optional) | research | https://tavily.com |
-
-> **Pro tip:** You can add `_2`, `_3` keys per provider (e.g. `GROQ_API_KEY_2`) for
-> automatic rotation and higher rate limits. With 2 NVIDIA accounts you get ~2× coding
-> rate limit.
-
-> The app **runs with placeholders** (mock mode) so you can test the UI immediately —
-> it just won't call a real AI until you add keys.
-
----
-
-## Step 5 — Run Ultron
-```bash
-python launcher.py
-```
-This:
-1. Checks ports 8000 (backend) and 5173 (frontend) are free.
-2. Installs frontend deps if missing.
-3. Starts the FastAPI backend and Vite frontend together.
-4. Opens your browser to `http://localhost:5173`.
-
-### Run separately (optional)
-```bash
-# Terminal 1 — backend
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-
-# Terminal 2 — frontend
-cd frontend
-npm run dev
-```
-
----
-
-## Step 6 — Use it
-- **Type in the chat box** and press ➤.
-- **Coding:** say `make an auth API` (auto-coding) or click the **💻 Coding** toggle.
-- **Voice:** click the mic (Chrome/Edge only) and say a wake word, then a command.
-- **Widgets:** click widget names in the top-right of the center panel to open them.
-
----
-
-## 🧪 Verify it works
-```bash
-# Backend health
-curl http://127.0.0.1:8000/api/health
-
-# Chat
-curl -X POST http://127.0.0.1:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"content":"hello"}'
-
-# Tests
-pytest tests/ -q
-```
-
-Expected: health returns `{"status":"healthy"}`, chat returns an AI reply, tests = **79 passed**.
-
----
-
-## 🛠 Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| Port 8000/5173 in use | Close the other app, or run `python launcher.py` again after killing it |
-| Chat returns `[Mock ... Response]` | You haven't added a real API key to `.env` |
-| Voice mic doesn't work | Use Chrome/Edge; allow microphone permission |
-| Frontend blank | `cd frontend && npm install && npm run dev` |
-| `ModuleNotFoundError` | `pip install -r requirements.txt` |
-
----
-
-## 🔒 Security checklist
-- Never commit `.env` (it's gitignored).
-- Never share API keys.
-- The `terminal_run` tool requires confirmation for safety.
-- File overwrites always create a `.bak` backup.
+- browser opens only after both services are healthy;
+- microphone permission and wake words work;
+- Edge-TTS returns audible speech and interruption works;
+- Spotify commands reflect the real desktop player;
+- provider status/live checks work with the owner's keys;
+- Windows shutdown leaves no child process or occupied port;
+- backup and confirmed restore work on a disposable test copy first.

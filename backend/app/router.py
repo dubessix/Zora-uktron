@@ -161,7 +161,7 @@ async def execute_backend_tool(request: ToolExecuteRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Tool execution encountered unexpected failure: {str(e)}"
-        )
+        ) from e
 
 @api_router.post("/actions/confirm", status_code=status.HTTP_200_OK)
 async def confirm_pending_action(request: ConfirmActionRequest) -> Dict[str, Any]:
@@ -231,7 +231,7 @@ async def get_recent_memories(
             row["content"] = (row.get("content") or "")[:120]
         return {"total": len(rows), "project_id": project_id, "memories": rows}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Memory query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Memory query failed: {e}") from e
 
 @api_router.post("/db/backup", status_code=status.HTTP_200_OK)
 async def create_db_backup():
@@ -344,4 +344,4 @@ async def set_coding_mode(request: CodingModeRequest) -> dict:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to toggle coding mode: {str(e)}"
-        )
+        ) from e

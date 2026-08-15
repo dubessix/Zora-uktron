@@ -440,7 +440,7 @@ class CognitiveOrchestrator:
                 stderr=_asyncio.subprocess.PIPE,
             )
             try:
-                stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=8.0)
+                _stdout, stderr = await _asyncio.wait_for(proc.communicate(), timeout=8.0)
             except _asyncio.TimeoutError:
                 try:
                     proc.kill()
@@ -840,7 +840,7 @@ class CognitiveOrchestrator:
                                         session_id=session_id
                                     )
                                 )
-                    for (tid, targs) in task_meta:
+                    for tid, _targs in task_meta:
                         self._dispatch_log("info", f"Tool call → {tid}")
 
                     if tasks_to_run:
@@ -909,7 +909,7 @@ class CognitiveOrchestrator:
                         print(f"[COGNITIVE_ORCHESTRATOR] Sequentially executed tool calls: {called_tool_ids}")
 
                         # F1: Capture tool outputs so Ultron can answer based on REAL results.
-                        for (tid, targs), r in zip(task_meta, raw_results):
+                        for (tid, targs), r in zip(task_meta, raw_results, strict=False):
                             if isinstance(r, BaseException):
                                 tool_results.append({
                                     "tool": tid,

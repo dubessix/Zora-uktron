@@ -249,6 +249,33 @@ class ServiceLauncher:
         self._write_marker(marker, source_digest)
         return True
 
+    def _node_build_supported(self) -> bool:
+        executable = shutil.which("node")
+        if not executable:
+            self.log("Launcher", "Node.js is unavailable; changed frontend assets cannot be built.", "31")
+            return False
+        try:
+            completed = subprocess.run(
+                [executable, "--version"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5.0,
+            )
+            version = completed.stdout.strip().lstrip("v")
+            major, minor, *_ = [int(part) for part in version.split(".")]
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.log("Launcher", f"Could not verify Node.js version: {exc}", "31")
+            return False
+        supported = (major == 20 and minor >= 19) or (major == 22 and minor >= 12) or major > 22
+        if not supported:
+            self.log(
+                "Launcher",
+                f"Node.js {version} is unsupported; install Node 20.19+ or 22.12+.",
+                "31",
+            )
+        return supported
+
     def _run_npm(self, arguments: list[str], timeout: float, env: Optional[dict] = None) -> bool:
         executable = shutil.which("npm.cmd" if platform.system() == "Windows" else "npm")
         if not executable:
@@ -310,6 +337,9 @@ class ServiceLauncher:
         ):
             self.log("Launcher", "Frontend production build is current; skipping npm work.")
             return True
+
+        if not self._node_build_supported():
+            return False
 
         dependency_key = hashlib.sha256(
             package_json.read_bytes() + b"\0" + package_lock.read_bytes()

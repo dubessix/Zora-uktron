@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
-from typing import Optional
+from typing import ClassVar, Optional
 
 import httpx
 
@@ -15,13 +15,13 @@ from backend.app.brain.smart_cache import SmartCache
 
 
 class LLMRouter:
-    _CASCADE = {
+    _CASCADE: ClassVar[dict[str, list[str]]] = {
         "groq": ["groq", "gemini", "nvidia"],
         "gemini": ["gemini", "groq", "nvidia"],
         "nvidia": ["nvidia", "groq", "gemini"],
     }
-    _TEMPORARY_STATUS = {408, 425, 500, 502, 503, 504}
-    _AUTH_STATUS = {401, 403}
+    _TEMPORARY_STATUS: ClassVar[set[int]] = {408, 425, 500, 502, 503, 504}
+    _AUTH_STATUS: ClassVar[set[int]] = {401, 403}
 
     def __init__(
         self,
@@ -35,9 +35,9 @@ class LLMRouter:
         self.limits = httpx.Limits(max_keepalive_connections=5, max_connections=20)
         self.client = httpx.AsyncClient(limits=self.limits, timeout=30.0)
         # Context-local metadata stays correct when several sessions route concurrently.
-        self._route_context = contextvars.ContextVar(
+        self._route_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
             f"ultron_llm_route_{id(self)}",
-            default={"provider": None, "model": None, "cached": False, "offline": False},
+            default=None,
         )
 
     def _generate_cache_hash(
@@ -58,7 +58,8 @@ class LLMRouter:
 
     def get_route_metadata(self) -> dict:
         """Return a copy of the provider/model used by the current async context."""
-        return dict(self._route_context.get())
+        route = self._route_context.get()
+        return dict(route or {"provider": None, "model": None, "cached": False, "offline": False})
 
     def _set_route(self, provider: str, model: Optional[str], *, cached: bool, offline: bool = False) -> None:
         self._route_context.set({
