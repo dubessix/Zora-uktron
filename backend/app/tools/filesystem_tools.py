@@ -65,7 +65,7 @@ class FileWriteTool(BaseTool):
             description="Writes text contents into local files. Overwrites existing contents.",
             category="filesystem",
             tags=["file", "write", "save", "create"],
-            permission_level=1, # Level 1: Write (no confirmation)
+            permission_level=2, # Filesystem write requires exact confirmation
             args_model=FileWriteArgs,
             usage_examples=["file_write(filepath='src/notes.txt', content='Active metrics')"]
         )
@@ -101,6 +101,11 @@ class FindFilesTool(BaseTool):
             root_path = (self.workspace_root / search_root_str).resolve()
             if not root_path.exists():
                 return {"success": False, "error": f"Search root folder '{search_root_str}' does not exist.", "data": {}}
+
+        from backend.app.security.path_guard import check_path
+        decision = check_path(str(root_path))
+        if not decision["safe"]:
+            return {"success": False, "error": f"Search root blocked ({decision['reason']}): {root_path}", "data": {}}
 
         if not pattern:
             return {"success": False, "error": "Pattern parameter cannot be empty.", "data": {}}

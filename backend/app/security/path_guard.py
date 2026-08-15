@@ -1,117 +1,176 @@
-r"""
-Ultron Path Guard
-Enforces the `security.allowed_directories` / `security.blocked_directories`
-rules from config.yaml at the tool layer. Prevents tools from reading/writing
-system-critical paths (e.g. /etc, C:\Windows) even if the model emits a
-tool call for them.
-"""
+r"""Central allowlist/blocklist policy for every local filesystem tool."""
+
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
 import yaml
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+from backend.app.runtime_paths import BASE_DIR, TEST_MODE, TEST_ROOT
+
 CONFIG_PATH = BASE_DIR / "config.yaml"
 
-
-def _load_security_config() -> dict:
-    """Load the security block from config.yaml safely."""
-    if not CONFIG_PATH.exists():
-        return {}
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return (yaml.safe_load(f) or {}).get("security", {})
-    except Exception:
-        return {}
-
-
-# Default system-critical roots blocked even if absent from config.yaml.
-# Checked as directory membership: a target is blocked if it is INSIDE any of
-# these (target == root or target.startswith(root + os.sep)). A project folder
-# legitimately named e.g. "dev" under /home is NOT blocked because its absolute
-# path starts with /home, not /dev.
 _DEFAULT_BLOCKED_ROOTS = [
     "/etc", "/var", "/proc", "/sys", "/boot", "/root", "/dev", "/bin",
     "/sbin", "/lib", "/lib64", "/usr/sbin", "/System", "/Library",
-    "C:\\Windows", "C:\\System32", "C:\\Program Files",
+    r"C:\Windows", r"C:\Windows\System32", r"C:\Program Files",
+    r"C:\Program Files (x86)",
 ]
-
-# Sensitive file/dir names blocked AT ANY DEPTH of the path (secrets, git creds,
-# keys, environment files). A file anywhere under one of these is refused.
 _SENSITIVE_NAMES = {
     ".ssh", ".gnupg", ".aws", ".env", ".git-credentials", ".netrc",
     "credentials", "secrets", "keystore", "id_rsa", "id_ed25519",
 }
 
 
-def get_blocked_paths() -> list:
-    """Resolve blocked directories to absolute paths where possible."""
-    cfg = _load_security_config()
-    blocked = cfg.get("blocked_directories", []) or []
+def _load_security_config() -> dict:
+    if not CONFIG_PATH.exists():
+        return {}
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
+            return (yaml.safe_load(handle) or {}).get("security", {}) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+
+
+def _resolve_config_path(value: str) -> Path:
+    expanded = Path(os.path.expandvars(os.path.expanduser(str(value))))
+    if not expanded.is_absolute():
+        expanded = BASE_DIR / expanded
+    return expanded.resolve(strict=False)
+
+
+def _inside(target: Path, root: Path) -> bool:
+    try:
+        target.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def get_blocked_paths() -> list[str]:
+    configured = _load_security_config().get("blocked_directories", []) or []
+    values = list(configured) + _DEFAULT_BLOCKED_ROOTS
     resolved = []
-    for p in blocked:
-        if not p:
+    for value in values:
+        if not value:
             continue
-        # Try to resolve Windows-style paths (C:\...) only on Windows.
-        p = p.replace("\\", "/")
-        if ":" in p and os.name != "nt":
-            continue  # skip Windows paths on non-Windows
+        text = str(value)
+        if ":" in text and os.name != "nt":
+            continue
         try:
-            resolved.append(str(Path(p).resolve()))
-        except Exception:
-            pass
-    # Merge in the default system roots (already absolute).
-    for root in _DEFAULT_BLOCKED_ROOTS:
-        if root not in resolved:
-            resolved.append(root)
+            path = _resolve_config_path(text)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        normalized = os.path.normcase(str(path))
+        if normalized not in resolved:
+            resolved.append(normalized)
     return resolved
 
 
-def get_allowed_paths() -> list:
-    """Resolve allowed directories. Empty = no restriction (besides blocked)."""
-    cfg = _load_security_config()
-    allowed = cfg.get("allowed_directories", []) or []
-    resolved = []
-    for p in allowed:
-        if p:
-            try:
-                resolved.append(str(Path(p).resolve()))
-            except Exception:
-                pass
-    return resolved
+def get_allowed_paths() -> list[str]:
+    """Return effective allowed roots; secure default is the project root only."""
+    config = _load_security_config()
+    configured = config.get("allowed_directories", []) or []
+    env_value = os.getenv("ULTRON_ALLOWED_DIRECTORIES", "").strip()
+    if env_value:
+        configured = [part for part in env_value.split(os.pathsep) if part]
+
+    if not configured:
+        policy = str(config.get("empty_allowed_policy", "project_only")).lower()
+        if policy != "project_only":
+            # Unknown/unsafe policies fail closed rather than silently allowing /.
+            policy = "project_only"
+        configured = [str(BASE_DIR)]
+
+    roots = []
+    for value in configured:
+        try:
+            root = _resolve_config_path(str(value))
+        except (OSError, RuntimeError, ValueError):
+            continue
+        normalized = os.path.normcase(str(root))
+        if normalized not in roots:
+            roots.append(normalized)
+
+    # Tests may write only below their isolated runtime root, never arbitrary /tmp.
+    if TEST_MODE and TEST_ROOT is not None:
+        test_root = os.path.normcase(str(TEST_ROOT.resolve(strict=False)))
+        if test_root not in roots:
+            roots.append(test_root)
+    return roots
 
 
 def _contains_sensitive_component(path: Path) -> bool:
-    """True if any component of the resolved path is a sensitive secret location."""
     for part in path.parts:
-        lower = part.lower()
-        if lower in _SENSITIVE_NAMES:
-            return True
-        if lower.startswith(".env"):  # .env, .env.local, .env.example, ...
+        lowered = part.lower()
+        if lowered in _SENSITIVE_NAMES or lowered.startswith(".env"):
             return True
     return False
 
 
-def is_path_safe(path_str: str) -> bool:
-    """
-    Return True if the given path is allowed (not inside a blocked directory and
-    not touching a sensitive secret location at any depth).
-    """
-    if not path_str:
-        return False
+def check_path(path_str: str) -> dict:
+    """Return a structured allow/deny decision for a fully-resolved target path."""
+    if not path_str or not str(path_str).strip():
+        return {"safe": False, "reason": "empty_path", "path": None}
     try:
-        target = Path(path_str).resolve()
-    except Exception:
-        return False
-    target_str = str(target)
+        target = Path(path_str).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"safe": False, "reason": f"path_resolution_failed: {exc}", "path": None}
 
-    # Block any sensitive component (secrets/keys/env/credentials) at any depth.
     if _contains_sensitive_component(target):
-        return False
+        return {"safe": False, "reason": "sensitive_path_component", "path": str(target)}
 
-    for blocked in get_blocked_paths():
-        # Block exact match or anything inside a blocked directory.
-        if target_str == blocked or target_str.startswith(blocked + os.sep):
-            return False
+    normalized_target = Path(os.path.normcase(str(target)))
+    for blocked_text in get_blocked_paths():
+        blocked = Path(blocked_text)
+        if normalized_target == blocked or _inside(normalized_target, blocked):
+            return {"safe": False, "reason": "blocked_system_path", "path": str(target)}
 
-    return True
+    allowed = [Path(value) for value in get_allowed_paths()]
+    if not any(normalized_target == root or _inside(normalized_target, root) for root in allowed):
+        return {"safe": False, "reason": "outside_allowed_directories", "path": str(target)}
+
+    return {"safe": True, "reason": None, "path": str(target)}
+
+
+_TOOL_PATH_FIELDS = {
+    "file_read": ("filepath",),
+    "file_write": ("filepath",),
+    "find_files": ("search_root",),
+    "create_folder": ("folderpath",),
+    "rename_folder": ("old_path", "new_path"),
+    "delete_folder": ("folderpath",),
+    "copy_folder": ("source_path", "destination_path"),
+    "move_folder": ("source_path", "destination_path"),
+    "list_contents": ("folderpath",),
+    "compress_folder": ("folderpath",),
+    "extract_zip": ("zippath", "extract_to"),
+    "organize_folder": ("folderpath",),
+    "convert_file_format": ("source_filepath", "destination_filepath"),
+    "optimize_code": ("filepath",),
+    "git_clone": ("directory",),
+    "download_file": ("save_path",),
+    "play_music": ("filepath",),
+}
+
+
+def validate_tool_paths(tool_id: str, arguments: dict) -> dict:
+    """Fail unsafe tool paths before asking the user to approve an action."""
+    for field in _TOOL_PATH_FIELDS.get(tool_id, ()):
+        value = arguments.get(field)
+        if value in (None, ""):
+            continue
+        decision = check_path(str(value))
+        if not decision["safe"]:
+            return {
+                "safe": False,
+                "field": field,
+                "reason": decision["reason"],
+                "path": decision["path"],
+            }
+    return {"safe": True, "field": None, "reason": None, "path": None}
+
+
+def is_path_safe(path_str: str) -> bool:
+    return bool(check_path(path_str)["safe"])

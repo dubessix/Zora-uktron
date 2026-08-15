@@ -50,7 +50,14 @@ class ChatResponse(BaseModel):
 class ToolExecuteRequest(BaseModel):
     tool_id: str = Field(..., description="ID of the target registered tool.")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Input arguments to validate and feed to tool execution.")
-    has_confirmed: bool = Field(False, description="Explicit user confirmation for Level 2/3 security clearances.")
+    has_confirmed: bool = Field(False, description="True only when returning an exact confirmation token.")
+    confirmation_token: Optional[str] = Field(None, description="One-time token bound to this exact tool call.")
+    session_id: Optional[str] = Field(None, description="Session that owns the pending action.")
+
+
+class ConfirmActionRequest(BaseModel):
+    confirmation_token: str = Field(..., min_length=16)
+    session_id: Optional[str] = None
 
 class CodingModeRequest(BaseModel):
     enabled: bool = Field(..., description="True to force NVIDIA coding mode ON, False to revert to auto-detect.")
@@ -126,7 +133,9 @@ async def execute_backend_tool(request: ToolExecuteRequest) -> Dict[str, Any]:
         result = await registry.execute_tool(
             tool_id=request.tool_id,
             args=request.arguments,
-            has_confirmed=request.has_confirmed
+            has_confirmed=request.has_confirmed,
+            confirmation_token=request.confirmation_token,
+            session_id=request.session_id,
         )
         return result
     except Exception as e:
@@ -134,6 +143,17 @@ async def execute_backend_tool(request: ToolExecuteRequest) -> Dict[str, Any]:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Tool execution encountered unexpected failure: {str(e)}"
         )
+
+@api_router.post("/actions/confirm", status_code=status.HTTP_200_OK)
+async def confirm_pending_action(request: ConfirmActionRequest) -> Dict[str, Any]:
+    """Execute the exact stored pending action without regenerating it through an LLM."""
+    registry = ToolRegistry()
+    result = await registry.execute_pending_action(
+        confirmation_token=request.confirmation_token,
+        session_id=request.session_id,
+    )
+    return result
+
 
 @api_router.get("/history", response_model=List[ConversationHistoryItem], status_code=status.HTTP_200_OK)
 async def get_session_history(session_id: str = Query(..., description="Target session UUID.")) -> List[dict]:

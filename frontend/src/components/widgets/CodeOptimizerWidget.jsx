@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { apiBase } from '../../api';
+import { executeToolWithConfirmation } from '../../api';
 
 /**
  * CodeOptimizerWidget Component
@@ -23,23 +23,19 @@ export default function CodeOptimizerWidget() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBase}/api/tools/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tool_id: 'optimize_code',
-          arguments: {
-            filepath: filepath.trim(),
-            optimization_type: optType,
-            apply_changes: applyChanges
-          }
-        })
-      });
-      const data = await response.json();
+      const data = await executeToolWithConfirmation(
+        'optimize_code',
+        {
+          filepath: filepath.trim(),
+          optimization_type: optType,
+          apply_changes: applyChanges,
+        },
+        'code_optimizer_widget',
+      );
       if (data.success) {
         setResults(data.data);
       } else {
-        setError(data.error || 'Failed to complete optimization.');
+        setError(data.status === 'PENDING_CONFIRMATION' ? 'Confirmation cancelled.' : (data.error || 'Failed to complete optimization.'));
       }
     } catch (err) {
       setError('Connection failed. Server offline.');

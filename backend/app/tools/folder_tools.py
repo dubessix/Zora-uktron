@@ -11,6 +11,19 @@ from pathlib import Path
 from typing import Dict, Any
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
+from backend.app.security.path_guard import check_path
+
+
+def _guard_paths(*paths: Path):
+    for path in paths:
+        decision = check_path(str(path))
+        if not decision["safe"]:
+            return {
+                "success": False,
+                "error": f"Blocked by path guard ({decision['reason']}): {path}",
+                "data": {},
+            }
+    return None
 
 # --- Validation Schemas ---
 
@@ -52,7 +65,7 @@ class CreateFolderTool(BaseTool):
             description="Creates a local directory recursively.",
             category="filesystem",
             tags=["folder", "directory", "create", "mkdir"],
-            permission_level=1,
+            permission_level=2,
             args_model=CreateFolderArgs,
             usage_examples=["create_folder(folderpath='D:\\backups')"]
         )
@@ -60,6 +73,9 @@ class CreateFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         folderpath = kwargs.get("folderpath", "")
         path = Path(folderpath).resolve()
+        blocked = _guard_paths(path)
+        if blocked:
+            return blocked
         try:
             path.mkdir(parents=True, exist_ok=True)
             return {"success": True, "data": {"message": f"Successfully created directory: {folderpath}"}, "error": None}
@@ -74,7 +90,7 @@ class RenameFolderTool(BaseTool):
             description="Renames or moves a local folder.",
             category="filesystem",
             tags=["folder", "rename", "move"],
-            permission_level=1,
+            permission_level=2,
             args_model=RenameFolderArgs,
             usage_examples=["rename_folder(old_path='old', new_path='new')"]
         )
@@ -82,6 +98,9 @@ class RenameFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         old = Path(kwargs.get("old_path", "")).resolve()
         new = Path(kwargs.get("new_path", "")).resolve()
+        blocked = _guard_paths(old, new)
+        if blocked:
+            return blocked
         try:
             os.rename(old, new)
             return {"success": True, "data": {"message": f"Successfully renamed {old.name} to {new.name}"}, "error": None}
@@ -104,10 +123,9 @@ class DeleteFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         folderpath = kwargs.get("folderpath", "")
         path = Path(folderpath).resolve()
-        # Security: block dangerous/system paths (e.g. /etc, C:\Windows).
-        from backend.app.security.path_guard import is_path_safe
-        if not is_path_safe(str(path)):
-            return {"success": False, "error": f"Blocked by path guard: {folderpath}", "data": {}}
+        blocked = _guard_paths(path)
+        if blocked:
+            return blocked
         if not path.exists():
             return {"success": False, "error": f"Directory does not exist: {folderpath}", "data": {}}
         try:
@@ -124,7 +142,7 @@ class CopyFolderTool(BaseTool):
             description="Copies a folder and all its contents recursively to a new target directory.",
             category="filesystem",
             tags=["folder", "copy", "duplicate"],
-            permission_level=1,
+            permission_level=2,
             args_model=CopyMoveFolderArgs,
             usage_examples=["copy_folder(source_path='src', destination_path='backup_src')"]
         )
@@ -132,6 +150,9 @@ class CopyFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         src = Path(kwargs.get("source_path", "")).resolve()
         dest = Path(kwargs.get("destination_path", "")).resolve()
+        blocked = _guard_paths(src, dest)
+        if blocked:
+            return blocked
         try:
             shutil.copytree(src, dest, dirs_exist_ok=True)
             return {"success": True, "data": {"message": f"Successfully copied directory from {src.name} to {dest.name}"}, "error": None}
@@ -146,7 +167,7 @@ class MoveFolderTool(BaseTool):
             description="Moves a folder and all its contents recursively to a new destination.",
             category="filesystem",
             tags=["folder", "move", "shutil"],
-            permission_level=1,
+            permission_level=2,
             args_model=CopyMoveFolderArgs,
             usage_examples=["move_folder(source_path='temp', destination_path='data\\temp')"]
         )
@@ -154,6 +175,9 @@ class MoveFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         src = Path(kwargs.get("source_path", "")).resolve()
         dest = Path(kwargs.get("destination_path", "")).resolve()
+        blocked = _guard_paths(src, dest)
+        if blocked:
+            return blocked
         try:
             shutil.move(str(src), str(dest))
             return {"success": True, "data": {"message": f"Successfully moved directory to {dest}"}, "error": None}
@@ -175,16 +199,17 @@ class ListContentsTool(BaseTool):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         folderpath = kwargs.get("folderpath", "")
-        # Expand ~ and relative home navigation so "Desktop/jerry" or "~" resolve
-        # against the user's home directory (real folder browsing).
-        expanded = os.path.expanduser(folderpath.strip())
+        # Explicit ~ resolves to home; ordinary relative paths resolve from the
+        # project workspace so registry preflight and execution use one target.
+        raw = folderpath.strip()
+        expanded = os.path.expanduser(raw)
         if not os.path.isabs(expanded):
-            expanded = os.path.join(os.path.expanduser("~"), expanded)
+            workspace = Path(__file__).resolve().parent.parent.parent.parent
+            expanded = str(workspace / expanded)
         path = Path(expanded).resolve()
-        # Security: block listing system-critical paths.
-        from backend.app.security.path_guard import is_path_safe
-        if not is_path_safe(str(path)):
-            return {"success": False, "error": f"Blocked by path guard: {folderpath}", "data": {}}
+        blocked = _guard_paths(path)
+        if blocked:
+            return blocked
         if not path.exists():
             return {"success": False, "error": f"Directory does not exist: {folderpath}", "data": {}}
         try:
@@ -209,7 +234,7 @@ class CompressFolderTool(BaseTool):
             description="Compresses a folder recursively into a ZIP or TAR archive file.",
             category="filesystem",
             tags=["folder", "compress", "zip", "archive", "tar"],
-            permission_level=1,
+            permission_level=2,
             args_model=CompressFolderArgs,
             usage_examples=["compress_folder(folderpath='src', archive_format='zip')"]
         )
@@ -218,6 +243,9 @@ class CompressFolderTool(BaseTool):
         folderpath = kwargs.get("folderpath", "")
         fmt = kwargs.get("archive_format", "zip")
         path = Path(folderpath).resolve()
+        blocked = _guard_paths(path, path.parent)
+        if blocked:
+            return blocked
         if not path.exists():
             return {"success": False, "error": f"Directory does not exist: {folderpath}", "data": {}}
         try:
@@ -239,7 +267,7 @@ class ExtractZipTool(BaseTool):
             description="Extracts a ZIP archive file recursively to a target directory.",
             category="filesystem",
             tags=["folder", "extract", "unzip", "zipfile"],
-            permission_level=1,
+            permission_level=2,
             args_model=ExtractZipArgs,
             usage_examples=["extract_zip(zippath='src.zip', extract_to='extracted_src')"]
         )
@@ -247,6 +275,9 @@ class ExtractZipTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         zippath = Path(kwargs.get("zippath", "")).resolve()
         dest = Path(kwargs.get("extract_to", "")).resolve()
+        blocked = _guard_paths(zippath, dest)
+        if blocked:
+            return blocked
         if not zippath.exists():
             return {"success": False, "error": f"ZIP archive does not exist: {zippath}", "data": {}}
         try:
@@ -279,6 +310,9 @@ class OrganizeFolderTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         folderpath = kwargs.get("folderpath", "")
         path = Path(folderpath).resolve()
+        blocked = _guard_paths(path)
+        if blocked:
+            return blocked
         if not path.exists():
             return {"success": False, "error": f"Directory does not exist: {folderpath}", "data": {}}
 

@@ -338,26 +338,6 @@ class CognitiveOrchestrator:
         except Exception as e:
             print(f"[COGNITIVE_ORCHESTRATOR] Warning: Memory persist skipped: {e}")
 
-    def _pending_confirmation(
-        self,
-        filepath: str,
-        session_id: Optional[str],
-        content: str,
-    ) -> Dict[str, Any]:
-        """Create a pending-action token bound to file+content and ask the user."""
-        from backend.app.security.pending_actions import get_pending_action_registry
-        from pathlib import Path
-        registry = get_pending_action_registry()
-        token = registry.create("file_write", session_id, str(Path(filepath).resolve()), content)
-        return {
-            "status": "PENDING_CONFIRMATION",
-            "tool_id": "file_write",
-            "confirmation_token": token,
-            "message": f"Overwrite existing file '{filepath}', Sir? I'll back it up first.",
-            "required_permission_level": 2,
-            "file_exists": True,
-        }
-
     async def _coding_safe_write(
         self,
         args: Dict[str, Any],
@@ -365,57 +345,16 @@ class CognitiveOrchestrator:
         session_id: Optional[str] = None,
         confirmation_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Coding-mode safe file write.
-
-        Routes through the SAME validated path as the file_write tool
-        (safe_write_file): path-guard + backup + atomic write. Confirmation for
-        overwriting an existing file is BOUND to the exact file+content via a
-        one-time pending-action token — a 'yes' can never be replayed onto
-        different content.
-        """
-        from pathlib import Path
-
-        filepath = args.get("filepath", "")
-        content = args.get("content", "")
-        if not filepath:
-            return {"success": False, "error": "filepath required", "data": {}}
-
-        from backend.app.security.path_guard import is_path_safe
-        from backend.app.security.pending_actions import get_pending_action_registry
-        from backend.app.tools.safe_write import safe_write_file
-
-        path = Path(filepath).resolve()
-
-        # 1. Path safety enforced before anything else.
-        if not is_path_safe(str(path)):
-            return {"success": False, "error": f"Blocked by path guard: {filepath}", "data": {}}
-
-        # 2. New file -> safe to write directly (no confirmation needed).
-        if not path.exists():
-            return safe_write_file(filepath, content)
-
-        # 3. Existing file -> requires confirmation bound to this exact content.
-        registry = get_pending_action_registry()
-        if has_confirmed:
-            # Resolve the token: explicitly provided, or backward-compatible lookup
-            # for the EXACT same file+content that was previously proposed.
-            token = confirmation_token
-            if not token:
-                token = registry.find_recent_match(
-                    "file_write", session_id, str(path), content
-                )
-            validation = registry.validate(
-                token, "file_write", session_id, str(path), content
-            )
-            if validation["valid"]:
-                return safe_write_file(filepath, content)
-            # Content changed or token invalid/expired -> must confirm again.
-            print(f"[COGNITIVE_ORCHESTRATOR] Confirmation rejected for {filepath}: {validation.get('reason')}")
-            return self._pending_confirmation(filepath, session_id, content)
-
-        # 4. Not confirmed yet -> ask, with a one-time token bound to file+content.
-        return self._pending_confirmation(filepath, session_id, content)
+        """Compatibility wrapper over the single validated ToolRegistry write path."""
+        registry = ToolRegistry()
+        return await registry.execute_tool(
+            tool_id="file_write",
+            args=args,
+            has_confirmed=has_confirmed,
+            confirmation_token=confirmation_token,
+            session_id=session_id,
+            max_retries=0,
+        )
 
     async def _safe_verify_code(self, filepath: str) -> Dict[str, Any]:
         """
@@ -819,6 +758,7 @@ class CognitiveOrchestrator:
                                         tool_id=t_id,
                                         args=args if isinstance(args, dict) else {},
                                         has_confirmed=(auto_confirm or user_confirmed),
+                                        confirmation_token=confirmation_token,
                                         session_id=session_id
                                     )
                                 )
@@ -869,8 +809,19 @@ class CognitiveOrchestrator:
                                     "args": targs,
                                     "success": r.get("success", False),
                                     "result": r.get("data", {}),
-                                    "error": r.get("error")
+                                    "error": r.get("error"),
                                 }
+                                if r.get("status") == "PENDING_CONFIRMATION":
+                                    result_item.update({
+                                        "status": "PENDING_CONFIRMATION",
+                                        "tool_id": r.get("tool_id") or tid,
+                                        "confirmation_token": r.get("confirmation_token"),
+                                        "message": r.get("message"),
+                                        "required_permission_level": r.get("required_permission_level"),
+                                        "summary": r.get("summary") or {},
+                                        "arguments_hash": r.get("arguments_hash"),
+                                        "expires_in_seconds": r.get("expires_in_seconds"),
+                                    })
                                 if verified is not None:
                                     result_item["verification"] = verified
                                 tool_results.append(result_item)
@@ -969,6 +920,9 @@ class CognitiveOrchestrator:
                     "confirmation_token": tr.get("confirmation_token"),
                     "message": tr.get("message"),
                     "required_permission_level": tr.get("required_permission_level"),
+                    "summary": tr.get("summary") or {},
+                    "arguments_hash": tr.get("arguments_hash"),
+                    "expires_in_seconds": tr.get("expires_in_seconds"),
                 }
                 break
 

@@ -4,6 +4,7 @@ Registers tools using a lightweight dynamic JIT importer to keep memory <20MB on
 Implements schema validations, security confirmations, async timeouts, and SQLite audits.
 """
 
+import hashlib
 import time
 import uuid
 import json
@@ -16,6 +17,30 @@ from pydantic import ValidationError
 from backend.app.database.db import get_db_connection
 from backend.app.tools.tool_base import BaseTool, ToolResult
 from backend.app.security.confirmation_gate import ConfirmationGate
+from backend.app.security.pending_actions import get_pending_action_registry
+
+
+_SENSITIVE_ARGUMENT_MARKERS = ("content", "password", "token", "secret", "authorization", "api_key")
+
+
+def _redact_audit_arguments(value: Any, key: str = "") -> Any:
+    """Bound audit size and replace secret/file-content values with metadata."""
+    lowered = key.lower()
+    if any(marker in lowered for marker in _SENSITIVE_ARGUMENT_MARKERS):
+        text = str(value or "")
+        return {
+            "redacted": True,
+            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "bytes": len(text.encode("utf-8")),
+        }
+    if isinstance(value, dict):
+        return {str(k): _redact_audit_arguments(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_audit_arguments(item, key) for item in value[:100]]
+    if isinstance(value, str) and len(value) > 500:
+        return value[:500] + "…[truncated]"
+    return value
+
 
 class ToolRegistry:
     def __init__(self, gate: Optional[ConfirmationGate] = None) -> None:
@@ -55,7 +80,7 @@ class ToolRegistry:
     ) -> None:
         """Logs tool transactions cleanly into persistent SQLite database."""
         log_id = str(uuid.uuid4())
-        args_str = json.dumps(arguments)
+        args_str = json.dumps(_redact_audit_arguments(arguments), default=str)
         with get_db_connection() as conn:
             try:
                 cursor = conn.cursor()
@@ -190,9 +215,11 @@ class ToolRegistry:
         tool_id: str,
         args: Dict[str, Any],
         has_confirmed: bool = False,
+        confirmation_token: Optional[str] = None,
         session_id: Optional[str] = None,
         timeout: float = 15.0,
-        max_retries: int = 1
+        max_retries: int = 1,
+        _confirmation_prevalidated: bool = False,
     ) -> Dict[str, Any]:
         """
         Main execution router.
@@ -234,15 +261,67 @@ class ToolRegistry:
             )
             return err_payload
 
-        # 2. Check Security Confirmation Gate
-        gate_status = self.gate.inspect_and_authorize(
-            tool_id=tool_id,
-            permission_level=tool.permission_level,
-            has_confirmed=has_confirmed
+        # Reject unsafe paths before creating a confirmation prompt. The user
+        # should never be asked to approve an action the path policy will deny.
+        from backend.app.security.path_guard import validate_tool_paths
+        path_check = validate_tool_paths(tool_id, args_payload)
+        if not path_check["safe"]:
+            return {
+                "success": False,
+                "data": {},
+                "error": (
+                    f"Path argument '{path_check['field']}' blocked "
+                    f"({path_check['reason']}): {path_check['path']}"
+                ),
+                "metadata": {"execution_time_ms": 0, "tool_name": tool.name},
+            }
+
+        # 2. Exact one-time confirmation for every Level 2/3 action. A raw
+        # has_confirmed=True boolean is never authorization by itself.
+        requires_confirmation = self.gate.manager.requires_manual_confirmation(
+            tool.permission_level
         )
-        
-        if gate_status["status"] == "PENDING_CONFIRMATION":
-            return gate_status
+        if requires_confirmation and not _confirmation_prevalidated:
+            pending = get_pending_action_registry()
+            if has_confirmed and confirmation_token:
+                validation = pending.validate(
+                    confirmation_token,
+                    tool_id,
+                    session_id,
+                    args_payload,
+                )
+                if not validation["valid"]:
+                    created = pending.create(tool_id, session_id, args_payload)
+                    self._log_audit_transaction(
+                        tool.name, args_payload, 0, False, session_id,
+                        tool.permission_level,
+                        f"CONFIRMATION_REJECTED:{validation['reason']}",
+                    )
+                    return {
+                        "success": False,
+                        "status": "PENDING_CONFIRMATION",
+                        "tool_id": tool_id,
+                        "message": (
+                            f"Confirmation rejected ({validation['reason']}). "
+                            f"Approve the newly-issued exact action for '{tool_id}'."
+                        ),
+                        "required_permission_level": tool.permission_level,
+                        **created,
+                    }
+            else:
+                created = pending.create(tool_id, session_id, args_payload)
+                self._log_audit_transaction(
+                    tool.name, args_payload, 0, False, session_id,
+                    tool.permission_level, "PENDING_CONFIRMATION",
+                )
+                return {
+                    "success": False,
+                    "status": "PENDING_CONFIRMATION",
+                    "tool_id": tool_id,
+                    "message": f"Tool '{tool_id}' requires exact one-time confirmation.",
+                    "required_permission_level": tool.permission_level,
+                    **created,
+                }
 
         # 3. Async execution under timeout and retry boundaries
         raw_result = None
@@ -298,3 +377,29 @@ class ToolRegistry:
         )
 
         return result_model.model_dump()
+
+    async def execute_pending_action(
+        self,
+        confirmation_token: str,
+        session_id: Optional[str],
+        *,
+        timeout: float = 15.0,
+    ) -> Dict[str, Any]:
+        """Claim and execute the exact stored action without another LLM call."""
+        claimed = get_pending_action_registry().claim(confirmation_token, session_id)
+        if not claimed["valid"]:
+            return {
+                "success": False,
+                "data": {},
+                "error": f"Confirmation rejected: {claimed['reason']}",
+                "status": "CONFIRMATION_REJECTED",
+            }
+        action = claimed["action"]
+        return await self.execute_tool(
+            tool_id=action["tool_id"],
+            args=action["arguments"],
+            session_id=session_id,
+            timeout=timeout,
+            max_retries=0,
+            _confirmation_prevalidated=True,
+        )

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AppShell from './components/AppShell';
 import NotificationToast from './components/NotificationToast';
+import { api } from './api';
 
 /**
  * Ultron Web Client Root App
@@ -22,11 +23,11 @@ export default function App() {
   const [codingMode, setCodingMode] = useState(false);
   // Coding activity log shown in the CodingWidget; auto-opened on coding turns.
   const [codingLog, setCodingLog] = useState([]);
-  // P0-3: track a pending dangerous action so the user can confirm & run it.
-  const [pendingConfirm, setPendingConfirm] = useState(false);
+  // Exact one-time action returned by the backend; never regenerate on confirm.
+  const [pendingAction, setPendingAction] = useState(null);
+  const [confirmingAction, setConfirmingAction] = useState(false);
   // Real-time operational log (Log tab)
   const [logs, setLogs] = useState([]);
-  const [lastUserText, setLastUserText] = useState("");
 
   // Widget floating toggle states (Requirement: Remember coordinates & state)
   const [widgetState, setWidgetState] = useState({
@@ -165,28 +166,37 @@ export default function App() {
     }));
   };
 
-  // P0-3: confirm & re-run the last pending dangerous action.
+  // Execute the exact stored action. No prompt replay and no second LLM decision.
   const handleConfirmRun = async () => {
-    if (!lastUserText || isProcessing) return;
-    setPendingConfirm(true);
-    // Re-send the last command with has_confirmed=true via the existing handler.
-    setInputValue(lastUserText);
-    await new Promise(r => setTimeout(r, 0));
-    // trigger send with confirm flag
+    if (!pendingAction?.confirmation_token || confirmingAction) return;
+    setConfirmingAction(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const response = await fetch(`${apiUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, content: lastUserText, has_confirmed: true })
+      const result = await api('/api/actions/confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          confirmation_token: pendingAction.confirmation_token,
+          session_id: sessionId,
+        }),
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (!sessionId) setSessionId(data.session_id);
-        setMessages(prev => [...prev, { id: data.id, sender: "ai", text: data.content, personality: data.personality, response_ms: data.response_ms }]);
+      if (result.success) {
+        const message = result.data?.message || `Confirmed action ${pendingAction.tool_id} completed.`;
+        setMessages(prev => [...prev, {
+          id: `confirmed_${Date.now()}`,
+          sender: 'ai',
+          text: message,
+          personality: activePersonality,
+          response_ms: result.metadata?.execution_time_ms || 0,
+        }]);
+        setPendingAction(null);
+        addNotification('Action completed', message, 'medium');
+      } else {
+        addNotification('Confirmation failed', result.error || 'The pending action was not executed.', 'high');
+        if (result.status === 'CONFIRMATION_REJECTED') setPendingAction(null);
       }
-    } catch (err) { /* ignore */ } finally {
-      setPendingConfirm(false);
+    } catch (err) {
+      addNotification('Confirmation failed', err.message || 'Backend unavailable.', 'high');
+    } finally {
+      setConfirmingAction(false);
     }
   };
 
@@ -285,6 +295,10 @@ export default function App() {
           }));
         }
         handleCodingResponse(data);
+        if (data.pending_confirmation?.confirmation_token) {
+          setPendingAction(data.pending_confirmation);
+          addNotification('Confirmation required', data.pending_confirmation.message, 'high');
+        }
       } else {
         setMessages(prev => [...prev, {
           id: "error_" + Date.now(), sender: "system_error",
@@ -334,7 +348,8 @@ export default function App() {
             events: msg.events || [],
             structured_action: msg.structured_action || {},
             session_id: msg.session_id || null,
-            provider_route: msg.provider_route || {}
+            provider_route: msg.provider_route || {},
+            pending_confirmation: msg.pending_confirmation || null
           };
           try { ws.close(); } catch {}
           wsRef.current = null;
@@ -353,7 +368,6 @@ export default function App() {
 
     const userText = inputValue.trim();
     setInputValue("");
-    setLastUserText(userText);
     setIsProcessing(true);
     setAiState("thinking");
 
@@ -383,6 +397,10 @@ export default function App() {
         speakResponse(data.content, data.personality || "ultron");
         setTimeout(() => setAiState("idle"), 1200);
         handleCodingResponse(data);
+        if (data.pending_confirmation?.confirmation_token) {
+          setPendingAction(data.pending_confirmation);
+          addNotification('Confirmation required', data.pending_confirmation.message, 'high');
+        }
         // Open widgets driven ONLY by the backend structured action (never keyword guesses).
         const structured = data.structured_action;
         if (structured && structured.action === "open_widget" && structured.widget_id) {
@@ -442,6 +460,8 @@ export default function App() {
         toggleCodingMode={toggleCodingMode}
         codingLog={codingLog}
         onConfirmRun={handleConfirmRun}
+        pendingAction={pendingAction}
+        confirmingAction={confirmingAction}
         logs={logs}
       />
 

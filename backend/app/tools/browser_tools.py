@@ -219,7 +219,7 @@ class DownloadFileTool(BaseTool):
             description="Downloads a remote file asset directly to the local directory path asynchronously.",
             category="browser",
             tags=["browser", "download", "fetch", "file"],
-            permission_level=1,
+            permission_level=2,
             args_model=DownloadUrlArgs,
             usage_examples=["download_file(url='https://example.com/logo.png', save_path='data\\logo.png')"]
         )
@@ -227,6 +227,11 @@ class DownloadFileTool(BaseTool):
     async def execute(self, **kwargs) -> Dict[str, Any]:
         url = kwargs.get("url", "")
         save_path = Path(kwargs.get("save_path", "")).resolve()
+
+        from backend.app.security.path_guard import check_path
+        path_decision = check_path(str(save_path))
+        if not path_decision["safe"]:
+            return {"success": False, "error": f"Download destination blocked ({path_decision['reason']}): {save_path}", "data": {}}
 
         # Phase 4: SSRF guard — reject localhost/private/metadata targets.
         from backend.app.security.url_guard import validate_public_url, MAX_DOWNLOAD_BYTES
@@ -241,6 +246,7 @@ class DownloadFileTool(BaseTool):
                         return {"success": False, "error": f"Download API returned status code: {response.status_code}", "data": {}}
                     # Enforce a hard size cap while streaming (no unbounded writes).
                     total = 0
+                    save_path.parent.mkdir(parents=True, exist_ok=True)
                     with open(save_path, "wb") as f:
                         async for chunk in response.aiter_bytes(65536):
                             total += len(chunk)

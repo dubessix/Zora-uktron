@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { executeToolWithConfirmation } from '../../api';
 
 /**
  * MusicWidget — real music controls via backend music_tools.
@@ -11,13 +12,7 @@ export default function MusicWidget() {
 
   const run = async (action, args = {}) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiUrl}/api/tools/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_id: action, arguments: args, has_confirmed: true })
-      });
-      const data = await res.json();
+      const data = await executeToolWithConfirmation(action, args, "music_widget");
       if (data.success) {
         const d = data.data || {};
         setTrack(d.current_track || "");

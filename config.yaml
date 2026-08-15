@@ -80,7 +80,10 @@ voice:
 security:
   confirm_level_2: true
   confirm_level_3: true
-  allowed_directories: []
+  # Secure default: tools may touch this project only. Add personal roots such as
+  # "~/Documents", "~/Downloads", or "D:/Projects" when you explicitly want them.
+  allowed_directories: ["."]
+  empty_allowed_policy: "project_only"
   blocked_directories: ["/etc", "/var", "C:\\Windows", "C:\\System32"]
 
 performance:

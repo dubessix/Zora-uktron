@@ -16,7 +16,7 @@ export default function GithubSearchWidget() {
       const res = await fetch(`${apiUrl}/api/tools/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_id: "github_search", arguments: { query: q.trim() }, has_confirmed: true })
+        body: JSON.stringify({ tool_id: "github_search", arguments: { query: q.trim() } })
       });
       const data = await res.json();
       if (data.success) {

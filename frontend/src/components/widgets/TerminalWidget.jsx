@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { executeToolWithConfirmation } from '../../api';
 
 /**
  * TerminalWidget — real command runner (Set B: no fake logs).
@@ -17,13 +18,11 @@ export default function TerminalWidget() {
     setRunning(true);
     setLogs(prev => [...prev, { line: `$ ${input}`, type: "cmd" }]);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiUrl}/api/tools/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_id: "terminal_run", arguments: { command: input }, has_confirmed: true })
-      });
-      const data = await res.json();
+      const data = await executeToolWithConfirmation(
+        "terminal_run",
+        { command: input },
+        "terminal_widget",
+      );
       if (data.success) {
         const out = data.data?.stdout;
         if (out) setLogs(prev => [...prev, { line: out, type: "success" }]);
@@ -32,7 +31,7 @@ export default function TerminalWidget() {
         const fix = data.data?.self_healing_fix;
         if (fix && fix.fix_hint) setLogs(prev => [...prev, { line: `💡 ${fix.fix_hint}`, type: "error" }]);
       } else {
-        setLogs(prev => [...prev, { line: `error: ${data.error || "command failed"}`, type: "error" }]);
+        setLogs(prev => [...prev, { line: data.status === "PENDING_CONFIRMATION" ? "confirmation cancelled" : `error: ${data.error || "command failed"}`, type: "error" }]);
       }
     } catch (err) {
       setLogs(prev => [...prev, { line: "offline", type: "error" }]);

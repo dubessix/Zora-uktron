@@ -135,6 +135,10 @@ class PlayMusicTool(BaseTool):
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.get("filepath", "")
+        from backend.app.security.path_guard import check_path
+        decision = check_path(filepath)
+        if not decision["safe"]:
+            return {"success": False, "error": f"Audio path blocked ({decision['reason']}): {filepath}", "data": {}}
         if not os.path.exists(filepath):
             return {"success": False, "error": f"Audio file does not exist: {filepath}", "data": {}}
             

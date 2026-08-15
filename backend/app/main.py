@@ -402,6 +402,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 "structured_action": result["structured_action"],
                 "events": result.get("events", []),
                 "provider_route": result.get("provider_route") or {},
+                "pending_confirmation": result.get("pending_confirmation"),
             })
 
     except WebSocketDisconnect:

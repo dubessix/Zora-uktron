@@ -101,6 +101,13 @@ class GitCloneTool(BaseTool):
         # Risk guard: block shell metacharacters in url/dir
         if any(ch in (url + directory) for ch in ";|&`$(){}<>"):
             return {"success": False, "error": "Unsafe characters blocked.", "data": {}}
+
+        from pathlib import Path
+        from backend.app.security.path_guard import check_path
+        destination = Path(directory).expanduser().resolve(strict=False)
+        decision = check_path(str(destination))
+        if not decision["safe"]:
+            return {"success": False, "error": f"Clone destination blocked ({decision['reason']}): {destination}", "data": {}}
         try:
             proc = await asyncio.create_subprocess_exec(
                 "git", "clone", url, directory,

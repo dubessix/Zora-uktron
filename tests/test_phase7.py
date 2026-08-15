@@ -52,12 +52,22 @@ class TestPhase7ToolSystemArchitecture(unittest.IsolatedAsyncioTestCase):
         args = {"command": "echo Hello_World"}
         
         # Dispatch execution without confirmation
-        response_1 = await registry.execute_tool("terminal_run", args, has_confirmed=False)
+        session = "phase7_gate"
+        response_1 = await registry.execute_tool(
+            "terminal_run", args, session_id=session
+        )
         self.assertEqual(response_1["status"], "PENDING_CONFIRMATION")
         self.assertEqual(response_1["tool_id"], "terminal_run")
-        
-        # Dispatch execution WITH explicit confirmation; must execute successfully
-        response_2 = await registry.execute_tool("terminal_run", args, has_confirmed=True)
+        self.assertTrue(response_1["confirmation_token"])
+
+        # Only the exact token + same session + same arguments can execute.
+        response_2 = await registry.execute_tool(
+            "terminal_run",
+            args,
+            has_confirmed=True,
+            confirmation_token=response_1["confirmation_token"],
+            session_id=session,
+        )
         self.assertTrue(response_2["success"])
         self.assertEqual(response_2["data"]["exit_code"], 0)
         self.assertIn("Hello_World", response_2["data"]["stdout"])
@@ -69,8 +79,17 @@ class TestPhase7ToolSystemArchitecture(unittest.IsolatedAsyncioTestCase):
         test_content = "Standard Result Verification."
         write_args = {"filepath": str(TEST_FILE), "content": test_content}
         
-        response = await registry.execute_tool("file_write", write_args)
-        
+        pending = await registry.execute_tool(
+            "file_write", write_args, session_id="phase7_format"
+        )
+        response = await registry.execute_tool(
+            "file_write",
+            write_args,
+            has_confirmed=True,
+            confirmation_token=pending["confirmation_token"],
+            session_id="phase7_format",
+        )
+
         # Assert exact standard format presence (Requirement 4)
         self.assertIn("success", response)
         self.assertIn("data", response)
@@ -109,19 +128,33 @@ class TestPhase7ToolSystemArchitecture(unittest.IsolatedAsyncioTestCase):
         test_content = "Audit log row write test."
         write_args = {"filepath": str(TEST_FILE), "content": test_content}
         
-        # Run execution
-        await registry.execute_tool("file_write", write_args, session_id="test_sess_7")
+        # Run exact-confirmation execution
+        pending = await registry.execute_tool(
+            "file_write", write_args, session_id="test_sess_7"
+        )
+        await registry.execute_tool(
+            "file_write",
+            write_args,
+            has_confirmed=True,
+            confirmation_token=pending["confirmation_token"],
+            session_id="test_sess_7",
+        )
         
         # Verify SQLite row creation (Requirement 6)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM tool_audit_logs WHERE session_id = ?;", ("test_sess_7",))
+            cursor.execute(
+                "SELECT * FROM tool_audit_logs WHERE session_id = ? ORDER BY rowid DESC LIMIT 1;",
+                ("test_sess_7",),
+            )
             row = cursor.fetchone()
             
             self.assertIsNotNone(row)
             self.assertEqual(row["tool_name"], "File Writer")
             self.assertTrue(row["success"])
             self.assertIn("test_phase7_temp_file.txt", row["arguments"])
+            self.assertNotIn(test_content, row["arguments"])
+            self.assertIn("redacted", row["arguments"])
 
     async def test_execution_timeout_handlers(self):
         """Test 6: Verify that long-running commands successfully abort under configured timeouts."""
@@ -130,12 +163,18 @@ class TestPhase7ToolSystemArchitecture(unittest.IsolatedAsyncioTestCase):
         # Command runs for 5 seconds, but we set timeout to 0.1 seconds
         args = {"command": "sleep 5" if os.name != "nt" else "timeout 5"}
         
+        session = "phase7_timeout"
+        pending = await registry.execute_tool(
+            "terminal_run", args, session_id=session
+        )
         response = await registry.execute_tool(
             "terminal_run",
             args,
             has_confirmed=True,
+            confirmation_token=pending["confirmation_token"],
+            session_id=session,
             timeout=0.1,
-            max_retries=0
+            max_retries=0,
         )
         
         self.assertFalse(response["success"])

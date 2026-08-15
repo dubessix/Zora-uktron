@@ -14,7 +14,7 @@ export default function WorldMonitorWidget() {
       const res = await fetch(`${apiUrl}/api/tools/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_id: "world_monitor", arguments: { endpoint: "list_earthquakes", parameters: { min_magnitude: 5.0 } }, has_confirmed: true })
+        body: JSON.stringify({ tool_id: "world_monitor", arguments: { endpoint: "list_earthquakes", parameters: { min_magnitude: 5.0 } } })
       });
       const data = await res.json();
       if (data.success) {

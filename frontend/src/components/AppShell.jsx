@@ -34,6 +34,8 @@ export default function AppShell({
   toggleCodingMode,
   codingLog,
   onConfirmRun,
+  pendingAction,
+  confirmingAction,
   logs
 }) {
   const isZora = activePersonality === "zora";
@@ -162,14 +164,17 @@ export default function AppShell({
               💻 {codingMode ? "Coding ON" : "Coding"}
             </button>
 
-            {/* P0-3: Confirm & Run for pending dangerous actions */}
-            <button
-              onClick={onConfirmRun}
-              className="px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border border-amber-400/40 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.2)]"
-              title="Confirm and run the pending action (delete/terminal)"
-            >
-              ✓ Confirm & Run
-            </button>
+            {/* Shown only for a real, exact, one-time backend pending action. */}
+            {pendingAction?.confirmation_token && (
+              <button
+                onClick={onConfirmRun}
+                disabled={confirmingAction}
+                className="px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border border-amber-400/40 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.2)] disabled:opacity-40"
+                title={pendingAction.message || `Confirm ${pendingAction.tool_id}`}
+              >
+                {confirmingAction ? 'Confirming…' : `✓ Confirm ${pendingAction.tool_id}`}
+              </button>
+            )}
 
             {/* Mic icon — real wake-word listening toggle with pulse-ring effect */}
             <button 

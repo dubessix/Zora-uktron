@@ -48,6 +48,11 @@ class SearchDocumentsTool(BaseTool):
         if not query.strip():
             return {"success": False, "error": "Search query parameter is empty.", "data": {}}
 
+        from backend.app.security.path_guard import check_path
+        decision = check_path(str(self.workspace_root))
+        if not decision["safe"]:
+            return {"success": False, "error": f"Workspace search blocked ({decision['reason']}).", "data": {}}
+
         allowed_exts = set(extensions_str.lower().split(","))
         findings = []
         
@@ -115,7 +120,7 @@ class ConvertFileFormatTool(BaseTool):
             description="Converts JSON files to CSV files, or CSV files to JSON files, saving output safely.",
             category="filesystem",
             tags=["file", "convert", "format", "json", "csv", "data"],
-            permission_level=1,  # Level 1: Write (no confirmation)
+            permission_level=2,  # Format conversion writes a file; exact confirmation required
             args_model=ConvertFileArgs,
             usage_examples=["convert_file_format(source_filepath='report.json', destination_filepath='report.csv')"]
         )
@@ -164,6 +169,12 @@ class ConvertFileFormatTool(BaseTool):
             dest_path = (self.workspace_root / dest_path_str).resolve()
             if not src_path.exists():
                 return {"success": False, "error": f"Source file '{src_path_str}' does not exist.", "data": {}}
+
+        from backend.app.security.path_guard import check_path
+        for candidate in (src_path, dest_path):
+            decision = check_path(str(candidate))
+            if not decision["safe"]:
+                return {"success": False, "error": f"Conversion path blocked ({decision['reason']}): {candidate}", "data": {}}
 
         try:
             # Check file extensions

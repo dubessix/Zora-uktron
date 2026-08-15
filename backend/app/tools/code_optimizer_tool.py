@@ -141,6 +141,10 @@ class CodeOptimizerTool(BaseTool):
         apply_changes = kwargs.get("apply_changes", False)
 
         path = Path(filepath_str).resolve()
+        from backend.app.security.path_guard import check_path
+        decision = check_path(str(path))
+        if not decision["safe"]:
+            return {"success": False, "error": f"Target path blocked ({decision['reason']}): {path}", "data": {}}
         if not path.exists():
             return {"success": False, "error": f"Target file '{filepath_str}' does not exist.", "data": {}}
 

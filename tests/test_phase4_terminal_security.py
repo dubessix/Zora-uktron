@@ -15,6 +15,7 @@ from unittest.mock import patch
 from backend.app.security.url_guard import validate_public_url
 from backend.app.tools.browser_tools import DownloadFileTool
 from backend.app.tools.system_tools import TerminalRunTool
+from backend.app.runtime_paths import isolated_test_artifact_path
 
 
 def _run(coro):
@@ -71,7 +72,11 @@ class TestUrlGuard(unittest.TestCase):
 class TestDownloadSsrfs(unittest.TestCase):
 
     def test_download_rejects_localhost(self):
-        r = _run(DownloadFileTool().execute(url="http://127.0.0.1/secret", save_path="/tmp/x.bin"))
+        destination = isolated_test_artifact_path("phase4", "x.bin")
+        r = _run(DownloadFileTool().execute(
+            url="http://127.0.0.1/secret",
+            save_path=str(destination),
+        ))
         self.assertFalse(r["success"])
         self.assertIn("SSRF", r["error"])
 

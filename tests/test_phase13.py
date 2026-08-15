@@ -17,6 +17,19 @@ ORGANIZE_DIR = isolated_test_artifact_path("phase13", "test_phase13_organize_dir
 ERROR_FILE_PATH = isolated_test_artifact_path("phase13", "error_file.py")
 
 class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
+
+    async def _execute_exact(self, registry, tool_id, args, session="phase13"):
+        first = await registry.execute_tool(tool_id, args, session_id=session)
+        if first.get("status") != "PENDING_CONFIRMATION":
+            return first
+        return await registry.execute_tool(
+            tool_id,
+            args,
+            has_confirmed=True,
+            confirmation_token=first["confirmation_token"],
+            session_id=session,
+            max_retries=0,
+        )
     
     def setUp(self):
         """Prepare clean target workspace folders."""
@@ -44,7 +57,9 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         registry = ToolRegistry()
         
         # 1.1 Create Folder
-        create_res = await registry.execute_tool("create_folder", {"folderpath": str(TEST_DIR)})
+        create_res = await self._execute_exact(
+            registry, "create_folder", {"folderpath": str(TEST_DIR)}
+        )
         self.assertTrue(create_res["success"])
         self.assertTrue(TEST_DIR.exists())
         
@@ -59,9 +74,10 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         self.assertIn("doc.txt", list_res["data"]["raw_names"])
         
         # 1.3 Rename Folder
-        rename_res = await registry.execute_tool(
-            "rename_folder", 
-            {"old_path": str(TEST_DIR), "new_path": str(RENAME_DIR)}
+        rename_res = await self._execute_exact(
+            registry,
+            "rename_folder",
+            {"old_path": str(TEST_DIR), "new_path": str(RENAME_DIR)},
         )
         self.assertTrue(rename_res["success"])
         self.assertFalse(TEST_DIR.exists())
@@ -69,11 +85,20 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         
         # 1.4 Delete Folder (Requires confirmation since level is 3)
         # Attempt without confirmation
-        del_res_1 = await registry.execute_tool("delete_folder", {"folderpath": str(RENAME_DIR)}, has_confirmed=False)
+        delete_args = {"folderpath": str(RENAME_DIR)}
+        del_res_1 = await registry.execute_tool(
+            "delete_folder", delete_args, session_id="phase13_delete"
+        )
         self.assertEqual(del_res_1["status"], "PENDING_CONFIRMATION")
         
-        # Attempt WITH confirmation
-        del_res_2 = await registry.execute_tool("delete_folder", {"folderpath": str(RENAME_DIR)}, has_confirmed=True)
+        # Attempt WITH exact one-time confirmation
+        del_res_2 = await registry.execute_tool(
+            "delete_folder",
+            delete_args,
+            has_confirmed=True,
+            confirmation_token=del_res_1["confirmation_token"],
+            session_id="phase13_delete",
+        )
         self.assertTrue(del_res_2["success"])
         self.assertFalse(RENAME_DIR.exists())
 
@@ -92,11 +117,20 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         
         # Execute organize_folder tool (Requires Level 2 confirmation)
         # Attempt without confirmation
-        org_res_1 = await registry.execute_tool("organize_folder", {"folderpath": str(ORGANIZE_DIR)}, has_confirmed=False)
+        organize_args = {"folderpath": str(ORGANIZE_DIR)}
+        org_res_1 = await registry.execute_tool(
+            "organize_folder", organize_args, session_id="phase13_organize"
+        )
         self.assertEqual(org_res_1["status"], "PENDING_CONFIRMATION")
         
-        # Attempt WITH confirmation
-        org_res_2 = await registry.execute_tool("organize_folder", {"folderpath": str(ORGANIZE_DIR)}, has_confirmed=True)
+        # Attempt WITH exact confirmation
+        org_res_2 = await registry.execute_tool(
+            "organize_folder",
+            organize_args,
+            has_confirmed=True,
+            confirmation_token=org_res_1["confirmation_token"],
+            session_id="phase13_organize",
+        )
         self.assertTrue(org_res_2["success"])
         self.assertEqual(org_res_2["data"]["moved_count"], 4)
         
@@ -138,10 +172,19 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(vol_res["success"])
         
         # Test Spotify Song Player (Requires level 2 confirmation)
-        spot_res_1 = await registry.execute_tool("spotify_play", {"query": "Starboy"}, has_confirmed=False)
+        spotify_args = {"query": "Starboy"}
+        spot_res_1 = await registry.execute_tool(
+            "spotify_play", spotify_args, session_id="phase13_spotify"
+        )
         self.assertEqual(spot_res_1["status"], "PENDING_CONFIRMATION")
 
-        spot_res_2 = await registry.execute_tool("spotify_play", {"query": "Starboy"}, has_confirmed=True)
+        spot_res_2 = await registry.execute_tool(
+            "spotify_play",
+            spotify_args,
+            has_confirmed=True,
+            confirmation_token=spot_res_1["confirmation_token"],
+            session_id="phase13_spotify",
+        )
         self.assertTrue(spot_res_2["success"])
         self.assertIn("status", spot_res_2["data"])
 
@@ -156,7 +199,12 @@ class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
             
         # 2. Execute terminal runner tool to compile our broken script (Requires Level 2 confirmation)
         command = f"python {ERROR_FILE_PATH}"
-        response = await registry.execute_tool("terminal_run", {"command": command}, has_confirmed=True)
+        response = await self._execute_exact(
+            registry,
+            "terminal_run",
+            {"command": command},
+            session="phase13_terminal",
+        )
         
         # Assertions
         self.assertFalse(response["success"]) # Must fail because of syntax error

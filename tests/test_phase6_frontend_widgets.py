@@ -43,12 +43,16 @@ class TestWidgetApiUrlFix(unittest.TestCase):
         self.assertIn("export const apiBase", text)
         self.assertIn("VITE_API_URL", text)
 
-    def test_previous_broken_widgets_now_use_apiBase(self):
+    def test_previous_broken_widgets_use_shared_api_module(self):
         for name in PREVIOUSLY_BROKEN:
             path = WIDGETS_DIR / name
             self.assertTrue(path.exists(), name)
             text = path.read_text(encoding="utf-8")
-            self.assertIn("apiBase", text, f"{name} does not use shared apiBase")
+            self.assertIn("../../api", text, f"{name} does not use the shared API module")
+            self.assertTrue(
+                "apiBase" in text or "executeTool" in text or "api(" in text,
+                f"{name} imports the API module but does not use it",
+            )
             self.assertNotIn("fetch('/api", text, f"{name} still has a relative /api fetch")
 
 

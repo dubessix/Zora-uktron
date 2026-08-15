@@ -19,7 +19,7 @@ export default function FileExplorerWidget() {
       const res = await fetch(`${apiUrl}/api/tools/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_id: "list_contents", arguments: { folderpath: folder }, has_confirmed: true })
+        body: JSON.stringify({ tool_id: "list_contents", arguments: { folderpath: folder } })
       });
       const data = await res.json();
       if (data.success && data.data?.contents) {

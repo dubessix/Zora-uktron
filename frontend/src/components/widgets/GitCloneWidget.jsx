@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { executeToolWithConfirmation } from '../../api';
 
 /**
  * GitCloneWidget — Jarvis-style clone automation.
@@ -13,14 +14,7 @@ export default function GitCloneWidget() {
 
   const run = async (action, args) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiUrl}/api/tools/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_id: action, arguments: args, has_confirmed: true })
-      });
-      const data = await res.json();
-      return data;
+      return await executeToolWithConfirmation(action, args, "git_clone_widget");
     } catch (err) { return { success: false, error: "offline" }; }
   };
 

@@ -33,9 +33,28 @@ export async function api(path, options = {}) {
 /**
  * Execute a backend tool through the validated REST executor.
  */
-export function executeTool(toolId, args = {}, hasConfirmed = false) {
+export function executeTool(toolId, args = {}, options = {}) {
+  const { sessionId = "frontend_tools", confirmationToken = null } = options;
   return api("/api/tools/execute", {
     method: "POST",
-    body: JSON.stringify({ tool_id: toolId, arguments: args, has_confirmed: hasConfirmed }),
+    body: JSON.stringify({
+      tool_id: toolId,
+      arguments: args,
+      session_id: sessionId,
+      has_confirmed: Boolean(confirmationToken),
+      confirmation_token: confirmationToken,
+    }),
+  });
+}
+
+/** Ask once, then return the exact token for the exact same tool arguments. */
+export async function executeToolWithConfirmation(toolId, args = {}, sessionId = "frontend_tools") {
+  const first = await executeTool(toolId, args, { sessionId });
+  if (first.status !== "PENDING_CONFIRMATION") return first;
+  const approved = typeof window !== "undefined" && window.confirm(first.message);
+  if (!approved) return first;
+  return executeTool(toolId, args, {
+    sessionId,
+    confirmationToken: first.confirmation_token,
   });
 }

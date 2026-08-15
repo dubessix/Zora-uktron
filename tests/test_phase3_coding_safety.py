@@ -22,6 +22,7 @@ from pathlib import Path
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.security.path_guard import is_path_safe
 from backend.app.tools.filesystem_tools import FileWriteTool
+from backend.app.runtime_paths import isolated_test_artifact_path
 
 
 def _run(coro):
@@ -29,7 +30,7 @@ def _run(coro):
 
 
 def _tmpfile(name):
-    return Path(tempfile.mkdtemp(prefix="ultron_p3_")) / name
+    return isolated_test_artifact_path("phase3", os.urandom(4).hex(), name)
 
 
 class TestSafeWriteBackup(unittest.TestCase):
@@ -61,12 +62,20 @@ class TestCodingSafeWrite(unittest.TestCase):
         self.orch = CognitiveOrchestrator()
         self.session = "sess_" + os.urandom(4).hex()
 
-    def test_new_file_writes_directly(self):
+    def test_new_file_requires_exact_confirmation(self):
         target = _tmpfile("new.py")
-        r = _run(self.orch._coding_safe_write(
-            {"filepath": str(target), "content": "x=1"},
-            has_confirmed=False, session_id=self.session))
-        self.assertTrue(r["success"])
+        args = {"filepath": str(target), "content": "x=1"}
+        pending = _run(self.orch._coding_safe_write(
+            args, has_confirmed=False, session_id=self.session))
+        self.assertEqual(pending["status"], "PENDING_CONFIRMATION")
+        self.assertFalse(target.exists())
+        result = _run(self.orch._coding_safe_write(
+            args,
+            has_confirmed=True,
+            session_id=self.session,
+            confirmation_token=pending["confirmation_token"],
+        ))
+        self.assertTrue(result["success"])
         self.assertTrue(target.exists())
 
     def test_existing_file_requires_confirmation_and_binds_token(self):
@@ -113,7 +122,7 @@ class TestCodingSafeWrite(unittest.TestCase):
             {"filepath": bad, "content": "secret"},
             has_confirmed=True, session_id=self.session))
         self.assertFalse(r["success"])
-        self.assertIn("Blocked by path guard", r["error"])
+        self.assertIn("blocked", r["error"].lower())
 
 
 class TestPathGuardDepth(unittest.TestCase):
@@ -126,7 +135,7 @@ class TestPathGuardDepth(unittest.TestCase):
         self.assertFalse(is_path_safe(str(Path(tempfile.gettempdir()) / "a/.env")))
 
     def test_allows_normal_project_path(self):
-        p = Path(tempfile.gettempdir()) / "ultron_p3_norm" / "src" / "main.py"
+        p = isolated_test_artifact_path("phase3_normal", "src", "main.py")
         self.assertTrue(is_path_safe(str(p)))
 
 

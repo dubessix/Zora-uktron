@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { apiBase } from '../../api';
+import { executeToolWithConfirmation } from '../../api';
 
 /**
  * SecurityGuardianWidget Component
@@ -13,19 +13,15 @@ export default function SecurityGuardianWidget() {
   const runAudit = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${apiBase}/api/tools/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tool_id: 'security_scan',
-          arguments: {
-            scan_workspace_secrets: true,
-            scan_active_processes: true,
-            scan_dependency_manifests: true
-          }
-        })
-      });
-      const data = await response.json();
+      const data = await executeToolWithConfirmation(
+        'security_scan',
+        {
+          scan_workspace_secrets: true,
+          scan_active_processes: true,
+          scan_dependency_manifests: true,
+        },
+        'security_guardian_widget',
+      );
       if (data.success) {
         setResults(data.data);
       }
