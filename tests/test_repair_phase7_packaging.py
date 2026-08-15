@@ -111,6 +111,7 @@ class TestPhase7WheelInstall(unittest.TestCase):
         with zipfile.ZipFile(self.wheel) as archive:
             names = set(archive.namelist())
         required_exact = {
+            "backend/app/static_server.py",
             "backend/app/personalities/ultron.md",
             "backend/app/personalities/zora.md",
             "backend/app/skills/coding_agent.md",

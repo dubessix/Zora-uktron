@@ -1,19 +1,23 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Configuration optimized for local dev with hot reload
-// `host: true` binds to 0.0.0.0 and `allowedHosts` permits the sandboxed
-// live-preview host so the UI renders in the user's browser.
+const loopbackHost = '127.0.0.1'
+const localHosts = ['localhost', '127.0.0.1']
+
+// Development/preview remain available for manual work, but never bind to the
+// LAN. Daily launcher usage serves the production dist through Python instead.
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     strictPort: true,
-    host: true,
-    allowedHosts: true,
+    host: loopbackHost,
+    allowedHosts: localHosts,
   },
   preview: {
-    host: true,
-    allowedHosts: true,
+    port: 5173,
+    strictPort: true,
+    host: loopbackHost,
+    allowedHosts: localHosts,
   },
 })

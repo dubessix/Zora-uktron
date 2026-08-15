@@ -12,6 +12,8 @@ import platform
 import psutil
 import datetime
 import httpx
+import yaml
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -22,18 +24,44 @@ from backend.app.database.models import initialize_database
 from backend.app.router import api_router
 from backend.app.websocket.connection_manager import WebSocketManager
 from backend.app.background_tasks import get_background_task_manager
+from backend.app.install_paths import CONFIG_PATH
 
-# Initialize the global application registry
+
+def _configured_frontend_port() -> int:
+    try:
+        config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        port = int((config.get("server", {}) or {}).get("frontend_port", 5173))
+        return port if 1 <= port <= 65535 else 5173
+    except (OSError, ValueError, TypeError, yaml.YAMLError):
+        return 5173
+
+
+@asynccontextmanager
+async def application_lifespan(_app: FastAPI):
+    """Own startup/shutdown exactly once with FastAPI's supported lifecycle API."""
+    try:
+        await startup_event_handler()
+        yield
+    finally:
+        await shutdown_event_handler()
+
+
+# Initialize the global application registry.
 app = FastAPI(
     title="ULTRON CORE ENGINE API",
     description="Asynchronous processing gateway for local system automation and developer chat.",
     version="1.0.0",
+    lifespan=application_lifespan,
 )
 
-# Configure Cross-Origin Resource Sharing (CORS) limits
+# Configure Cross-Origin Resource Sharing for the configured loopback frontend only.
+_frontend_port = _configured_frontend_port()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        f"http://localhost:{_frontend_port}",
+        f"http://127.0.0.1:{_frontend_port}",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -213,7 +241,6 @@ async def run_proactive_intelligence_loop():
             
         await asyncio.sleep(120.0)
 
-@app.on_event("startup")
 async def startup_event_handler():
     """Initializes standard SQLite databases and applies parameterized table migrations."""
     try:
@@ -240,11 +267,10 @@ async def startup_event_handler():
         tasks.start_singleton("proactive_intelligence", run_proactive_intelligence_loop)
         tasks.start_singleton("durability_scheduler", run_durability_scheduler)
     except Exception as e:
-        print(f"[ERROR] Database migration crash during startup execution: {e}")
-        raise SystemExit("Core startup database initialization failure.") from e
+        print(f"[ERROR] Core startup initialization failed: {e}")
+        raise RuntimeError("Core startup initialization failure.") from e
 
 
-@app.on_event("shutdown")
 async def shutdown_event_handler():
     """Cancel owned loops, then close the shared orchestrator exactly once."""
     try:
@@ -254,10 +280,11 @@ async def shutdown_event_handler():
         print(f"[WARN] Background task shutdown failed: {e}")
 
     try:
-        from backend.app.router import get_orchestrator
-        orch = get_orchestrator()
-        await orch.close()
-        print("[INFO] Shared orchestrator closed cleanly at shutdown.")
+        from backend.app import router as router_module
+        orch = router_module._shared_orchestrator
+        if orch is not None:
+            await orch.close()
+            print("[INFO] Shared orchestrator closed cleanly at shutdown.")
     except Exception as e:
         print(f"[WARN] Shared orchestrator close during shutdown failed: {e}")
 

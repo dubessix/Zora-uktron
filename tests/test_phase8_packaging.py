@@ -48,7 +48,7 @@ class TestPackaging(unittest.TestCase):
 class TestLauncherHealthGate(unittest.TestCase):
 
     def test_health_gate_returns_true_when_backend_ready(self):
-        from unittest.mock import patch
+        from unittest.mock import Mock, patch
         from launcher import ServiceLauncher
 
         class FakeResp:
@@ -57,17 +57,45 @@ class TestLauncherHealthGate(unittest.TestCase):
                 return self
             def __exit__(self, *a):
                 return False
+            def read(self):
+                return b'{"status":"healthy","system_metrics":{},"models":{}}'
 
+        launcher = ServiceLauncher()
+        launcher.backend_process = Mock()
+        launcher.backend_process.poll.return_value = None
         with patch("urllib.request.urlopen", return_value=FakeResp()):
-            ok = ServiceLauncher().wait_for_backend_health(timeout_sec=3.0)
+            ok = launcher.wait_for_backend_health(timeout_sec=3.0)
         self.assertTrue(ok)
 
-    def test_health_gate_returns_false_on_timeout(self):
-        from unittest.mock import patch
+    def test_health_gate_rejects_unrelated_http_200(self):
+        from unittest.mock import Mock, patch
         from launcher import ServiceLauncher
 
+        class UnrelatedResponse:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return b'{"status":"ok","service":"something-else"}'
+
+        launcher = ServiceLauncher(sleep_fn=lambda _seconds: None)
+        launcher.backend_process = Mock()
+        launcher.backend_process.poll.return_value = None
+        with patch("urllib.request.urlopen", return_value=UnrelatedResponse()):
+            ok = launcher.wait_for_backend_health(timeout_sec=0.01)
+        self.assertFalse(ok)
+
+    def test_health_gate_returns_false_on_timeout(self):
+        from unittest.mock import Mock, patch
+        from launcher import ServiceLauncher
+
+        launcher = ServiceLauncher(sleep_fn=lambda _seconds: None)
+        launcher.backend_process = Mock()
+        launcher.backend_process.poll.return_value = None
         with patch("urllib.request.urlopen", side_effect=OSError("refused")):
-            ok = ServiceLauncher().wait_for_backend_health(timeout_sec=0.5)
+            ok = launcher.wait_for_backend_health(timeout_sec=0.01)
         self.assertFalse(ok)
 
 

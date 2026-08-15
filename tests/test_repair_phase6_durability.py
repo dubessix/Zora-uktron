@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from contextlib import closing
 import shutil
 import tempfile
 import threading
@@ -104,7 +105,7 @@ class Phase6DatabaseCase(unittest.TestCase):
 
         wrong = self.temp_dir / "backups" / "unrelated.db"
         wrong.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(str(wrong)) as conn:
+        with closing(sqlite3.connect(str(wrong))) as conn:
             conn.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY);")
             conn.commit()
         result = restore_database(str(wrong))

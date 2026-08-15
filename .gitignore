@@ -45,6 +45,7 @@ data/cache/
 # Node.js artifacts
 node_modules/
 frontend/dist/
+frontend/.ultron_*
 frontend/stats.html
 
 # Log files
