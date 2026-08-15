@@ -56,7 +56,7 @@ class SearchDocumentsTool(BaseTool):
         except Exception as e:
             return {"success": False, "error": f"Invalid regex construction: {e}", "data": {}}
 
-        skip_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist", "data"}
+        skip_dirs = {".git", ".venv", "venv", "env", ".arena", ".cache", ".pytest_cache", ".ruff_cache", "__pycache__", "node_modules", "build", "dist", "data", "coverage", "out", "target"}
 
         # Phase 3/Point-22: the document scan walks the whole workspace and reads
         # many files — run it in a worker thread so it can't block the event loop.

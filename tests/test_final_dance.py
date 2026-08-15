@@ -12,14 +12,15 @@ import datetime
 from pathlib import Path
 from backend.app.tools.tool_registry import ToolRegistry
 from backend.app.core.orchestrator import CognitiveOrchestrator
+from backend.app.runtime_paths import isolated_test_artifact_path
 
 class TestFinalDanceFeatureSet(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.registry = ToolRegistry()
         cls.workspace_root = Path(__file__).resolve().parent.parent
-        cls.temp_json = cls.workspace_root / "data" / "cache" / "temp_test_convert.json"
-        cls.temp_csv = cls.workspace_root / "data" / "cache" / "temp_test_convert.csv"
+        cls.temp_json = isolated_test_artifact_path("final_dance", "temp_test_convert.json")
+        cls.temp_csv = isolated_test_artifact_path("final_dance", "temp_test_convert.csv")
 
         # Write clean dummy JSON data to test converter tool
         cls.temp_json.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +43,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertIsNotNone(tool)
 
         loop = asyncio.get_event_loop()
-        
+
         # 1. Create a TrustQuiz task
         res_create = loop.run_until_complete(tool.execute(
             action="create",
@@ -91,7 +92,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         now = datetime.datetime.now()
         tomorrow_10am = (now + datetime.timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
         tomorrow_12pm = (now + datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0).isoformat()
-        
+
         create_res = loop.run_until_complete(tool.execute(
             action="create",
             title="Busy Meeting",
@@ -110,7 +111,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertTrue(solve_res["success"])
         data = solve_res["data"]
         self.assertGreaterEqual(len(data["suggestions"]), 1)
-        
+
         # Verify suggestions do not intersect with our tomorrow_10am block
         for suggestion in data["suggestions"]:
             self.assertNotEqual(suggestion["start_time"], tomorrow_10am)
@@ -149,6 +150,8 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         """Test: Verify local document content searching and JSON <-> CSV data format conversion."""
         search_tool = self.registry.get_tool("search_inside_documents")
         convert_tool = self.registry.get_tool("convert_file_format")
+        # Conversion fixtures live in the isolated test root, never production data/.
+        convert_tool.workspace_root = self.temp_json.parent
 
         self.assertIsNotNone(search_tool)
         self.assertIsNotNone(convert_tool)
@@ -185,7 +188,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertIsNotNone(tool)
 
         loop = asyncio.get_event_loop()
-        
+
         # 1. Test Earthquakes
         res_eq = loop.run_until_complete(tool.execute(
             endpoint="list_earthquakes",
@@ -193,7 +196,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         ))
         self.assertTrue(res_eq["success"])
         self.assertIn("headline", res_eq)
-        
+
         # 2. Test Fear & Greed Index
         res_fng = loop.run_until_complete(tool.execute(endpoint="get_fear_greed_index"))
         self.assertTrue(res_fng["success"])
@@ -210,7 +213,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertIsNotNone(tool)
 
         loop = asyncio.get_event_loop()
-        
+
         # Phase 5: with no real token, the tool must report an honest "not
         # configured" state — never the old fake/dummy data. Force a placeholder
         # so this is deterministic (no live GitHub dependency).

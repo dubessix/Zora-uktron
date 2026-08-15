@@ -5,17 +5,17 @@ Verifies AST code optimization and semantic search graph execution.
 
 import unittest
 import asyncio
-from pathlib import Path
 from backend.app.tools.tool_registry import ToolRegistry
 from backend.app.tools.code_optimizer_tool import CodeOptimizerTool
 from backend.app.tools.semantic_graph_tool import SemanticGraphTool
 from backend.app.tools.reminder_tool import ReminderTool
+from backend.app.runtime_paths import isolated_test_artifact_path
 
 class TestDeveloperIntelligenceTools(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.registry = ToolRegistry()
-        cls.test_file_path = Path(__file__).resolve().parent / "temp_dev_test_file.py"
+        cls.test_file_path = isolated_test_artifact_path("developer_intelligence", "temp_dev_test_file.py")
         
         # Create a sample python file with specific classes, functions, and standard patterns
         cls.test_content = (
@@ -38,6 +38,13 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         
         with open(cls.test_file_path, "w", encoding="utf-8") as f:
             f.write(cls.test_content)
+
+        # Keep semantic indexing entirely inside the isolated test workspace.
+        graph_tool = cls.registry.get_tool("semantic_code_graph")
+        graph_tool.workspace_root = cls.test_file_path.parent
+        graph_tool.graph_cache_path = isolated_test_artifact_path(
+            "developer_intelligence", "semantic_graph.json"
+        )
 
     @classmethod
     def tearDownClass(cls):

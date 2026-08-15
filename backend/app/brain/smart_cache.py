@@ -12,18 +12,11 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Any, Tuple
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CACHE_DIR = BASE_DIR / "data" / "cache"
-CACHE_PATH = CACHE_DIR / "smart_cache.json"
+from backend.app.runtime_paths import runtime_data_path
 
-# Phase 0 (test/data safety): allow tests to use a temporary cache path so the
-# production cache is never touched during the test suite.
-import os as _os
-if _os.getenv("ULTRON_TEST_CACHE") == "1":
-    import tempfile as _tempfile
-    _tmpdir = Path(_tempfile.mkdtemp(prefix="ultron_test_cache_"))
-    CACHE_DIR = _tmpdir
-    CACHE_PATH = _tmpdir / "smart_cache.json"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+CACHE_DIR = runtime_data_path("cache")
+CACHE_PATH = CACHE_DIR / "smart_cache.json"
 
 class SmartCache:
     def __init__(self, max_items: int = 200, expiry_hours: float = 24.0) -> None:

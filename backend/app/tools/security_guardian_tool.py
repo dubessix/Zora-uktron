@@ -47,7 +47,7 @@ class SecurityGuardianTool(BaseTool):
         }
 
         # Directories to skip
-        skip_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist", "data"}
+        skip_dirs = {".git", ".venv", "venv", "env", ".arena", ".cache", ".pytest_cache", ".ruff_cache", "__pycache__", "node_modules", "build", "dist", "data", "coverage", "out", "target"}
 
         for root, dirs, files in os.walk(self.workspace_root):
             # Prune skipped directories

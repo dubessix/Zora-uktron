@@ -10,11 +10,13 @@ import os
 import ast
 import json
 import re
+import time
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
+from backend.app.runtime_paths import runtime_data_path
 
 class SemanticGraphArgs(BaseModel):
     query_type: str = Field("summary", description="Query type: build, search, callers, dependencies, or summary.")
@@ -38,7 +40,12 @@ class SemanticGraphTool(BaseTool):
             ]
         )
         self.workspace_root = Path(__file__).resolve().parent.parent.parent.parent
-        self.graph_cache_path = self.workspace_root / "data" / "cache" / "semantic_graph.json"
+        self.graph_cache_path = runtime_data_path("cache", "semantic_graph.json")
+        # Hard bounds prevent accidental indexing of a virtual environment or an
+        # unexpectedly huge workspace from consuming minutes and tens of MB.
+        self.max_index_files = int(os.getenv("ULTRON_SEMANTIC_MAX_FILES", "5000"))
+        self.max_scan_seconds = float(os.getenv("ULTRON_SEMANTIC_MAX_SECONDS", "20"))
+        self.max_cache_bytes = int(os.getenv("ULTRON_SEMANTIC_MAX_CACHE_BYTES", str(16 * 1024 * 1024)))
 
     def _parse_file_ast(self, file_path: Path) -> Dict[str, Any]:
         """Parses a single python file's AST to extract symbols, classes, functions, calls, and imports."""
@@ -146,78 +153,99 @@ class SemanticGraphTool(BaseTool):
         }
 
     def _scan_workspace(self) -> Dict[str, Any]:
-        """Scans the entire python workspace recursively, building a global symbol graph."""
+        """Build a bounded graph without traversing generated/dependency trees."""
         graph = {
             "files": {},
-            "symbol_index": {},  # Maps symbol name to defining files/lines
-            "call_index": {}     # Maps symbol name to files/lines where it's called
+            "symbol_index": {},
+            "call_index": {},
+            "meta": {
+                "truncated": False,
+                "reason": None,
+                "max_files": self.max_index_files,
+                "max_seconds": self.max_scan_seconds,
+                "cache_saved": False,
+            },
         }
+        ignored_dirs = {
+            ".git", ".venv", "venv", "env", ".env", ".arena", ".cache",
+            ".pytest_cache", ".ruff_cache", ".mypy_cache", "__pycache__",
+            "node_modules", "build", "dist", "data", "coverage", "out",
+            "target", "backups", "logs",
+        }
+        started = time.monotonic()
+        indexed = 0
+        stop = False
 
-        # Recursively search for all python files under workspace
-        # Exclude directories like venv, .git, etc.
-        ignored_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist"}
-        
         for root, dirs, files in os.walk(self.workspace_root):
-            # Prune ignored directories in-place
-            dirs[:] = [d for dirs_list in [dirs] for d in dirs_list if d not in ignored_dirs]
-            
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
-                if file.endswith(".py"):
-                    file_path = Path(root) / file
-                    parsed = self._parse_file_ast(file_path)
-                    file_rel = parsed["file"]
-                    graph["files"][file_rel] = parsed
+                if not file.endswith(".py"):
+                    continue
+                if indexed >= self.max_index_files:
+                    graph["meta"].update(truncated=True, reason="file_limit")
+                    stop = True
+                    break
+                if time.monotonic() - started >= self.max_scan_seconds:
+                    graph["meta"].update(truncated=True, reason="time_limit")
+                    stop = True
+                    break
 
-                    # Update Symbol Index
-                    for cls in parsed["classes"]:
-                        sym_name = cls["name"]
-                        if sym_name not in graph["symbol_index"]:
-                            graph["symbol_index"][sym_name] = []
-                        graph["symbol_index"][sym_name].append({
-                            "type": "class",
+                file_path = Path(root) / file
+                parsed = self._parse_file_ast(file_path)
+                file_rel = parsed["file"]
+                graph["files"][file_rel] = parsed
+                indexed += 1
+
+                for cls in parsed["classes"]:
+                    graph["symbol_index"].setdefault(cls["name"], []).append({
+                        "type": "class",
+                        "file": file_rel,
+                        "line": cls["line"],
+                        "bases": cls["bases"],
+                    })
+
+                for func in parsed["functions"]:
+                    graph["symbol_index"].setdefault(func["name"], []).append({
+                        "type": "function",
+                        "file": file_rel,
+                        "line": func["line"],
+                        "class_context": func["class_context"],
+                    })
+
+                for call in parsed["calls"]:
+                    call_name = call["name"]
+                    root_name = call_name.split(".")[-1]
+                    entries = graph["call_index"].setdefault(root_name, [])
+                    if not any(c["file"] == file_rel and c["line"] == call["line"] for c in entries):
+                        entries.append({
+                            "full_expression": call_name,
                             "file": file_rel,
-                            "line": cls["line"],
-                            "bases": cls["bases"]
+                            "line": call["line"],
                         })
+            if stop:
+                break
 
-                    for func in parsed["functions"]:
-                        sym_name = func["name"]
-                        if sym_name not in graph["symbol_index"]:
-                            graph["symbol_index"][sym_name] = []
-                        graph["symbol_index"][sym_name].append({
-                            "type": "function",
-                            "file": file_rel,
-                            "line": func["line"],
-                            "class_context": func["class_context"]
-                        })
+        graph["meta"]["files_indexed"] = indexed
+        graph["meta"]["duration_ms"] = int((time.monotonic() - started) * 1000)
 
-                    # Update Call Index
-                    for call in parsed["calls"]:
-                        call_name = call["name"]
-                        # Get root symbol name (e.g. "db.get_db_connection" -> "get_db_connection")
-                        root_name = call_name.split(".")[-1]
-                        if root_name not in graph["call_index"]:
-                            graph["call_index"][root_name] = []
-                        
-                        # Avoid duplicates in the same file/line
-                        exists = any(
-                            c["file"] == file_rel and c["line"] == call["line"]
-                            for c in graph["call_index"][root_name]
-                        )
-                        if not exists:
-                            graph["call_index"][root_name].append({
-                                "full_expression": call_name,
-                                "file": file_rel,
-                                "line": call["line"]
-                            })
-
-        # Save to disk
+        # Write through a temporary file and keep the cache only when bounded.
         self.graph_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_cache = self.graph_cache_path.with_suffix(".json.tmp")
         try:
-            with open(self.graph_cache_path, "w", encoding="utf-8") as f:
-                json.dump(graph, f, indent=2)
+            with open(temp_cache, "w", encoding="utf-8") as f:
+                json.dump(graph, f, separators=(",", ":"))
+            cache_size = temp_cache.stat().st_size
+            graph["meta"]["cache_bytes"] = cache_size
+            if cache_size > self.max_cache_bytes:
+                temp_cache.unlink(missing_ok=True)
+                graph["meta"].update(truncated=True, reason="cache_size_limit")
+                print(f"[SEMANTIC_GRAPH] Cache not saved: {cache_size} bytes exceeds limit.")
+            else:
+                os.replace(temp_cache, self.graph_cache_path)
+                graph["meta"]["cache_saved"] = True
         except Exception as e:
-            print(f"[SEMANTIC_GRAPH] Warning: Failed to save graph to cache: {e}")
+            temp_cache.unlink(missing_ok=True)
+            print(f"[SEMANTIC_GRAPH] Warning: Failed to save graph cache: {e}")
 
         return graph
 
@@ -228,7 +256,12 @@ class SemanticGraphTool(BaseTool):
         current workspace (new/changed/removed source files) instead of serving
         a stale snapshot forever.
         """
-        ignored_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist"}
+        ignored_dirs = {
+            ".git", ".venv", "venv", "env", ".arena", ".cache",
+            ".pytest_cache", ".ruff_cache", ".mypy_cache", "__pycache__",
+            "node_modules", "build", "dist", "data", "coverage", "out",
+            "target", "backups", "logs",
+        }
         for root, dirs, files in os.walk(self.workspace_root):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:

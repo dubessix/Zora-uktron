@@ -6,13 +6,13 @@ context builders, SQLite audit logs, and timeout handlers.
 
 import unittest
 import os
-from pathlib import Path
 
 from backend.app.tools.tool_registry import ToolRegistry
 from backend.app.tools.context_builder import ToolContextBuilder
 from backend.app.database.db import get_db_connection
+from backend.app.runtime_paths import isolated_test_artifact_path
 
-TEST_FILE = Path(__file__).resolve().parent / "test_phase7_temp_file.txt"
+TEST_FILE = isolated_test_artifact_path("phase7", "test_phase7_temp_file.txt")
 
 class TestPhase7ToolSystemArchitecture(unittest.IsolatedAsyncioTestCase):
     

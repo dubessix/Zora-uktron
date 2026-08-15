@@ -7,14 +7,14 @@ and our newly developed un-mocked Self-Healing Compiler Loop (Autoreactive Debug
 
 import unittest
 import shutil
-from pathlib import Path
 
 from backend.app.tools.tool_registry import ToolRegistry
+from backend.app.runtime_paths import isolated_test_artifact_path
 
-TEST_DIR = Path(__file__).resolve().parent / "test_phase13_temp_dir"
-RENAME_DIR = Path(__file__).resolve().parent / "test_phase13_renamed_dir"
-ORGANIZE_DIR = Path(__file__).resolve().parent / "test_phase13_organize_dir"
-ERROR_FILE_PATH = Path(__file__).resolve().parent / "error_file.py"
+TEST_DIR = isolated_test_artifact_path("phase13", "test_phase13_temp_dir")
+RENAME_DIR = isolated_test_artifact_path("phase13", "test_phase13_renamed_dir")
+ORGANIZE_DIR = isolated_test_artifact_path("phase13", "test_phase13_organize_dir")
+ERROR_FILE_PATH = isolated_test_artifact_path("phase13", "error_file.py")
 
 class TestPhase13V2ToolsArchitecture(unittest.IsolatedAsyncioTestCase):
     

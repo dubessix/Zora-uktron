@@ -105,7 +105,7 @@ class FindFilesTool(BaseTool):
         if not pattern:
             return {"success": False, "error": "Pattern parameter cannot be empty.", "data": {}}
 
-        skip_dirs = {".git", "venv", ".arena", "__pycache__", "node_modules", "build", "dist", "data"}
+        skip_dirs = {".git", ".venv", "venv", "env", ".arena", ".cache", ".pytest_cache", ".ruff_cache", "__pycache__", "node_modules", "build", "dist", "data", "coverage", "out", "target"}
         is_glob = "*" in pattern or "?" in pattern or "[" in pattern
 
         # Phase 3/Point-22: recursive workspace walking is IO-heavy — run it in a

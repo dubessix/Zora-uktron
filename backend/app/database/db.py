@@ -8,22 +8,15 @@ from pathlib import Path
 from contextlib import contextmanager
 from typing import Generator
 
-# Ensure data storage directories are resolved platform-independently
+# Resolve all storage through one runtime policy. Under pytest/unittest this
+# points to a process-local temporary root; production continues to use data/.
+from backend.app.runtime_paths import TEST_MODE, runtime_data_path
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-DB_DIR = BASE_DIR / "data" / "memory"
-DB_PATH = DB_DIR / "ultron.db"
+DB_DIR = runtime_data_path("memory")
+DB_PATH = DB_DIR / ("test_ultron.db" if TEST_MODE else "ultron.db")
 
-# Phase 0 (test/data safety): allow an explicit override so tests can point at a
-# temporary database instead of the real one. Set ULTRON_TEST_DB=1 to use a
-# temp DB in a temp dir — production data is never touched during tests.
-import os as _os
-if _os.getenv("ULTRON_TEST_DB") == "1":
-    import tempfile as _tempfile
-    _tmp = Path(_tempfile.mkdtemp(prefix="ultron_test_")) / "test_ultron.db"
-    DB_DIR = _tmp.parent
-    DB_PATH = _tmp
-
-# Ensure directory existences before running transactions
+# Ensure directory existence before running transactions.
 DB_DIR.mkdir(parents=True, exist_ok=True)
 
 @contextmanager
@@ -44,6 +37,14 @@ def get_db_connection() -> Generator[sqlite3.Connection, None, None]:
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         conn.row_factory = sqlite3.Row  # Return results as rich dictionaries
+
+        # A standalone unittest process does not load pytest fixtures. In test
+        # mode, initialize the isolated schema on every fresh temporary DB so
+        # pytest and unittest are independently safe and deterministic.
+        if TEST_MODE:
+            from backend.app.database.models import initialize_database
+            initialize_database(conn)
+
         yield conn
     except sqlite3.Error as e:
         # Roll back active transaction states in case of unexpected SQL errors
