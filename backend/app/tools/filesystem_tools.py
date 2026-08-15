@@ -76,7 +76,7 @@ class FileWriteTool(BaseTool):
         # Phase 3: route through the single safe-write path (path-guard + backup +
         # atomic write) shared with the coding writer.
         from backend.app.tools.safe_write import safe_write_file
-        return safe_write_file(filepath, content)
+        return await asyncio.to_thread(safe_write_file, filepath, content)
 
 class FindFilesTool(BaseTool):
     def __init__(self) -> None:

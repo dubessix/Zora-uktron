@@ -10,24 +10,25 @@ import signal
 import platform
 import asyncio
 import re
+import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
 # Phase 4: commands that contain shell metacharacters (pipes, redirects, chaining,
 # substitution) must start with an approved, developer-oriented command so the
 # shell is only ever used for legitimate build/test/dev operations.
-_APPROVED_SHELL_PREFIXES = (
-    "npm", "npx", "yarn", "pnpm", "git", "python", "python3", "pip", "pip3",
-    "pytest", "node", "cd", "echo", "ls", "cat", "grep", "find", "head", "tail",
-    "printf", "export", "source", "mkdir", "touch", "cp", "mv", "chmod", "make",
-    "cmake", "docker", "psql", "uvicorn", "gunicorn", "pipenv", "poetry", "go",
-    "cargo", "rustc", "ruby", "bundle", "rake", "php", "java", "mvn", "gradle",
-    "dotnet", "diff", "sort", "wc", "cut", "awk", "sed",
-)
+_DEFAULT_APPROVED_COMMANDS = {
+    "git", "python", "python3", "pytest", "pip", "pip3", "node", "npm", "npx",
+    "yarn", "pnpm", "uvicorn", "ls", "pwd", "cat", "grep", "find", "head",
+    "tail", "echo", "printf", "diff", "sort", "wc", "cut", "awk", "sed",
+    "make", "cmake", "go", "cargo", "rustc", "dotnet", "sleep",
+}
 
 _SHELL_METACHARS = (";", "&", "|", ">", "<", "`", "$(")
+MAX_TERMINAL_OUTPUT_BYTES = 1024 * 1024
+TERMINAL_TIMEOUT_SECONDS = 20.0
 
 
 def _requires_shell(command: str) -> bool:
@@ -42,19 +43,35 @@ def _requires_shell(command: str) -> bool:
     return False
 
 
-def _approved_shell_command(command: str) -> bool:
-    """For metachar-bearing commands, require an approved leading command token."""
+def _load_approved_commands() -> set[str]:
+    config_path = Path(__file__).resolve().parent.parent.parent.parent / "config.yaml"
+    try:
+        with open(config_path, "r", encoding="utf-8") as handle:
+            configured = (
+                (yaml.safe_load(handle) or {})
+                .get("security", {})
+                .get("terminal_allowed_commands", [])
+            )
+        commands = {str(item).strip().lower() for item in configured if str(item).strip()}
+        return commands or set(_DEFAULT_APPROVED_COMMANDS)
+    except (OSError, yaml.YAMLError):
+        return set(_DEFAULT_APPROVED_COMMANDS)
+
+
+def _approved_command(command: str) -> bool:
+    """Every command, with or without shell syntax, needs an approved executable."""
     try:
         parts = shlex.split(command)
     except ValueError:
-        parts = command.split()
+        return False
     if not parts:
         return False
     first = os.path.basename(parts[0]).lower()
-    return any(first == a or first.startswith(a + ".") for a in _APPROVED_SHELL_PREFIXES)
+    return first in _load_approved_commands()
 
 class TerminalRunArgs(BaseModel):
-    command: str = Field(..., description="Local system bash or shell command to execute.")
+    command: str = Field(..., description="Local system command to execute after exact confirmation.")
+    cwd: Optional[str] = Field(None, description="Approved project working directory; defaults to Ultron project root.")
 
 class AppLaunchArgs(BaseModel):
     pass
@@ -73,21 +90,41 @@ class TerminalRunTool(BaseTool):
         )
 
     @staticmethod
-    def _kill_process_group(proc) -> None:
-        """Kill the whole process tree (process group) so no orphaned child hangs."""
+    async def _read_limited(stream, limit: int):
+        """Drain a pipe fully while retaining at most limit bytes."""
+        chunks = []
+        retained = 0
+        total = 0
+        while True:
+            chunk = await stream.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if retained < limit:
+                keep = chunk[: limit - retained]
+                chunks.append(keep)
+                retained += len(keep)
+        return b"".join(chunks), total > limit
+
+    @staticmethod
+    async def _terminate_process_group(proc) -> None:
+        """Kill and await the complete process group so transports are closed."""
+        if proc is None or proc.returncode is not None:
+            return
         try:
-            pgid = os.getpgid(proc.pid)
-            os.killpg(pgid, signal.SIGKILL)
+            if os.name != "nt":
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            else:
+                proc.kill()
         except (ProcessLookupError, PermissionError):
             try:
                 proc.kill()
-            except Exception:
+            except ProcessLookupError:
                 pass
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except (asyncio.TimeoutError, ProcessLookupError):
+            pass
 
     def _attempt_self_healing_analysis(self, stderr: str, project_root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
         """
@@ -223,102 +260,126 @@ class TerminalRunTool(BaseTool):
 
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        command = kwargs.get("command", "")
+        command = str(kwargs.get("command", ""))
         if not command.strip():
             return {"success": False, "error": "Command parameter is empty.", "data": {}}
 
-        # Risk guard: block destructive/system-damaging commands (loop-risk prevention).
+        from backend.app.security.path_guard import check_path
         from backend.app.tools._cmd_guard import is_command_safe
+
         if not is_command_safe(command):
-            return {"success": False, "error": "Command blocked by risk guard (destructive/system command).", "data": {}}
+            return {"success": False, "error": "Command blocked by risk guard.", "data": {}}
 
-        # Run commands from the project root so relative paths/errors resolve correctly.
-        project_root = Path(__file__).resolve().parent.parent.parent.parent
-
-        # Phase 4: prefer ARG-BASED execution (no shell) for simple commands —
-        # no shell metacharacters to abuse. Commands that genuinely need a shell
-        # (pipes/redirects/chaining) are only allowed if they start with an
-        # approved developer command. Either way the child runs in its OWN
-        # process group so a timeout kills the whole tree (no orphaned procs).
-        use_shell = _requires_shell(command)
-        if use_shell and not _approved_shell_command(command):
+        default_root = Path(__file__).resolve().parent.parent.parent.parent
+        project_root = Path(kwargs.get("cwd") or default_root).expanduser().resolve(strict=False)
+        path_decision = check_path(str(project_root))
+        if not path_decision["safe"]:
             return {
                 "success": False,
-                "error": "Command blocked: shell metacharacters require an approved leading command (npm/git/python/etc).",
+                "error": f"Working directory blocked ({path_decision['reason']}): {project_root}",
+                "data": {},
+            }
+        if not project_root.is_dir():
+            return {"success": False, "error": f"Working directory does not exist: {project_root}", "data": {}}
+
+        use_shell = _requires_shell(command)
+        if not _approved_command(command):
+            return {
+                "success": False,
+                "error": "Command blocked: executable is not in security.terminal_allowed_commands.",
                 "data": {},
             }
 
+        proc = None
+        stdout_task = None
+        stderr_task = None
         try:
+            common = {
+                "cwd": str(project_root),
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "start_new_session": True,
+            }
             if use_shell:
-                proc = await asyncio.create_subprocess_shell(
-                    command,
-                    cwd=str(project_root),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    start_new_session=True,  # new process group for tree-kill
-                )
+                proc = await asyncio.create_subprocess_shell(command, **common)
             else:
                 argv = shlex.split(command)
-                proc = await asyncio.create_subprocess_exec(
-                    *argv,
-                    cwd=str(project_root),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    start_new_session=True,  # new process group for tree-kill
-                )
+                if not argv:
+                    return {"success": False, "error": "Command parameter is empty.", "data": {}}
+                proc = await asyncio.create_subprocess_exec(*argv, **common)
 
-            # Timeout guard: kill the whole process group so no child hangs forever.
+            stdout_task = asyncio.create_task(
+                self._read_limited(proc.stdout, MAX_TERMINAL_OUTPUT_BYTES)
+            )
+            stderr_task = asyncio.create_task(
+                self._read_limited(proc.stderr, MAX_TERMINAL_OUTPUT_BYTES)
+            )
+
             timed_out = False
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=20.0)
+                await asyncio.wait_for(proc.wait(), timeout=TERMINAL_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
                 timed_out = True
-                self._kill_process_group(proc)
-                stdout_bytes, stderr_bytes = b"", b"Command timed out after 20s (killed to prevent hang)."
+                await self._terminate_process_group(proc)
+
+            stdout_result, stderr_result = await asyncio.gather(stdout_task, stderr_task)
+            stdout_bytes, stdout_truncated = stdout_result
+            stderr_bytes, stderr_truncated = stderr_result
+            stdout = stdout_bytes.decode("utf-8", "ignore").strip()
+            stderr = stderr_bytes.decode("utf-8", "ignore").strip()
+            if stdout_truncated:
+                stdout += "\n[output truncated]"
+            if stderr_truncated:
+                stderr += "\n[output truncated]"
+
             if timed_out:
+                message = f"Command timed out after {int(TERMINAL_TIMEOUT_SECONDS)}s; process group terminated."
                 return {
                     "success": False,
                     "data": {
                         "exit_code": 124,
-                        "stdout": "",
-                        "stderr": "Command timed out after 20s (killed to prevent hang).",
+                        "stdout": stdout,
+                        "stderr": stderr or message,
+                        "stdout_truncated": stdout_truncated,
+                        "stderr_truncated": stderr_truncated,
                         "cwd": str(project_root),
-                        "self_healing_fix": None
+                        "self_healing_fix": None,
                     },
-                    "error": "Command timed out after 20s (killed to prevent hang)."
+                    "error": message,
                 }
-            stdout = stdout_bytes.decode("utf-8").strip()
-            stderr = stderr_bytes.decode("utf-8").strip()
+
             exit_code = proc.returncode
-            
-            # Formulate baseline execution data
             data = {
                 "exit_code": exit_code,
                 "stdout": stdout,
                 "stderr": stderr,
+                "stdout_truncated": stdout_truncated,
+                "stderr_truncated": stderr_truncated,
                 "cwd": str(project_root),
-                "self_healing_fix": None
+                "self_healing_fix": None,
             }
-
-            # 4. If execution failed (exit_code != 0), run un-mocked self-healing analysis!
             if exit_code != 0 and stderr:
-                self_healing_data = self._attempt_self_healing_analysis(stderr, project_root)
-                if self_healing_data:
-                    data["self_healing_fix"] = self_healing_data
-                    print(f"[SELF_HEALING] Autoreactive patch generated for: {self_healing_data.get('filepath')} on line {self_healing_data.get('line')}.")
+                healing = self._attempt_self_healing_analysis(stderr, project_root)
+                if healing:
+                    data["self_healing_fix"] = healing
 
             return {
                 "success": exit_code == 0,
                 "data": data,
-                "error": stderr if exit_code != 0 else None
+                "error": stderr if exit_code != 0 else None,
             }
-            
+
         except asyncio.CancelledError:
-            self._kill_process_group(proc)
+            await self._terminate_process_group(proc)
+            if stdout_task or stderr_task:
+                await asyncio.gather(
+                    *(task for task in (stdout_task, stderr_task) if task),
+                    return_exceptions=True,
+                )
             raise
-            
-        except Exception as e:
-            return {"success": False, "error": f"Execution failed: {e}", "data": {}}
+        except Exception as exc:
+            await self._terminate_process_group(proc)
+            return {"success": False, "error": f"Execution failed: {exc}", "data": {}}
 
 class CalculatorTool(BaseTool):
     def __init__(self) -> None:

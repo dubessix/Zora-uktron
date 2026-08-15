@@ -11,6 +11,11 @@ from backend.app.tools.semantic_graph_tool import SemanticGraphTool
 from backend.app.tools.reminder_tool import ReminderTool
 from backend.app.runtime_paths import isolated_test_artifact_path
 
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
 class TestDeveloperIntelligenceTools(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -62,8 +67,7 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         self.assertIsInstance(tool, CodeOptimizerTool)
 
         # Run async execute synchronously via asyncio loop
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(tool.execute(
+        result = _run(tool.execute(
             filepath=str(self.test_file_path),
             optimization_type="solid",
             apply_changes=False
@@ -82,8 +86,7 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         """Test CodeOptimizer creates a backup (.bak) file when apply_changes is True."""
         tool = self.registry.get_tool("optimize_code")
         
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(tool.execute(
+        result = _run(tool.execute(
             filepath=str(self.test_file_path),
             optimization_type="readability",
             apply_changes=True
@@ -109,13 +112,12 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         self.assertIsNotNone(tool)
         self.assertIsInstance(tool, SemanticGraphTool)
 
-        loop = asyncio.get_event_loop()
         # Force a build to refresh graph with our temp file
-        build_result = loop.run_until_complete(tool.execute(query_type="build"))
+        build_result = _run(tool.execute(query_type="build"))
         self.assertTrue(build_result["success"])
 
         # Fetch summary
-        summary_result = loop.run_until_complete(tool.execute(query_type="summary"))
+        summary_result = _run(tool.execute(query_type="summary"))
         self.assertTrue(summary_result["success"])
         data = summary_result["data"]
         
@@ -127,10 +129,9 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
     def test_semantic_code_graph_search_and_callers(self):
         """Test SemanticGraph can find symbol definitions and tracking callers."""
         tool = self.registry.get_tool("semantic_code_graph")
-        loop = asyncio.get_event_loop()
 
         # Search for our SampleCalculator class symbol
-        search_result = loop.run_until_complete(tool.execute(
+        search_result = _run(tool.execute(
             query_type="search",
             target_symbol="SampleCalculator"
         ))
@@ -141,7 +142,7 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         self.assertEqual(data["definitions"][0]["type"], "class")
 
         # Search callers for simple_add (not called anywhere, so usage should be empty)
-        callers_result = loop.run_until_complete(tool.execute(
+        callers_result = _run(tool.execute(
             query_type="callers",
             target_symbol="simple_add"
         ))
@@ -154,10 +155,9 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         self.assertIsNotNone(tool)
         self.assertIsInstance(tool, ReminderTool)
 
-        loop = asyncio.get_event_loop()
         
         # 1. Create a reminder
-        create_res = loop.run_until_complete(tool.execute(
+        create_res = _run(tool.execute(
             action="create",
             type="alarm",
             title="SaaS Review",
@@ -169,23 +169,23 @@ class TestDeveloperIntelligenceTools(unittest.TestCase):
         self.assertEqual(create_res["data"]["recurrence"], "daily")
         
         # 2. List reminders
-        list_res = loop.run_until_complete(tool.execute(action="list"))
+        list_res = _run(tool.execute(action="list"))
         self.assertTrue(list_res["success"])
         self.assertGreaterEqual(len(list_res["data"]["reminders"]), 1)
         
         # 3. Snooze reminder
-        snooze_res = loop.run_until_complete(tool.execute(action="snooze", reminder_id=rem_id))
+        snooze_res = _run(tool.execute(action="snooze", reminder_id=rem_id))
         self.assertTrue(snooze_res["success"])
         self.assertEqual(snooze_res["data"]["snooze_count"], 1)
         
         # 4. Dismiss reminder (calculates next target for daily)
-        dismiss_res = loop.run_until_complete(tool.execute(action="dismiss", reminder_id=rem_id))
+        dismiss_res = _run(tool.execute(action="dismiss", reminder_id=rem_id))
         self.assertTrue(dismiss_res["success"])
         self.assertEqual(dismiss_res["data"]["recurrence"], "daily")
         self.assertIsNotNone(dismiss_res["data"]["next_target_time"])
         
         # 5. Delete reminder
-        delete_res = loop.run_until_complete(tool.execute(action="delete", reminder_id=rem_id))
+        delete_res = _run(tool.execute(action="delete", reminder_id=rem_id))
         self.assertTrue(delete_res["success"])
 
 if __name__ == "__main__":

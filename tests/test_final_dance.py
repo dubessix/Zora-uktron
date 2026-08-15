@@ -14,6 +14,11 @@ from backend.app.tools.tool_registry import ToolRegistry
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.runtime_paths import isolated_test_artifact_path
 
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
 class TestFinalDanceFeatureSet(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -42,10 +47,9 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("manage_task")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
 
         # 1. Create a TrustQuiz task
-        res_create = loop.run_until_complete(tool.execute(
+        res_create = _run(tool.execute(
             action="create",
             project_name="TrustQuiz",
             module_name="Authentication",
@@ -57,7 +61,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         task_id = res_create["data"]["task_id"]
 
         # 2. List the tasks and ensure it appears
-        res_list = loop.run_until_complete(tool.execute(
+        res_list = _run(tool.execute(
             action="list",
             project_name="TrustQuiz"
         ))
@@ -66,7 +70,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertTrue(any(t["id"] == task_id for t in res_list["data"]["tasks"]))
 
         # 3. Update the task status to done
-        res_update = loop.run_until_complete(tool.execute(
+        res_update = _run(tool.execute(
             action="update_status",
             task_id=task_id,
             status="done"
@@ -75,7 +79,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertEqual(res_update["data"]["status"], "done")
 
         # 4. Delete the task
-        res_del = loop.run_until_complete(tool.execute(
+        res_del = _run(tool.execute(
             action="delete",
             task_id=task_id
         ))
@@ -86,14 +90,13 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("manage_calendar")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
 
         # 1. Create two events with specific busy slots
         now = datetime.datetime.now()
         tomorrow_10am = (now + datetime.timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
         tomorrow_12pm = (now + datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0).isoformat()
 
-        create_res = loop.run_until_complete(tool.execute(
+        create_res = _run(tool.execute(
             action="create",
             title="Busy Meeting",
             start_time=tomorrow_10am,
@@ -104,7 +107,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         ev_id = create_res["data"]["event_id"]
 
         # 2. Query Smart Scheduler to solve 2 hours of available free time
-        solve_res = loop.run_until_complete(tool.execute(
+        solve_res = _run(tool.execute(
             action="smart_schedule",
             duration_hours=2.0
         ))
@@ -117,7 +120,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
             self.assertNotEqual(suggestion["start_time"], tomorrow_10am)
 
         # 3. Delete the temporary calendar event
-        del_res = loop.run_until_complete(tool.execute(action="delete", event_id=ev_id))
+        del_res = _run(tool.execute(action="delete", event_id=ev_id))
         self.assertTrue(del_res["success"])
 
     def test_daily_briefing_engine(self):
@@ -125,8 +128,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("daily_briefing")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
-        res = loop.run_until_complete(tool.execute())
+        res = _run(tool.execute())
         self.assertTrue(res["success"])
         self.assertIn("briefing_text", res["data"])
         self.assertIn("weather", res["data"])
@@ -136,8 +138,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("security_scan")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
-        res = loop.run_until_complete(tool.execute(
+        res = _run(tool.execute(
             scan_workspace_secrets=True,
             scan_active_processes=True,
             scan_dependency_manifests=True
@@ -156,15 +157,14 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertIsNotNone(search_tool)
         self.assertIsNotNone(convert_tool)
 
-        loop = asyncio.get_event_loop()
 
         # 1. Search inside documents for a known function name
-        search_res = loop.run_until_complete(search_tool.execute(search_query="get_db_connection"))
+        search_res = _run(search_tool.execute(search_query="get_db_connection"))
         self.assertTrue(search_res["success"])
         self.assertGreaterEqual(search_res["data"]["matches_count"], 1)
 
         # 2. Convert temporary JSON file to CSV
-        conv_res = loop.run_until_complete(convert_tool.execute(
+        conv_res = _run(convert_tool.execute(
             source_filepath=str(self.temp_json),
             destination_filepath=str(self.temp_csv)
         ))
@@ -176,8 +176,7 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("find_files")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
-        res = loop.run_until_complete(tool.execute(pattern="main.py"))
+        res = _run(tool.execute(pattern="main.py"))
         self.assertTrue(res["success"])
         self.assertGreaterEqual(res["data"]["matches_count"], 1)
         self.assertTrue(any(f["name"] == "main.py" for f in res["data"]["matches"]))
@@ -187,10 +186,9 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("world_monitor")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
 
         # 1. Test Earthquakes
-        res_eq = loop.run_until_complete(tool.execute(
+        res_eq = _run(tool.execute(
             endpoint="list_earthquakes",
             parameters={"min_magnitude": 5.0}
         ))
@@ -198,12 +196,12 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         self.assertIn("headline", res_eq)
 
         # 2. Test Fear & Greed Index
-        res_fng = loop.run_until_complete(tool.execute(endpoint="get_fear_greed_index"))
+        res_fng = _run(tool.execute(endpoint="get_fear_greed_index"))
         self.assertTrue(res_fng["success"])
         self.assertIn("score", res_fng)
 
         # 3. Test Market Quotes
-        res_mq = loop.run_until_complete(tool.execute(endpoint="list_market_quotes"))
+        res_mq = _run(tool.execute(endpoint="list_market_quotes"))
         self.assertTrue(res_mq["success"])
         self.assertIn("quotes", res_mq)
 
@@ -212,14 +210,13 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
         tool = self.registry.get_tool("github_integration")
         self.assertIsNotNone(tool)
 
-        loop = asyncio.get_event_loop()
 
         # Phase 5: with no real token, the tool must report an honest "not
         # configured" state — never the old fake/dummy data. Force a placeholder
         # so this is deterministic (no live GitHub dependency).
         os.environ["GITHUB_TOKEN_1"] = "your_github_token_placeholder"
         os.environ["GITHUB_USERNAME_1"] = "debjeet"
-        res_search = loop.run_until_complete(tool.execute(
+        res_search = _run(tool.execute(
             action="search_code",
             search_query="get_db_connection"
         ))
@@ -230,10 +227,9 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
     def test_parallel_llm_tool_calling(self):
         """Test: Verify parallel dynamic tool executions inside cognitive orchestrator pipeline."""
         orchestrator = CognitiveOrchestrator()
-        loop = asyncio.get_event_loop()
 
         # Simulate a Hinglish query that should execute multiple tools
-        res = loop.run_until_complete(orchestrator.process_request(
+        res = _run(orchestrator.process_request(
             user_prompt="Folder organize karo or files search karo, Sir.",
             session_id="test_parallel_sess",
             current_hour=12

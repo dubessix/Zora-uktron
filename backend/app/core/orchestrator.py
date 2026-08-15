@@ -57,6 +57,9 @@ class CognitiveOrchestrator:
         
         # Local event tracking array
         self.dispatched_events: List[Dict[str, Any]] = []
+        # Existing files must be read successfully before a coding write. Store a
+        # fingerprint so a changed-on-disk file must be inspected again.
+        self._coding_inspections: Dict[str, Dict[str, str]] = {}
 
     def set_coding_mode(self, enabled: bool) -> None:
         """Manually toggle coding mode.
@@ -338,6 +341,32 @@ class CognitiveOrchestrator:
         except Exception as e:
             print(f"[COGNITIVE_ORCHESTRATOR] Warning: Memory persist skipped: {e}")
 
+    @staticmethod
+    def _file_fingerprint(filepath: str) -> Optional[str]:
+        from pathlib import Path
+        import hashlib
+
+        path = Path(filepath).expanduser().resolve(strict=False)
+        if not path.is_file():
+            return None
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
+    def _mark_coding_inspection(self, session_id: str, filepath: str) -> None:
+        fingerprint = self._file_fingerprint(filepath)
+        if fingerprint:
+            from pathlib import Path
+            resolved = str(Path(filepath).expanduser().resolve(strict=False))
+            self._coding_inspections.setdefault(session_id, {})[resolved] = fingerprint
+
+    def _has_current_coding_inspection(self, session_id: str, filepath: str) -> bool:
+        from pathlib import Path
+        resolved = str(Path(filepath).expanduser().resolve(strict=False))
+        expected = self._coding_inspections.get(session_id, {}).get(resolved)
+        return bool(expected and expected == self._file_fingerprint(filepath))
+
     async def _coding_safe_write(
         self,
         args: Dict[str, Any],
@@ -460,7 +489,7 @@ class CognitiveOrchestrator:
     ) -> Dict[str, Any]:
         """
         Asynchronous coordinator running the complete pipeline.
-        Parses intent, checks confidence, runs parallel un-mocked LLM tool calling loops,
+        Parses intent, checks confidence, runs ordered verified tool calls,
         and dynamically triggers matching widgets.
         """
         start_time = time.perf_counter()
@@ -676,7 +705,7 @@ class CognitiveOrchestrator:
             "  {\"tool_id\": \"manage_task\", \"args\": {\"action\": \"create\", \"title\": \"Commit code\"}}\n"
             "]\n"
             "[TOOL_CALLS_END]\n"
-            "This allows you to execute multiple tools in parallel! Do not output tool calls unless relevant."
+            "Tool calls run strictly in the listed order. For coding, inspect before modifying and propose only one modifying step at a time. Do not output tool calls unless relevant."
         )
 
         # Step 10: ROUTE TO LLM CLIENT
@@ -766,9 +795,69 @@ class CognitiveOrchestrator:
                         self._dispatch_log("info", f"Tool call → {tid}")
 
                     if tasks_to_run:
-                        # Execute in parallel (Requirement 7: Multiple tools together)
-                        raw_results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
-                        print(f"[COGNITIVE_ORCHESTRATOR] Autonomously executed tool calls: {called_tool_ids}")
+                        # Execute in declared order. Coding operations stop after the
+                        # first failure or pending confirmation so dependent files are
+                        # never modified concurrently or after an unverified step.
+                        raw_results = []
+                        coding_halted = False
+                        for index, task in enumerate(tasks_to_run):
+                            if coding_halted:
+                                close = getattr(task, "close", None)
+                                if close:
+                                    close()
+                                raw_results.append({
+                                    "success": False,
+                                    "data": {},
+                                    "error": "Skipped: previous coding step did not complete successfully.",
+                                })
+                                continue
+                            tid, targs = task_meta[index]
+                            filepath = (targs or {}).get("filepath", "")
+                            if (
+                                coding_turn
+                                and tid == "file_write"
+                                and self._file_fingerprint(filepath) is not None
+                                and not self._has_current_coding_inspection(session_id, filepath)
+                            ):
+                                close = getattr(task, "close", None)
+                                if close:
+                                    close()
+                                result = {
+                                    "success": False,
+                                    "data": {},
+                                    "error": "Existing file must be read successfully before a coding write.",
+                                }
+                            else:
+                                try:
+                                    result = await task
+                                except BaseException as exc:
+                                    result = exc
+
+                            raw_results.append(result)
+                            if (
+                                coding_turn
+                                and tid == "file_read"
+                                and isinstance(result, dict)
+                                and result.get("success")
+                                and filepath
+                            ):
+                                self._mark_coding_inspection(session_id, filepath)
+                            if (
+                                coding_turn
+                                and tid == "file_write"
+                                and isinstance(result, dict)
+                                and result.get("success")
+                                and filepath
+                            ):
+                                self._mark_coding_inspection(session_id, filepath)
+
+                            if coding_turn and (
+                                isinstance(result, BaseException)
+                                or not isinstance(result, dict)
+                                or not result.get("success", False)
+                            ):
+                                coding_halted = True
+                        print(f"[COGNITIVE_ORCHESTRATOR] Sequentially executed tool calls: {called_tool_ids}")
 
                         # F1: Capture tool outputs so Ultron can answer based on REAL results.
                         for (tid, targs), r in zip(task_meta, raw_results):
@@ -794,16 +883,11 @@ class CognitiveOrchestrator:
                                         self._dispatch_log(level, msg)
                                 else:
                                     self._dispatch_log("error", f"Tool {tid} → Error: {(r.get('error') or 'failed')[:80]}")
-                                # Step C: after a successful coding-mode file write, run a
-                                # SAFE syntax check (timeout-bounded, non-destructive).
+                                # The unified safe-write path verifies the temporary
+                                # candidate before replacing the original.
                                 verified = None
-                                if (coding_turn and tid == "file_write" and r.get("success")):
-                                    fp = (targs or {}).get("filepath", "")
-                                    if fp:
-                                        try:
-                                            verified = await self._safe_verify_code(fp)
-                                        except Exception as e:
-                                            verified = {"file": fp, "verified": False, "detail": str(e)}
+                                if coding_turn and tid == "file_write":
+                                    verified = (r.get("data") or {}).get("verification")
                                 result_item = {
                                     "tool": tid,
                                     "args": targs,

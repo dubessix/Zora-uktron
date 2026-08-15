@@ -217,8 +217,8 @@ class ToolRegistry:
         has_confirmed: bool = False,
         confirmation_token: Optional[str] = None,
         session_id: Optional[str] = None,
-        timeout: float = 15.0,
-        max_retries: int = 1,
+        timeout: float = 30.0,
+        max_retries: int = 0,
         _confirmation_prevalidated: bool = False,
     ) -> Dict[str, Any]:
         """
@@ -383,7 +383,7 @@ class ToolRegistry:
         confirmation_token: str,
         session_id: Optional[str],
         *,
-        timeout: float = 15.0,
+        timeout: float = 30.0,
     ) -> Dict[str, Any]:
         """Claim and execute the exact stored action without another LLM call."""
         claimed = get_pending_action_registry().claim(confirmation_token, session_id)

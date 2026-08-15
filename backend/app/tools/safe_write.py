@@ -1,110 +1,172 @@
-"""
-Ultron Safe File Write (Phase 3)
+"""Atomic, verified and rollback-safe filesystem writes."""
 
-The SINGLE code path for writing files to disk, used by BOTH the `file_write`
-tool and the orchestrator's coding-mode writer. Guarantees, in one place:
+from __future__ import annotations
 
-  1. Path safety (is_path_safe) — no writing into system/secret paths.
-  2. Existing files are backed up to <name>.bak BEFORE being overwritten.
-  3. The write is atomic (write to a temp file in the same directory, then
-     os.replace) so a crash mid-write can never leave a truncated file.
-  4. A consistent, structured result the caller can audit.
-
-This removes the earlier divergence where the coding writer bypassed validation
-and overwrote files without any backup.
-"""
-
+import ast
 import os
-import uuid
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
+
+
+def _verify_candidate(path: Path, temp_path: Path, content: str) -> Dict[str, Any]:
+    """Verify syntax without executing user code."""
+    suffix = path.suffix.lower()
+    if suffix == ".py":
+        try:
+            ast.parse(content, filename=str(path))
+            return {"checked": True, "verified": True, "language": "python", "detail": "syntax OK"}
+        except SyntaxError as exc:
+            return {
+                "checked": True,
+                "verified": False,
+                "language": "python",
+                "detail": f"{exc.msg} at line {exc.lineno}",
+            }
+
+    if suffix in {".js", ".mjs", ".cjs"}:
+        try:
+            completed = subprocess.run(
+                ["node", "--check", str(temp_path)],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+        except FileNotFoundError:
+            return {"checked": False, "verified": False, "language": "javascript", "detail": "node unavailable"}
+        except subprocess.TimeoutExpired:
+            return {"checked": True, "verified": False, "language": "javascript", "detail": "syntax check timed out"}
+        detail = (completed.stderr or completed.stdout or "syntax OK").strip()
+        return {
+            "checked": True,
+            "verified": completed.returncode == 0,
+            "language": "javascript",
+            "detail": detail[:1000],
+        }
+
+    return {
+        "checked": False,
+        "verified": None,
+        "language": None,
+        "detail": "no non-executing syntax verifier for this file type",
+    }
 
 
 def safe_write_file(filepath: str, content: str) -> Dict[str, Any]:
-    """Atomically write `content` to `filepath`, backing up any existing file.
-
-    Returns:
-        success dict with message/diff/backup, or
-        error dict on failure.
-    """
+    """Verify a temporary candidate, back up the original, then replace atomically."""
     if not filepath or not str(filepath).strip():
         return {"success": False, "error": "filepath required", "data": {}}
 
-    from backend.app.security.path_guard import is_path_safe
+    from backend.app.security.path_guard import check_path
 
-    path = Path(filepath).resolve()
-
-    # 1. Path safety — reject writes into blocked/system/secret locations.
-    if not is_path_safe(str(path)):
+    path = Path(filepath).expanduser().resolve(strict=False)
+    decision = check_path(str(path))
+    if not decision["safe"]:
         return {
             "success": False,
-            "error": f"Blocked by path guard: {filepath}",
+            "error": f"Blocked by path guard ({decision['reason']}): {filepath}",
             "data": {},
         }
 
     exists = path.exists()
-    backup_path = None
-
-    # 2. Back up existing content before overwriting.
+    old_content = None
     if exists:
         try:
             old_content = path.read_text(encoding="utf-8")
-        except Exception as e:
+        except Exception as exc:
             return {
                 "success": False,
-                "error": f"Failed to read existing file for backup: {e}",
-                "data": {},
-            }
-        try:
-            backup_path = path.with_suffix(path.suffix + ".bak")
-            backup_path.write_text(old_content, encoding="utf-8")
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to create backup: {e}",
+                "error": f"Failed to read existing file for backup: {exc}",
                 "data": {},
             }
 
-    # 3. Atomic write: temp file in the same directory, then replace.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=f".tmp{path.suffix}",
+    )
+    temp_path = Path(temp_name)
+    backup_path = path.with_suffix(path.suffix + ".bak") if exists else None
+
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(content)
-            os.replace(tmp_path, str(path))
-        except Exception:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-            raise
-    except Exception as e:
-        return {"success": False, "error": f"Failed to write file: {e}", "data": {}}
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
 
-    # 4. Consistent result summary (diff-style) for audit/feedback.
+        verification = _verify_candidate(path, temp_path, content)
+        if verification["checked"] and not verification["verified"]:
+            return {
+                "success": False,
+                "error": f"Candidate verification failed: {verification['detail']}",
+                "data": {
+                    "file": str(path),
+                    "verification": verification,
+                    "original_preserved": True,
+                },
+            }
+
+        if exists and backup_path is not None:
+            backup_decision = check_path(str(backup_path))
+            if not backup_decision["safe"]:
+                return {
+                    "success": False,
+                    "error": f"Backup path blocked ({backup_decision['reason']}): {backup_path}",
+                    "data": {"original_preserved": True},
+                }
+            backup_path.write_text(old_content or "", encoding="utf-8")
+
+        os.replace(temp_path, path)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Failed to write file safely: {exc}",
+            "data": {"original_preserved": True},
+        }
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    old_lines = len((old_content or "").splitlines()) if exists else 0
     new_lines = len(content.splitlines())
-    result = {
+    action = "updated" if exists else "created"
+    return {
         "success": True,
         "data": {
-            "message": f"{'Created' if not exists else 'Overwrote'} file: {filepath}",
+            "message": (
+                f"Overwrote file: {filepath} (backup: {backup_path})"
+                if exists else f"Created file: {filepath}"
+            ),
             "file": filepath,
             "backup": str(backup_path) if backup_path else None,
+            "verification": verification,
             "diff": {
-                "action": "created" if not exists else "updated",
+                "action": action,
                 "file": filepath,
+                "old_lines": old_lines,
                 "new_lines": new_lines,
+                "net_lines_change": new_lines - old_lines,
                 "backup": str(backup_path) if backup_path else None,
             },
         },
         "error": None,
     }
-    if exists:
-        result["data"]["diff"]["old_lines"] = len(
-            str(backup_path.read_text(encoding="utf-8") if backup_path else "").splitlines()
-        )
-        result["data"]["message"] = f"Overwrote file: {filepath} (backup: {backup_path})"
-    return result
+
+
+def restore_write_backup(filepath: str, backup_path: str | None) -> Dict[str, Any]:
+    """Restore a verified write backup or remove a newly-created file."""
+    target = Path(filepath).expanduser().resolve(strict=False)
+    try:
+        if backup_path:
+            source = Path(backup_path).expanduser().resolve(strict=False)
+            if not source.exists():
+                return {"success": False, "error": f"Backup missing: {source}"}
+            shutil.copy2(source, target)
+            return {"success": True, "action": "restored_backup", "path": str(target)}
+        target.unlink(missing_ok=True)
+        return {"success": True, "action": "removed_new_file", "path": str(target)}
+    except OSError as exc:
+        return {"success": False, "error": f"Rollback failed: {exc}"}

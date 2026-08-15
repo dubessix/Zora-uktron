@@ -152,6 +152,7 @@ _TOOL_PATH_FIELDS = {
     "git_clone": ("directory",),
     "download_file": ("save_path",),
     "play_music": ("filepath",),
+    "terminal_run": ("cwd",),
 }
 
 
