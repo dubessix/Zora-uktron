@@ -238,9 +238,11 @@ class ToolRegistry:
             }
 
         # 1. Validate inputs against Pydantic schema model
+        permission_level = tool.permission_level
         try:
             validated_args = tool.args_model(**args)
             args_payload = validated_args.model_dump()
+            permission_level = tool.permission_for_arguments(args_payload)
         except ValidationError as val_err:
             print(f"[TOOL_REGISTRY] Validation failed for tool '{tool_id}': {val_err}")
             err_payload = {
@@ -256,7 +258,7 @@ class ToolRegistry:
                 duration_ms=0,
                 success=False,
                 session_id=session_id,
-                permission_level=tool.permission_level,
+                permission_level=permission_level,
                 error="ValidationError: Input schema mismatch"
             )
             return err_payload
@@ -279,7 +281,7 @@ class ToolRegistry:
         # 2. Exact one-time confirmation for every Level 2/3 action. A raw
         # has_confirmed=True boolean is never authorization by itself.
         requires_confirmation = self.gate.manager.requires_manual_confirmation(
-            tool.permission_level
+            permission_level
         )
         if requires_confirmation and not _confirmation_prevalidated:
             pending = get_pending_action_registry()
@@ -294,7 +296,7 @@ class ToolRegistry:
                     created = pending.create(tool_id, session_id, args_payload)
                     self._log_audit_transaction(
                         tool.name, args_payload, 0, False, session_id,
-                        tool.permission_level,
+                        permission_level,
                         f"CONFIRMATION_REJECTED:{validation['reason']}",
                     )
                     return {
@@ -305,21 +307,21 @@ class ToolRegistry:
                             f"Confirmation rejected ({validation['reason']}). "
                             f"Approve the newly-issued exact action for '{tool_id}'."
                         ),
-                        "required_permission_level": tool.permission_level,
+                        "required_permission_level": permission_level,
                         **created,
                     }
             else:
                 created = pending.create(tool_id, session_id, args_payload)
                 self._log_audit_transaction(
                     tool.name, args_payload, 0, False, session_id,
-                    tool.permission_level, "PENDING_CONFIRMATION",
+                    permission_level, "PENDING_CONFIRMATION",
                 )
                 return {
                     "success": False,
                     "status": "PENDING_CONFIRMATION",
                     "tool_id": tool_id,
                     "message": f"Tool '{tool_id}' requires exact one-time confirmation.",
-                    "required_permission_level": tool.permission_level,
+                    "required_permission_level": permission_level,
                     **created,
                 }
 
@@ -372,7 +374,7 @@ class ToolRegistry:
             duration_ms=duration_ms,
             success=result_model.success,
             session_id=session_id,
-            permission_level=tool.permission_level,
+            permission_level=permission_level,
             error=result_model.error
         )
 

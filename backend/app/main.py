@@ -337,6 +337,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 data = json.loads(raw_data)
                 prompt = (data.get("content", "") or "").strip()
                 session_id = data.get("session_id", "default_sess")
+                project_id = data.get("project_id")
                 has_confirmed = bool(data.get("has_confirmed", False))
                 confirmation_token = data.get("confirmation_token")
             except Exception:
@@ -359,6 +360,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 orchestrator=orchestrator,
                 content=prompt,
                 session_id=session_id,
+                project_id=project_id,
                 has_confirmed=has_confirmed,
                 confirmation_token=confirmation_token,
             )
@@ -395,6 +397,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, client_id: str = "defaul
                 "type": "done",
                 "message_id": result["id"],
                 "session_id": result["session_id"],
+                "project_id": result["project_id"],
                 "active_personality": result["personality"],
                 "response_ms": result["response_ms"],
                 "coding": result["coding"],

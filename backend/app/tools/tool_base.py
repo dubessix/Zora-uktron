@@ -40,6 +40,10 @@ class BaseTool(ABC):
         self.args_model = args_model
         self.usage_examples = usage_examples
 
+    def permission_for_arguments(self, arguments: Dict[str, Any]) -> int:
+        """Allow tools with mixed read/write actions to raise permission dynamically."""
+        return self.permission_level
+
     def get_metadata(self) -> Dict[str, Any]:
         """Extracts complete tool metadata, useful for dynamic LLM context matching."""
         return {

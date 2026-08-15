@@ -27,11 +27,16 @@ class EmotionalMemory:
             print(f"[EMOTIONAL_MEMORY] Warning: Failed to log emotional record: {e}")
             return False
 
-    async def recall_stress_triggers(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
-        """Searches past emotional states matching query."""
+    async def recall_stress_triggers(
+        self, query: str, limit: int = 3, project_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Search emotional states inside the active project scope."""
         try:
             query_emb = await self.store.generate_embedding(query)
-            return self.store.search_similarity("emotional", query_emb, limit=limit)
+            metadata_filter = {"project_id": project_id} if project_id else None
+            return self.store.search_similarity(
+                "emotional", query_emb, limit=limit, metadata_filter=metadata_filter
+            )
         except Exception as e:
             print(f"[EMOTIONAL_MEMORY] Warning: Failed to recall emotional states: {e}")
             return []

@@ -164,8 +164,13 @@ class VectorStore:
         np = _lazy_numpy()
         new_vec = np.array(embedding, dtype=np.float32)
         
-        # 1. Run Duplicate Verification check
-        existing_matches = self.search_similarity(mem_type, embedding, limit=1)
+        # 1. Run duplicate verification inside the same project scope.
+        duplicate_filter = None
+        if metadata and metadata.get("project_id"):
+            duplicate_filter = {"project_id": metadata["project_id"]}
+        existing_matches = self.search_similarity(
+            mem_type, embedding, limit=1, metadata_filter=duplicate_filter
+        )
         if existing_matches:
             top_similarity = existing_matches[0]["similarity"]
             if top_similarity > self.duplicate_threshold:
@@ -174,7 +179,10 @@ class VectorStore:
 
         # 2. Serialize vector array to raw binary BLOB
         vec_blob = new_vec.tobytes()
-        metadata_str = json.dumps(metadata or {})
+        enriched_metadata = dict(metadata or {})
+        enriched_metadata.setdefault("embedding_model", get_model("embedding"))
+        enriched_metadata.setdefault("embedding_dimensions", len(embedding))
+        metadata_str = json.dumps(enriched_metadata)
 
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -202,7 +210,8 @@ class VectorStore:
         self,
         mem_type: str,
         query_embedding: List[float],
-        limit: int = 5
+        limit: int = 5,
+        metadata_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Loads all matching type vector binaries from SQLite, deserializes them to NumPy arrays,
@@ -225,6 +234,19 @@ class VectorStore:
             rows = cursor.fetchall()
 
             for row in rows:
+                try:
+                    row_metadata = json.loads(row["metadata"] or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    row_metadata = {}
+                if metadata_filter:
+                    mismatch = False
+                    for key, value in metadata_filter.items():
+                        actual = row_metadata.get(key, "personal" if key == "project_id" else None)
+                        if actual != value:
+                            mismatch = True
+                            break
+                    if mismatch:
+                        continue
                 # Load binary BLOB back to NumPy float32 array
                 db_vec = np.frombuffer(row["embedding"], dtype=np.float32)
                 db_norm = np.linalg.norm(db_vec)
@@ -248,13 +270,60 @@ class VectorStore:
                     "id": row["id"],
                     "content": row["content"],
                     "similarity": similarity,
-                    "metadata": json.loads(row["metadata"]),
+                    "metadata": row_metadata,
                     "created_at": row["created_at"]
                 })
 
         # Sort matches chronologically by similarity descending
         matches.sort(key=lambda x: x["similarity"], reverse=True)
         return matches[:limit]
+
+    async def update_vector_memory(
+        self,
+        msg_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Re-embed and replace one memory while preserving its id/type."""
+        existing = self.get_memory(msg_id)
+        if not existing:
+            return False
+        embedding = await self.generate_embedding(content)
+        updated_metadata = dict(existing.get("metadata") or {})
+        updated_metadata.update(metadata or {})
+        updated_metadata["embedding_model"] = get_model("embedding")
+        updated_metadata["embedding_dimensions"] = len(embedding)
+        np = _lazy_numpy()
+        blob = np.array(embedding, dtype=np.float32).tobytes()
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE vector_memories SET content = ?, embedding = ?, metadata = ? WHERE id = ?;",
+                (content, sqlite3.Binary(blob), json.dumps(updated_metadata), msg_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    async def reembed_project(self, project_id: str, limit: int = 500) -> Dict[str, int]:
+        """Migrate legacy/current project vectors to the configured model/dimensions."""
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, content, metadata FROM vector_memories ORDER BY rowid ASC;"
+            ).fetchall()
+        migrated = 0
+        skipped = 0
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+            if metadata.get("project_id", "personal") != project_id:
+                continue
+            if migrated >= limit:
+                skipped += 1
+                continue
+            if await self.update_vector_memory(row["id"], row["content"], metadata):
+                migrated += 1
+        return {"migrated": migrated, "skipped": skipped}
 
     def delete_vector_memory(self, msg_id: str) -> bool:
         """Delete a specific vector memory row by id (used by memory forget)."""
@@ -268,21 +337,52 @@ class VectorStore:
             print(f"[VECTOR_STORE] Delete failed: {e}")
             return False
 
-    def list_recent_memories(self, limit: int = 20, mem_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Return recent memory rows (id/type/content/created_at) for display/export."""
+    def get_memory(self, msg_id: str) -> Optional[Dict[str, Any]]:
         with get_db_connection() as conn:
-            cur = conn.cursor()
+            row = conn.execute(
+                "SELECT id, type, content, metadata, created_at FROM vector_memories WHERE id = ?;",
+                (msg_id,),
+            ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        try:
+            item["metadata"] = json.loads(item["metadata"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            item["metadata"] = {}
+        return item
+
+    def list_recent_memories(
+        self,
+        limit: int = 20,
+        mem_type: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return recent rows filtered to a project when requested."""
+        with get_db_connection() as conn:
             if mem_type:
-                cur.execute(
-                    "SELECT id, type, content, created_at FROM vector_memories WHERE type = ? ORDER BY rowid DESC LIMIT ?;",
-                    (mem_type, limit),
-                )
+                rows = conn.execute(
+                    "SELECT id, type, content, metadata, created_at FROM vector_memories WHERE type = ? ORDER BY rowid DESC;",
+                    (mem_type,),
+                ).fetchall()
             else:
-                cur.execute(
-                    "SELECT id, type, content, created_at FROM vector_memories ORDER BY rowid DESC LIMIT ?;",
-                    (limit,),
-                )
-            return [dict(r) for r in cur.fetchall()]
+                rows = conn.execute(
+                    "SELECT id, type, content, metadata, created_at FROM vector_memories ORDER BY rowid DESC;"
+                ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            try:
+                metadata = json.loads(item.pop("metadata") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+            if project_id and metadata.get("project_id", "personal") != project_id:
+                continue
+            item["metadata"] = metadata
+            results.append(item)
+            if len(results) >= limit:
+                break
+        return results
 
     def prune(self, max_per_type: int = 2000) -> int:
         """

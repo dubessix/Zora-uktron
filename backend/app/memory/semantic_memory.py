@@ -27,11 +27,16 @@ class SemanticMemory:
             print(f"[SEMANTIC_MEMORY] Warning: Failed to learn concept: {e}")
             return False
 
-    async def recall_related_concepts(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
-        """Searches tech concepts matching query."""
+    async def recall_related_concepts(
+        self, query: str, limit: int = 3, project_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Search concepts inside the active project scope."""
         try:
             query_emb = await self.store.generate_embedding(query)
-            return self.store.search_similarity("semantic", query_emb, limit=limit)
+            metadata_filter = {"project_id": project_id} if project_id else None
+            return self.store.search_similarity(
+                "semantic", query_emb, limit=limit, metadata_filter=metadata_filter
+            )
         except Exception as e:
             print(f"[SEMANTIC_MEMORY] Warning: Failed to recall concepts: {e}")
             return []

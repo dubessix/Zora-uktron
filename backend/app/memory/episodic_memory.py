@@ -27,11 +27,16 @@ class EpisodicMemory:
             print(f"[EPISODIC_MEMORY] Warning: Failed to record event: {e}")
             return False
 
-    async def recall_related_events(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
-        """Searches past events semantically matching query."""
+    async def recall_related_events(
+        self, query: str, limit: int = 3, project_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Search past events inside the active project scope."""
         try:
             query_emb = await self.store.generate_embedding(query)
-            return self.store.search_similarity("episodic", query_emb, limit=limit)
+            metadata_filter = {"project_id": project_id} if project_id else None
+            return self.store.search_similarity(
+                "episodic", query_emb, limit=limit, metadata_filter=metadata_filter
+            )
         except Exception as e:
             print(f"[EPISODIC_MEMORY] Warning: Failed to recall events: {e}")
             return []

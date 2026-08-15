@@ -170,6 +170,16 @@ def update_session_personality(conn: sqlite3.Connection, session_id: str, person
     )
     conn.commit()
 
+
+def update_session_project(conn: sqlite3.Connection, session_id: str, project_id: str) -> None:
+    """Persist the active project used to scope long-term memories."""
+    conn.execute(
+        "UPDATE sessions SET active_project = ? WHERE id = ?;",
+        (project_id, session_id),
+    )
+    conn.commit()
+
+
 def save_conversation(
     conn: sqlite3.Connection,
     msg_id: str,
@@ -206,10 +216,13 @@ def get_conversation_history(conn: sqlite3.Connection, session_id: str, limit: i
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT * FROM conversations 
-        WHERE session_id = ? 
-        ORDER BY timestamp ASC 
-        LIMIT ?;
+        SELECT * FROM (
+            SELECT rowid AS _rowid, * FROM conversations
+            WHERE session_id = ?
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT ?
+        )
+        ORDER BY timestamp ASC, _rowid ASC;
         """,
         (session_id, limit)
     )
@@ -217,6 +230,7 @@ def get_conversation_history(conn: sqlite3.Connection, session_id: str, limit: i
     history = []
     for row in rows:
         item = dict(row)
+        item.pop("_rowid", None)
         # Safely parse JSON strings back to python lists
         try:
             item["tools_used"] = json.loads(item["tools_used"])

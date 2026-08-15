@@ -20,7 +20,11 @@ import datetime
 from typing import Dict, Any, Optional
 
 from backend.app.database.db import get_db_connection
-from backend.app.database.models import save_conversation, update_session_personality
+from backend.app.database.models import (
+    save_conversation,
+    update_session_personality,
+    update_session_project,
+)
 from backend.app.session.session_manager import SessionManager
 from backend.app.utils.text_cleaner import clean_text
 
@@ -29,6 +33,7 @@ async def process_chat_message(
     orchestrator,
     content: str,
     session_id: Optional[str] = None,
+    project_id: Optional[str] = None,
     has_confirmed: bool = False,
     confirmation_token: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -44,11 +49,17 @@ async def process_chat_message(
     session_data = SessionManager.get_or_create_session(session_id)
     resolved_session_id = session_data["id"]
     session_personality = session_data.get("personality") or "ultron"
+    effective_project_id = (
+        (project_id or "").strip()
+        or (session_data.get("active_project") or "").strip()
+        or "personal"
+    )
 
     # 2. Process query via the cognitive orchestrator.
     result = await orchestrator.process_request(
         user_prompt=content,
         session_id=resolved_session_id,
+        project_id=effective_project_id,
         consecutive_errors=0,
         current_hour=datetime.datetime.now().hour,
         delete_ratio=0.0,
@@ -67,6 +78,7 @@ async def process_chat_message(
                 resolved_session_id,
                 result.get("persisted_personality", result.get("active_personality", "ultron")),
             )
+            update_session_project(conn, resolved_session_id, effective_project_id)
         except Exception:
             pass
         save_conversation(
@@ -88,6 +100,7 @@ async def process_chat_message(
     return {
         "id": result["id"],
         "session_id": resolved_session_id,
+        "project_id": effective_project_id,
         "content": clean_text(raw_content) if raw_content else raw_content,
         "personality": result["active_personality"],
         "response_ms": latency_ms,

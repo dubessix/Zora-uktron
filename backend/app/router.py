@@ -30,6 +30,7 @@ def get_orchestrator() -> CognitiveOrchestrator:
 
 class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Active unique conversation UUID.")
+    project_id: Optional[str] = Field(None, description="Active project used to scope long-term memory.")
     content: str = Field(..., min_length=1, description="Raw user prompt query content.")
     has_confirmed: bool = Field(False, description="User confirmation for a pending dangerous tool (delete/terminal).")
     confirmation_token: Optional[str] = Field(None, description="One-time token binding a confirmation to the exact file+content proposed.")
@@ -37,6 +38,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     id: str = Field(..., description="Unique generated message ID.")
     session_id: str = Field(..., description="Active resolved session UUID.")
+    project_id: str = Field(..., description="Project scope used for this response and memory.")
     content: str = Field(..., description="Processed response content.")
     personality: str = Field(..., description="Active answering persona profile.")
     response_ms: int = Field(..., description="Calculated processing duration.")
@@ -97,12 +99,14 @@ async def post_chat_message(request: ChatRequest) -> ChatResponse:
             orchestrator=orchestrator,
             content=request.content,
             session_id=request.session_id,
+            project_id=request.project_id,
             has_confirmed=request.has_confirmed,
             confirmation_token=request.confirmation_token,
         )
         return ChatResponse(
             id=result["id"],
             session_id=result["session_id"],
+            project_id=result["project_id"],
             content=result["content"],
             personality=result["personality"],
             response_ms=result["response_ms"],
@@ -186,19 +190,17 @@ async def speak_text(request: SpeakRequest):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"TTS failed: {e}")
 
 @api_router.get("/memory/recent", status_code=status.HTTP_200_OK)
-async def get_recent_memories(limit: int = Query(5, ge=1, le=20)):
-    """Real recent memory rows from the vector store (Set B: no fake memory widget)."""
+async def get_recent_memories(
+    limit: int = Query(5, ge=1, le=20),
+    project_id: str = Query("personal", min_length=1),
+):
+    """Return only recent memories belonging to the requested project."""
     try:
-        from backend.app.database.db import get_db_connection
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            total = cursor.execute("SELECT COUNT(*) FROM vector_memories").fetchone()[0]
-            cursor.execute(
-                "SELECT type, content, created_at FROM vector_memories ORDER BY rowid DESC LIMIT ?",
-                (limit,)
-            )
-            rows = [{"type": r["type"], "content": (r["content"] or "")[:120], "created_at": r["created_at"]} for r in cursor.fetchall()]
-        return {"total": total, "memories": rows}
+        from backend.app.memory.vector_store import VectorStore
+        rows = VectorStore().list_recent_memories(limit=limit, project_id=project_id)
+        for row in rows:
+            row["content"] = (row.get("content") or "")[:120]
+        return {"total": len(rows), "project_id": project_id, "memories": rows}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Memory query failed: {e}")
 

@@ -60,6 +60,9 @@ class CognitiveOrchestrator:
         # Existing files must be read successfully before a coding write. Store a
         # fingerprint so a changed-on-disk file must be inspected again.
         self._coding_inspections: Dict[str, Dict[str, str]] = {}
+        # The personality/event engine is process-shared. Serialize turns so two
+        # concurrent transports cannot clear or overwrite each other's state.
+        self._request_lock = asyncio.Lock()
 
     def set_coding_mode(self, enabled: bool) -> None:
         """Manually toggle coding mode.
@@ -245,8 +248,8 @@ class CognitiveOrchestrator:
                         lines.append(f"{indent}{e.name}")
         return "\n".join(lines[:120])
 
-    async def _get_project_context_block(self) -> str:
-        """Combine stored project state + live scan into a prompt block for coding.
+    async def _get_project_context_block(self, project_id: str = "personal") -> str:
+        """Combine project-scoped stored state + live scan into a prompt block for coding.
 
         The directory scan runs in a worker thread (asyncio.to_thread) so a large
         project can never block the event loop and freeze the assistant.
@@ -255,7 +258,9 @@ class CognitiveOrchestrator:
         # Stored project facts (name, stack, goals)
         stored = []
         for key in ("project_name", "tech_stack", "project_goal", "project_structure"):
-            val = self.memory.project.get_project_state(key)
+            val = self.memory.project.get_project_state(f"{project_id}:{key}")
+            if val is None and project_id == "personal":
+                val = self.memory.project.get_project_state(key)  # legacy fallback
             if val:
                 stored.append(f"{key}: {val}")
         if stored:
@@ -274,7 +279,9 @@ class CognitiveOrchestrator:
             return ""
         return "\n\n[PROJECT_CONTEXT]\n" + "\n\n".join(parts)
 
-    async def _recall_long_term_memory(self, user_prompt: str, force: bool = False) -> str:
+    async def _recall_long_term_memory(
+        self, user_prompt: str, force: bool = False, project_id: str = "personal"
+    ) -> str:
         """
         Human-like long-term recall: queries episodic + semantic memory for the
         most relevant past events/concepts, returning a context block for the
@@ -291,8 +298,12 @@ class CognitiveOrchestrator:
 
             # Query both memory layers in parallel (low latency, async/network-bound).
             past_events, past_concepts = await asyncio.gather(
-                self.memory.episodic.recall_related_events(user_prompt, limit=3),
-                self.memory.semantic.recall_related_concepts(user_prompt, limit=3),
+                self.memory.episodic.recall_related_events(
+                    user_prompt, limit=3, project_id=project_id
+                ),
+                self.memory.semantic.recall_related_concepts(
+                    user_prompt, limit=3, project_id=project_id
+                ),
             )
 
             blocks = []
@@ -321,7 +332,13 @@ class CognitiveOrchestrator:
             print(f"[COGNITIVE_ORCHESTRATOR] Warning: Long-term recall skipped: {e}")
             return ""
 
-    async def _persist_turn_to_memory(self, user_prompt: str, ai_response: str) -> None:
+    async def _persist_turn_to_memory(
+        self,
+        user_prompt: str,
+        ai_response: str,
+        project_id: str = "personal",
+        session_id: Optional[str] = None,
+    ) -> None:
         """
         Persists a meaningful conversational turn into long-term episodic memory
         so Ultron "remembers" like Jarvis. Skips low-density greetings to avoid
@@ -336,7 +353,13 @@ class CognitiveOrchestrator:
             entry = f"{user_prompt.strip()[:500]} -> {ai_response.strip()[:500]}"
             await self.memory.episodic.record_event(
                 content=entry,
-                metadata={"kind": "conversation_turn"}
+                metadata={
+                    "kind": "conversation_turn",
+                    "project_id": project_id,
+                    "session_id": session_id,
+                    "category": "episodic",
+                    "importance": "normal",
+                }
             )
         except Exception as e:
             print(f"[COGNITIVE_ORCHESTRATOR] Warning: Memory persist skipped: {e}")
@@ -480,6 +503,32 @@ class CognitiveOrchestrator:
         self,
         user_prompt: str,
         session_id: str,
+        project_id: str = "personal",
+        consecutive_errors: int = 0,
+        current_hour: int = 12,
+        delete_ratio: float = 0.0,
+        initial_personality: Optional[str] = None,
+        user_confirmed: bool = False,
+        confirmation_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        async with self._request_lock:
+            return await self._process_request_unlocked(
+                user_prompt=user_prompt,
+                session_id=session_id,
+                project_id=project_id,
+                consecutive_errors=consecutive_errors,
+                current_hour=current_hour,
+                delete_ratio=delete_ratio,
+                initial_personality=initial_personality,
+                user_confirmed=user_confirmed,
+                confirmation_token=confirmation_token,
+            )
+
+    async def _process_request_unlocked(
+        self,
+        user_prompt: str,
+        session_id: str,
+        project_id: str = "personal",
         consecutive_errors: int = 0,
         current_hour: int = 12,
         delete_ratio: float = 0.0,
@@ -650,8 +699,6 @@ class CognitiveOrchestrator:
         formatted_history = ""
         for turn in merged[-6:]:
             formatted_history += f"User: {turn.get('user','')}\nAI: {turn.get('ai','')}\n"
-        for turn in short_term_context[-5:]:
-            formatted_history += f"User: {turn['user']}\nAI: {turn['ai']}\n"
 
         active_profile = self.personalities.get_personality(current_personality)
         system_prompt = active_profile.get_system_prompt(formatted_history)
@@ -659,14 +706,16 @@ class CognitiveOrchestrator:
         # Jarvis-style long-term memory injection (episodic + semantic recall).
         # Force a light recall on coding turns so Ultron remembers the project
         # across days; otherwise recall only on explicit memory/past questions.
-        memory_context = await self._recall_long_term_memory(user_prompt, force=coding_turn)
+        memory_context = await self._recall_long_term_memory(
+            user_prompt, force=coding_turn, project_id=project_id
+        )
         if memory_context:
             system_prompt += memory_context
 
         # Codex-style: inject project context ONLY on coding turns, so Ultron knows
         # the project it's editing. Skipped on normal chat to save tokens/latency.
         if coding_turn:
-            project_ctx = await self._get_project_context_block()
+            project_ctx = await self._get_project_context_block(project_id)
             if project_ctx:
                 system_prompt += project_ctx
 
@@ -979,7 +1028,14 @@ class CognitiveOrchestrator:
         self.memory.save_chat_turn(session_id, user_prompt, ai_response)
 
         # Jarvis-style long-term persistence (non-blocking background task)
-        asyncio.create_task(self._persist_turn_to_memory(user_prompt, ai_response))
+        asyncio.create_task(
+            self._persist_turn_to_memory(
+                user_prompt,
+                ai_response,
+                project_id=project_id,
+                session_id=session_id,
+            )
+        )
 
         # Step 13: ZORA OVERLAY LIFECYCLE DECREMENT
         if current_personality == "zora":
