@@ -3,18 +3,19 @@ import { apiBase } from '../../api';
 
 /**
  * TodoWidget Content Component
- * Renders daily-life developer task tracking logs directly from SQLite WAL DB,
- * supporting project (e.g. TrustQuiz) and module separation.
+ * Renders developer tasks from SQLite with user-defined project/module scopes.
  */
 export default function TodoWidget() {
   const [todos, setTodos] = useState([]);
   const [newTodoText, setNewTodoText] = useState("");
-  const [project, setProject] = useState("TrustQuiz");
-  const [module, setModule] = useState("Authentication");
+  const [project, setProject] = useState("General");
+  const [module, setModule] = useState("Root");
   const [priority, setPriority] = useState("medium");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const fetchTodos = async () => {
+    setError("");
     try {
       const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
@@ -25,11 +26,11 @@ export default function TodoWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setTodos(data.data.tasks || []);
-      }
+      if (!data.success) throw new Error(data.error || 'Task list unavailable.');
+      setTodos(data.data.tasks || []);
     } catch (err) {
-      console.error('Failed to fetch tasks:', err);
+      setTodos([]);
+      setError(err.message || 'Task list unavailable.');
     }
   };
 
@@ -119,32 +120,18 @@ export default function TodoWidget() {
   return (
     <div className="space-y-3 font-mono text-[10px] text-white/90 p-1 overflow-y-auto max-h-[220px] custom-scrollbar">
       
-      {/* Scope Settings */}
+      {/* User-defined scope; no sample projects/modules are preloaded. */}
       <div className="grid grid-cols-2 gap-1 bg-white/5 p-1 rounded-sm text-[8px] uppercase">
-        <div>
-          <label className="text-white/40 block text-[6px]">PROJECT SCOPE</label>
-          <select 
-            value={project} 
-            onChange={e => setProject(e.target.value)}
-            className="bg-transparent border-0 text-[#7DD3FC] focus:outline-none cursor-pointer text-[8px]"
-          >
-            <option value="TrustQuiz" className="bg-[#1E1E24]">TrustQuiz</option>
-            <option value="General" className="bg-[#1E1E24]">General Docs</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-white/40 block text-[6px]">MODULE</label>
-          <select 
-            value={module} 
-            onChange={e => setModule(e.target.value)}
-            className="bg-transparent border-0 text-[#7DD3FC] focus:outline-none cursor-pointer text-[8px]"
-          >
-            <option value="Authentication" className="bg-[#1E1E24]">Auth module</option>
-            <option value="Dashboard" className="bg-[#1E1E24]">Dashboard UI</option>
-            <option value="Quiz Engine" className="bg-[#1E1E24]">Quiz Engine</option>
-            <option value="Anti-Cheat" className="bg-[#1E1E24]">Anti-Cheat</option>
-          </select>
-        </div>
+        <label className="text-white/40 text-[6px]">
+          Project scope
+          <input value={project} onChange={e => setProject(e.target.value)}
+            className="mt-1 w-full bg-transparent border border-white/10 text-[#7DD3FC] px-1 py-0.5 focus:outline-none text-[8px]" />
+        </label>
+        <label className="text-white/40 text-[6px]">
+          Module
+          <input value={module} onChange={e => setModule(e.target.value)}
+            className="mt-1 w-full bg-transparent border border-white/10 text-[#7DD3FC] px-1 py-0.5 focus:outline-none text-[8px]" />
+        </label>
       </div>
 
       {/* Add Todo input bar */}
@@ -174,9 +161,11 @@ export default function TodoWidget() {
         </button>
       </form>
 
+      {error && <p className="text-[8px] text-rose-300">Unavailable: {error}</p>}
+
       {/* Structured prioritized list */}
       <div className="space-y-1.5 flex-1 max-h-[120px] overflow-y-auto custom-scrollbar">
-        {todos.length === 0 ? (
+        {!error && todos.length === 0 ? (
           <div className="text-center py-4 text-white/25 text-[8px] border border-dashed border-white/5 uppercase">
             No active sprint backlog tasks
           </div>

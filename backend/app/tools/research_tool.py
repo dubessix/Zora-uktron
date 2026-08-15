@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from backend.app.tools.tool_base import BaseTool
 
 class ResearchArgs(BaseModel):
-    query: str = Field(..., description="Target search query topic for deep multi-source research.")
+    query: str = Field(..., min_length=2, max_length=500, description="Target search query topic for deep multi-source research.")
 
 class TavilyResearchTool(BaseTool):
     def __init__(self) -> None:
@@ -85,39 +85,42 @@ class TavilyResearchTool(BaseTool):
             try:
                 response = await client.post(url, json=payload, timeout=20.0)
                 if response.status_code == 200:
-                    res_data = response.json()
-                    answer = res_data.get("answer") or "Could not compile direct summary answer. Review source links below."
-                    results = res_data.get("results", [])
-                    
+                    res_data = response.json() or {}
+                    answer = str(res_data.get("answer") or "").strip()
                     sources = []
-                    opened_in_browser = None
-                    for r in results[:3]:  # Map top 3 sources
+                    for item in res_data.get("results", [])[:3]:
+                        result_url = str(item.get("url") or "").strip()
+                        if not result_url.startswith(("http://", "https://")):
+                            continue
                         sources.append({
-                            "name": r.get("title", "Web Source"),
-                            "url": r.get("url", "https://tavily.com")
+                            "name": str(item.get("title") or result_url).strip(),
+                            "url": result_url,
+                            "snippet": str(item.get("content") or "").strip()[:500],
                         })
-                    # Open the top result page so the user sees the actual answer,
-                    # not a search page.
+                    if not sources:
+                        return {
+                            "success": False,
+                            "data": {"status": "unavailable", "topic": query_str, "sources": []},
+                            "error": "Tavily returned no verifiable source URLs.",
+                        }
+                    summary = answer or sources[0]["snippet"] or sources[0]["name"]
                     browser_opened = False
-                    if results:
-                        top_result_url = results[0].get("url")
-                        try:
-                            import webbrowser
-                            browser_opened = bool(webbrowser.open(top_result_url))
-                        except Exception:
-                            browser_opened = False
-                        opened_in_browser = top_result_url if browser_opened else None
-                        
+                    top_result_url = sources[0]["url"]
+                    try:
+                        import webbrowser
+                        browser_opened = bool(webbrowser.open(top_result_url))
+                    except Exception:
+                        browser_opened = False
                     return {
                         "success": True,
                         "data": {
                             "topic": query_str,
-                            "summary": answer,
+                            "summary": summary,
                             "sources": sources,
-                            "opened_in_browser": opened_in_browser,
-                            "browser_opened": browser_opened
+                            "opened_in_browser": top_result_url if browser_opened else None,
+                            "browser_opened": browser_opened,
                         },
-                        "error": None
+                        "error": None,
                     }
                 else:
                     return {"success": False, "error": f"Tavily API returned status: {response.status_code}", "data": {}}

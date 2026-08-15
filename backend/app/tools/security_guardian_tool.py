@@ -2,8 +2,8 @@
 Ultron Security Guardian Audit Tool
 Implements a production-grade, un-mocked local security auditing scanner (Level 2 Security).
 1. Scans project workspace files for raw exposed API credentials/secrets (Regex matching).
-2. Audits system running processes using psutil to detect suspicious ports or memory spikes.
-3. Scans dependency manifests for deprecated or vulnerable packages.
+2. Audits system running processes using psutil for high-memory observations.
+3. Applies a small, explicit set of dependency-manifest rules (not a CVE database).
 """
 
 import os
@@ -17,8 +17,8 @@ from backend.app.tools.tool_base import BaseTool
 
 class SecurityScanArgs(BaseModel):
     scan_workspace_secrets: bool = Field(True, description="Whether to recursively scan code files for committed secrets.")
-    scan_active_processes: bool = Field(True, description="Whether to audit system memory hogs or connection ports.")
-    scan_dependency_manifests: bool = Field(True, description="Whether to search for vulnerable packages in requirements.txt.")
+    scan_active_processes: bool = Field(True, description="Whether to report unusually high process memory use.")
+    scan_dependency_manifests: bool = Field(True, description="Whether to apply the built-in limited manifest rules.")
 
 class SecurityGuardianTool(BaseTool):
     def __init__(self) -> None:
@@ -105,8 +105,8 @@ class SecurityGuardianTool(BaseTool):
                         })
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
-        except Exception:
-            pass
+        except Exception as exc:
+            raise RuntimeError(f"Process enumeration failed: {exc}") from exc
 
         return findings
 
@@ -131,9 +131,9 @@ class SecurityGuardianTool(BaseTool):
                                 "detail": "PyYAML version 5.x has a high-severity Arbitrary Code Execution vulnerability (CVE-2020-14343).",
                                 "remediation": "Upgrade requirements.txt to PyYAML==6.0.1 immediately, Sir."
                             })
-            except Exception:
-                pass
-                
+            except OSError as exc:
+                raise RuntimeError(f"Dependency manifest read failed: {exc}") from exc
+
         return findings
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
@@ -142,16 +142,24 @@ class SecurityGuardianTool(BaseTool):
         scan_deps = kwargs.get("scan_dependency_manifests", True)
 
         all_findings = []
+        check_status = {}
 
-        # Phase 3/Point-22: the workspace/dependency scans walk many files and read
-        # manifests — run each in a worker thread so they never block the event loop
-        # and freeze the assistant. (Each _scan_* is a plain sync callable.)
-        if scan_secrets:
-            all_findings.extend(await asyncio.to_thread(self._scan_secrets))
-        if scan_proc:
-            all_findings.extend(await asyncio.to_thread(self._scan_processes))
-        if scan_deps:
-            all_findings.extend(await asyncio.to_thread(self._scan_dependencies))
+        # Run bounded local checks off the event loop and preserve failed/incomplete
+        # status instead of turning an exception into a false zero-finding verdict.
+        for name, enabled, scan in (
+            ("workspace_secret_patterns", scan_secrets, self._scan_secrets),
+            ("high_memory_processes", scan_proc, self._scan_processes),
+            ("limited_manifest_rules", scan_deps, self._scan_dependencies),
+        ):
+            if not enabled:
+                check_status[name] = {"status": "not_requested", "error": None}
+                continue
+            try:
+                findings = await asyncio.to_thread(scan)
+                all_findings.extend(findings)
+                check_status[name] = {"status": "completed", "error": None}
+            except Exception as exc:
+                check_status[name] = {"status": "failed", "error": str(exc)[:240]}
 
         stats = {
             "total_findings": len(all_findings),
@@ -160,18 +168,35 @@ class SecurityGuardianTool(BaseTool):
             "medium_count": sum(1 for f in all_findings if f["severity"] == "MEDIUM")
         }
 
-        message = "Security compliance scan completed successfully."
+        enabled_checks = [name for name, state in check_status.items() if state["status"] != "not_requested"]
+        failed_checks = [name for name, state in check_status.items() if state["status"] == "failed"]
         if stats["total_findings"] > 0:
-            message += f" Found {stats['total_findings']} potential issues. Action recommended, Sir."
+            message = (
+                f"Completed local checks found {stats['total_findings']} potential issue(s). "
+                "Review the evidence and run dedicated dependency/security audits."
+            )
         else:
-            message += " Codebase is completely clean. Safe to proceed, Sir."
+            message = (
+                "No findings were detected by the completed limited local checks. "
+                "This is not proof that the codebase or dependencies are completely safe."
+            )
+        if failed_checks:
+            message += f" {len(failed_checks)} requested check(s) failed or were incomplete."
 
         return {
-            "success": True,
+            "success": bool(enabled_checks) and len(failed_checks) < len(enabled_checks),
             "data": {
                 "message": message,
                 "statistics": stats,
-                "findings": all_findings
+                "findings": all_findings,
+                "checks_completed": [name for name in enabled_checks if check_status[name]["status"] == "completed"],
+                "check_status": check_status,
+                "verified_clean": False,
+                "limitations": [
+                    "Secret detection uses bounded regular-expression patterns.",
+                    "Process checks cover high memory usage, not malware classification.",
+                    "Manifest rules are not a replacement for pip-audit/npm audit.",
+                ],
             },
-            "error": None
+            "error": None,
         }

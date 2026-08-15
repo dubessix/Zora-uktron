@@ -12,6 +12,7 @@ export default function RightPanel({
   handleSendMessage, 
   isProcessing, 
   activePersonality,
+  backendStatus,
   logs = []
 }) {
   const [tab, setTab] = useState("chat");
@@ -49,8 +50,8 @@ export default function RightPanel({
             Log
           </button>
         </div>
-        <span className="text-[8px] border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 rounded-full text-emerald-400 font-mono tracking-wider">
-          LIVE
+        <span className={`text-[8px] border px-2 py-0.5 rounded-full font-mono tracking-wider ${backendStatus === 'CONNECTED' ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400' : 'border-amber-500/20 bg-amber-500/5 text-amber-300'}`}>
+          {backendStatus || 'UNKNOWN'}
         </span>
       </div>
 
@@ -63,7 +64,9 @@ export default function RightPanel({
                 ✓
               </div>
               <p className="text-[10px] text-[#8B8B96] leading-relaxed uppercase tracking-wider font-mono">
-                System online. Tap the mic and say a wake word, or type below to begin.
+                {backendStatus === 'CONNECTED'
+                  ? 'Backend connected. Tap the mic or type below to begin.'
+                  : 'Backend is not connected. Start the local service before sending a message.'}
               </p>
             </div>
           ) : (
@@ -82,7 +85,7 @@ export default function RightPanel({
                   <p className="text-[10px] leading-relaxed font-mono select-text whitespace-pre-wrap">{msg.text}</p>
                   {msg.sender === "ai" && msg.response_ms !== undefined && (
                     <span className="block text-[6px] text-right opacity-30 mt-1.5 tracking-wider uppercase font-mono">
-                      {msg.response_ms}ms // fast
+                      {msg.response_ms}ms
                     </span>
                   )}
                 </div>

@@ -3,8 +3,8 @@ Phase 1 regression — LLM failover correctness.
 
 A provider that has NO real key configured must be SKIPPED in the failover
 cascade, never return its own fake mock (which would shadow a later provider
-that actually has a working key). The local mock is only used as a last-resort
-offline fallback when no real provider key exists anywhere.
+that actually has a working key). When no provider is configured, the router
+returns an explicit unavailable state rather than fabricated answer content.
 """
 
 import asyncio
@@ -32,11 +32,11 @@ class TestMockRoutingSkip(unittest.TestCase):
         cache = SmartCache(max_items=5)
         return LLMRouter(key_manager=m, cache=cache)
 
-    def test_no_real_keys_anywhere_returns_offline_mock(self):
-        """With no real keys at all, the router returns an honest local mock (not a crash)."""
+    def test_no_real_keys_anywhere_returns_explicit_unavailable_state(self):
         router = self._router_with([], [], [])
         resp = _run(router.get_completions("sys", "hello", 0.7, "groq"))
-        self.assertIn("[Mock GROQ Response]", resp)
+        self.assertTrue(resp.startswith("[Offline]"))
+        self.assertIn("not processed", resp)
         _run(router.close())
 
     @patch("httpx.AsyncClient.post")

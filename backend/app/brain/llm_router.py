@@ -115,9 +115,7 @@ class LLMRouter:
                 )
                 if not isinstance(response, str) or not response.strip():
                     raise RuntimeError(f"{provider} returned an empty completion")
-                # Provider pipelines never produce mocks. Offline mock is handled only
-                # after the complete real-provider cascade is known to be unavailable.
-                if not response.lstrip().startswith("[Mock") and not cache_skip:
+                if not cache_skip:
                     self.cache.set(cache_key, response)
                 self._set_route(provider, model, cached=False)
                 return response
@@ -127,8 +125,11 @@ class LLMRouter:
 
         if not configured_provider_seen:
             self._set_route("offline", None, cached=False, offline=True)
-            print("[LLM_ROUTER] No real API keys configured — using labelled offline mock.")
-            return f"[Mock {pref.upper()} Response] Query parsed successfully: {user_prompt[:20]}..."
+            print("[LLM_ROUTER] No real API keys configured — returning explicit unavailable state.")
+            return (
+                "[Offline] No real LLM provider is configured, so this prompt was not "
+                "processed by an AI model. Configure a provider key and retry."
+            )
 
         self._set_route("unavailable", None, cached=False)
         raise RuntimeError(f"All configured LLM providers failed: {last_error}")

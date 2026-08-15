@@ -1,149 +1,222 @@
-"""
-Ultron Daily Briefing Builder
-Implements a production-grade briefing builder engine (Level 1 Security).
-Gathers database tasks, calendar timeline schedules, scrapes live local weather,
-and compiles a concise, elite start-of-day summary report.
-"""
+"""Daily briefing from local SQLite plus explicitly sourced live data."""
+
+from __future__ import annotations
+
+import asyncio
+import datetime
+from typing import Any, Dict
 
 import httpx
-import datetime
-from typing import Dict, Any
 from pydantic import BaseModel, Field
-from backend.app.tools.tool_base import BaseTool
+
 from backend.app.database.db import get_db_connection
+from backend.app.tools._realsearch import real_web_search
+from backend.app.tools.tool_base import BaseTool
+
 
 class DailyBriefingArgs(BaseModel):
-    include_weather: bool = Field(True, description="Whether to fetch live local weather coordinates.")
-    include_tasks: bool = Field(True, description="Whether to query high-priority unresolved database tasks.")
-    include_schedule: bool = Field(True, description="Whether to query today's scheduled calendar events.")
+    include_weather: bool = Field(True, description="Fetch live Open-Meteo current weather.")
+    include_tasks: bool = Field(True, description="Query unresolved high-priority local tasks.")
+    include_schedule: bool = Field(True, description="Query today's local calendar events.")
+    include_news: bool = Field(True, description="Fetch currently verifiable public AI-news search results.")
+
 
 class DailyBriefingTool(BaseTool):
     def __init__(self) -> None:
         super().__init__(
             tool_id="daily_briefing",
             name="Daily Briefing Builder",
-            description="Compiles today's calendar schedules, urgent todo tasks, and live local weather into a concise report.",
+            description="Compiles local calendar/tasks with sourced live weather and public search results.",
             category="productivity",
             tags=["briefing", "schedule", "routine", "weather", "status", "summary"],
-            permission_level=1,  # Level 1: Write (no manual confirmation required)
+            permission_level=1,
             args_model=DailyBriefingArgs,
-            usage_examples=["daily_briefing()"]
+            usage_examples=["daily_briefing()"],
         )
 
     async def _get_local_weather(self) -> Dict[str, Any]:
-        """Scrapes live weather data from Open-Meteo for West Bengal/Kolkata coordinates."""
-        lat = 22.8604   # approximate lat for West Bengal
-        lon = 88.5835   # approximate lon
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
-        
+        lat, lon = 22.5726, 88.3639
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.get(url)
-                if res.status_code == 200:
-                    w = res.json().get("current_weather", {})
-                    return {
-                        "temperature": f"{w.get('temperature', '28')}°C",
-                        "windspeed": f"{w.get('windspeed', '12')} km/h",
-                        "status_code": w.get("weathercode", 0)
-                    }
-        except Exception:
-            pass
-            
-        # Standard default fallback
+                response = await client.get(
+                    "https://api.open-meteo.com/v1/forecast",
+                    params={
+                        "latitude": lat,
+                        "longitude": lon,
+                        "current_weather": "true",
+                        "timezone": "auto",
+                    },
+                )
+        except Exception as exc:
+            return {
+                "available": False,
+                "source": "Open-Meteo",
+                "temperature": None,
+                "windspeed": None,
+                "observed_at": None,
+                "error": str(exc),
+            }
+        if response.status_code != 200:
+            return {
+                "available": False,
+                "source": "Open-Meteo",
+                "temperature": None,
+                "windspeed": None,
+                "observed_at": None,
+                "error": f"HTTP {response.status_code}",
+            }
+        try:
+            current = (response.json() or {}).get("current_weather") or {}
+            temperature = current.get("temperature")
+            windspeed = current.get("windspeed")
+            if not isinstance(temperature, (int, float)):
+                raise ValueError("temperature missing")
+        except (TypeError, ValueError) as exc:
+            return {
+                "available": False,
+                "source": "Open-Meteo",
+                "temperature": None,
+                "windspeed": None,
+                "observed_at": None,
+                "error": f"incomplete provider data: {exc}",
+            }
         return {
-            "temperature": "29.0°C",
-            "windspeed": "10 km/h",
-            "status_code": 0
+            "available": True,
+            "source": "Open-Meteo",
+            "temperature": f"{float(temperature):.1f}°C",
+            "windspeed": (
+                f"{float(windspeed):.1f} km/h"
+                if isinstance(windspeed, (int, float))
+                else None
+            ),
+            "observed_at": current.get("time"),
+            "error": None,
+        }
+
+    async def _get_live_news(self) -> Dict[str, Any]:
+        try:
+            results = await real_web_search(
+                "artificial intelligence technology news today",
+                limit=3,
+            )
+        except Exception as exc:
+            return {"available": False, "source": "public web search", "items": [], "error": str(exc)}
+        items = []
+        for result in results:
+            title = str(result.get("title") or "").strip()
+            url = str(result.get("url") or "").strip()
+            if not title or not url.startswith(("http://", "https://")):
+                continue
+            items.append({
+                "title": title,
+                "url": url,
+                "snippet": str(result.get("snippet") or "").strip()[:240],
+                "source": result.get("source") or "public web search",
+            })
+        return {
+            "available": bool(items),
+            "source": "public web search",
+            "items": items,
+            "error": None if items else "No current results could be verified.",
         }
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        include_weather = kwargs.get("include_weather", True)
-        include_tasks = kwargs.get("include_tasks", True)
-        include_schedule = kwargs.get("include_schedule", True)
+        include_weather = bool(kwargs.get("include_weather", True))
+        include_tasks = bool(kwargs.get("include_tasks", True))
+        include_schedule = bool(kwargs.get("include_schedule", True))
+        include_news = bool(kwargs.get("include_news", True))
 
         now = datetime.datetime.now()
         today_date = now.strftime("%A, %B %d, %Y")
-
-        weather_data = {}
+        weather_data = {"available": False, "status": "not_requested"}
+        news_data = {"available": False, "status": "not_requested", "items": []}
+        if include_weather and include_news:
+            weather_data, news_data = await asyncio.gather(
+                self._get_local_weather(),
+                self._get_live_news(),
+            )
+        elif include_weather:
+            weather_data = await self._get_local_weather()
+        elif include_news:
+            news_data = await self._get_live_news()
         schedule_events = []
         high_priority_tasks = []
 
-        # 1. Fetch Local Weather
-        if include_weather:
-            weather_data = await self._get_local_weather()
-
-        # 2. Fetch Tasks and Schedules from SQLite WAL connection
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-
             if include_schedule:
                 today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-                today_end = now.replace(hour=23, minute=59, second=59, microsecond=999).isoformat()
-                cursor.execute(
-                    """
-                    SELECT title, start_time, end_time, category 
-                    FROM calendar_events 
-                    WHERE start_time >= ? AND start_time <= ?
-                    ORDER BY start_time ASC;
-                    """,
-                    (today_start, today_end)
-                )
-                schedule_events = [dict(row) for row in cursor.fetchall()]
-
+                today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+                schedule_events = [
+                    dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT title, start_time, end_time, category
+                        FROM calendar_events
+                        WHERE start_time >= ? AND start_time <= ?
+                        ORDER BY start_time ASC;
+                        """,
+                        (today_start, today_end),
+                    ).fetchall()
+                ]
             if include_tasks:
-                cursor.execute(
-                    """
-                    SELECT id, title, project_name, module_name, priority 
-                    FROM project_tasks 
-                    WHERE status != 'done' AND priority = 'high'
-                    LIMIT 3;
-                    """
-                )
-                high_priority_tasks = [dict(row) for row in cursor.fetchall()]
+                high_priority_tasks = [
+                    dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT id, title, project_name, module_name, priority
+                        FROM project_tasks
+                        WHERE status != 'done' AND priority = 'high'
+                        ORDER BY created_at ASC
+                        LIMIT 3;
+                        """
+                    ).fetchall()
+                ]
 
-        # 3. Simulate World Monitor AI Tech News Summary
-        ai_briefings = [
-            "Llama 3.1 405B has established new industry standards for local inference weights.",
-            "OpenAI's advanced voice synthesis APIs are now available in public beta.",
-            "Gemini 1.5 Flash has received a critical 50% price cut per token throughput."
-        ]
-
-        # 4. Compile standard Jarvis-style response summary
-        briefing_summary = f"=== DAILY BRIEFING: {today_date.upper()} ===\n\n"
-        briefing_summary += "Good morning, Debjeet, Sir.\n"
-        
+        lines = [f"=== DAILY BRIEFING: {today_date.upper()} ===", "", "Good morning, Debjeet, Sir."]
         if include_weather:
-            briefing_summary += f"• Weather: {weather_data.get('temperature', '29°C')}, Windspeed: {weather_data.get('windspeed', '10 km/h')}. Smooth conditions outside, Sir.\n"
-        
-        briefing_summary += "\n[SCHEDULE & TIMELINE]\n"
+            if weather_data.get("available"):
+                wind = weather_data.get("windspeed") or "windspeed not reported"
+                lines.append(
+                    f"• Weather ({weather_data['source']}): {weather_data['temperature']}, {wind}."
+                )
+            else:
+                lines.append("• Weather: live data unavailable; no estimate was substituted.")
+
+        lines.extend(["", "[SCHEDULE & TIMELINE]"])
         if schedule_events:
-            for ev in schedule_events:
-                # Extract time digits
-                t_str = ev['start_time'].split("T")[-1][:5]
-                briefing_summary += f"  - [{t_str}] {ev['title']} ({ev['category'].upper()})\n"
+            for event in schedule_events:
+                time_text = str(event["start_time"]).split("T")[-1][:5]
+                category = str(event.get("category") or "general").upper()
+                lines.append(f"  - [{time_text}] {event['title']} ({category})")
         else:
-            briefing_summary += "  - No events scheduled for today, Sir.\n"
+            lines.append("  - No local events are scheduled for today.")
 
-        briefing_summary += "\n[CRITICAL DEVS BACKLOG]\n"
+        lines.extend(["", "[HIGH-PRIORITY BACKLOG]"])
         if high_priority_tasks:
-            for t in high_priority_tasks:
-                briefing_summary += f"  - [HIGH] {t['title']} ({t['project_name']}/{t['module_name']})\n"
-            briefing_summary += f"\nYour highest-priority task today is finishing the '{high_priority_tasks[0]['title']}' flow, Sir.\n"
+            for task in high_priority_tasks:
+                lines.append(
+                    f"  - [HIGH] {task['title']} ({task['project_name']}/{task['module_name']})"
+                )
         else:
-            briefing_summary += "  - Backlog is clear of high-priority tasks. Excellent job, Sir.\n"
+            lines.append("  - No unresolved high-priority local tasks were found.")
 
-        briefing_summary += "\n[WORLD MONITOR: AI BRIEFING]\n"
-        for idx, news in enumerate(ai_briefings, 1):
-            briefing_summary += f"  {idx}. {news}\n"
+        if include_news:
+            lines.extend(["", "[LIVE PUBLIC SEARCH RESULTS]"])
+            if news_data.get("available"):
+                for index, item in enumerate(news_data["items"], 1):
+                    lines.append(f"  {index}. {item['title']} — {item['url']}")
+            else:
+                lines.append("  - Current results unavailable; no headlines were substituted.")
 
         return {
             "success": True,
             "data": {
                 "date": today_date,
-                "briefing_text": briefing_summary,
+                "briefing_text": "\n".join(lines),
                 "weather": weather_data,
+                "news": news_data,
                 "events_count": len(schedule_events),
-                "tasks_count": len(high_priority_tasks)
+                "tasks_count": len(high_priority_tasks),
             },
-            "error": None
+            "error": None,
         }

@@ -148,7 +148,7 @@ class CognitiveOrchestrator:
                 temperature=0.9,
                 provider_preference="groq"
             )
-            if narration and not narration.startswith("[Mock") and narration.strip():
+            if narration and not narration.startswith("[Offline]") and narration.strip():
                 lines.append(("info", narration.strip()))
                 lines.append(("success", "Done."))
                 return lines

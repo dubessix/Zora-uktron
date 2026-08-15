@@ -31,10 +31,12 @@ class TestPhase10FrontendArchitecture(unittest.TestCase):
             content = f.read()
             # Assert "VISION FEED" is completely gone
             self.assertNotIn("VISION FEED", content, "Legacy Vision Feed should be removed from Left Panel.")
-            # Assert other required telemetry sections remain intact
-            self.assertIn("Latency", content)
-            self.assertIn("Uptime", content)
-            self.assertIn("RAM Usage", content)
+            # Real reported telemetry remains; fabricated latency/load values do not.
+            self.assertIn("Network counters", content)
+            self.assertIn("System uptime", content)
+            self.assertIn('label="RAM"', content)
+            self.assertNotIn("Latency", content)
+            self.assertNotIn("TX Signal load", content)
 
     def test_blob_canvas_coordinates(self):
         """Test 3: Verify Canvas 2D drawing loops, requesting animation, and elliptical orbital ring coordinates."""

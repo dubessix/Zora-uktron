@@ -3,15 +3,16 @@ import { executeToolWithConfirmation } from '../../api';
 
 /**
  * SecurityGuardianWidget Component
- * Renders local system process list, exposed API credential auditing results,
- * and deprecated dependency lists from requirements.txt natively.
+ * Renders results from bounded secret-pattern, high-memory process, and limited manifest checks.
  */
 export default function SecurityGuardianWidget() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
+  const [error, setError] = useState('');
 
   const runAudit = async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await executeToolWithConfirmation(
         'security_scan',
@@ -22,11 +23,11 @@ export default function SecurityGuardianWidget() {
         },
         'security_guardian_widget',
       );
-      if (data.success) {
-        setResults(data.data);
-      }
+      if (!data.success) throw new Error(data.error || data.message || 'Security checks unavailable.');
+      setResults(data.data);
     } catch (e) {
-      console.error('Failed to run security scan:', e);
+      setResults(null);
+      setError(e.message || 'Security checks unavailable.');
     } finally {
       setLoading(false);
     }
@@ -52,7 +53,7 @@ export default function SecurityGuardianWidget() {
       {/* Main Panel Content */}
       {!results ? (
         <div className="flex-1 flex flex-col items-center justify-center py-6 text-center text-white/30 space-y-2 uppercase">
-          <span>Shield offline. Run a full local codebase security scan, Sir.</span>
+          <span>{error ? `Checks unavailable: ${error}` : 'Not checked yet. Run the limited local security checks.'}</span>
         </div>
       ) : (
         <div className="space-y-3 flex-1 overflow-y-auto max-h-[220px] custom-scrollbar">
@@ -86,7 +87,7 @@ export default function SecurityGuardianWidget() {
           <div className="space-y-2">
             {results.findings.length === 0 ? (
               <div className="text-center py-4 text-emerald-400 text-[8px] uppercase border border-dashed border-emerald-500/10 bg-emerald-500/5">
-                ✓ No vulnerabilities detected
+                No findings in selected checks — not a complete safety guarantee
               </div>
             ) : (
               results.findings.map((item, idx) => (

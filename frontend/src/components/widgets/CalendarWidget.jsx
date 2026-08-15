@@ -14,8 +14,10 @@ export default function CalendarWidget() {
   const [category, setCategory] = useState('work');
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchEvents = async () => {
+    setError('');
     try {
       const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
@@ -26,11 +28,11 @@ export default function CalendarWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setEvents(data.data.events || []);
-      }
+      if (!data.success) throw new Error(data.error || 'Calendar unavailable.');
+      setEvents(data.data.events || []);
     } catch (err) {
-      console.error('Failed to fetch calendar events:', err);
+      setEvents([]);
+      setError(err.message || 'Calendar unavailable.');
     }
   };
 
@@ -107,6 +109,10 @@ export default function CalendarWidget() {
   };
 
   const bookSuggestedSlot = async (slot) => {
+    if (!title.trim()) {
+      setError('Enter an event title before booking a suggested slot.');
+      return;
+    }
     try {
       const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
@@ -115,7 +121,7 @@ export default function CalendarWidget() {
           tool_id: 'manage_calendar',
           arguments: {
             action: 'create',
-            title: 'Web Development Session',
+            title: title.trim(),
             start_time: slot.start_time,
             end_time: slot.end_time,
             category: 'development'
@@ -178,9 +184,11 @@ export default function CalendarWidget() {
         </div>
       )}
 
+      {error && <p className="text-[8px] text-rose-300">Unavailable: {error}</p>}
+
       {/* Chronological events loop */}
       <div className="space-y-2 flex-1 max-h-[100px] overflow-y-auto custom-scrollbar">
-        {events.length === 0 ? (
+        {!error && events.length === 0 ? (
           <div className="text-center py-4 text-white/25 text-[8px] border border-dashed border-white/5 uppercase">
             No events scheduled
           </div>

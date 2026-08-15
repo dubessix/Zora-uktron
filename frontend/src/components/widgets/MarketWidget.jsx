@@ -22,8 +22,10 @@ export default function MarketWidget() {
         const list = Object.entries(data).map(([id, v]) => ({
           symbol: `${map[id] || id.toUpperCase()}/USD`,
           price: `$${v.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-          change: `${v.usd_24h_change != null ? (v.usd_24h_change > 0 ? "+" : "") + v.usd_24h_change.toFixed(2) : "0.00"}%`,
-          up: (v.usd_24h_change || 0) >= 0
+          change: v.usd_24h_change == null
+            ? "Unavailable"
+            : `${v.usd_24h_change > 0 ? "+" : ""}${v.usd_24h_change.toFixed(2)}%`,
+          up: v.usd_24h_change == null ? null : v.usd_24h_change >= 0
         }));
         setCoins(list);
         setStatus("ok");
@@ -49,7 +51,7 @@ export default function MarketWidget() {
             <span className="text-[#F5F5F7]">{c.symbol}</span>
             <span className="flex items-center gap-2">
               <span className="text-white/70">{c.price}</span>
-              <span className={c.up ? "text-emerald-400" : "text-rose-400"}>{c.change}</span>
+              <span className={c.up == null ? "text-white/40" : c.up ? "text-emerald-400" : "text-rose-400"}>{c.change}</span>
             </span>
           </div>
         ))}

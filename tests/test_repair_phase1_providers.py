@@ -66,10 +66,10 @@ class TestProviderAwareCache(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second, "NVIDIA_RESULT")
         self.assertEqual(self.router.get_route_metadata()["provider"], "nvidia")
 
-    async def test_offline_mock_is_never_cached_over_a_later_real_provider(self):
+    async def test_offline_unavailable_state_is_never_cached_over_a_later_real_provider(self):
         self.manager._keys = {"groq": [], "gemini": [], "nvidia": []}
         offline = await self.router.get_completions("system", "probe", provider_preference="groq")
-        self.assertTrue(offline.startswith("[Mock"))
+        self.assertTrue(offline.startswith("[Offline]"))
         self.assertEqual(len(self.router.cache._cache), 0)
 
         self.manager._keys["groq"] = [{"key": "g-real", "state": "ACTIVE"}]

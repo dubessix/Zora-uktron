@@ -22,7 +22,8 @@ export default function AppShell({
   setInputValue, 
   handleSendMessage, 
   isProcessing, 
-  activePersonality, 
+  activePersonality,
+  backendStatus,
   systemMetrics,
   aiState,
   setAiState,
@@ -45,6 +46,7 @@ export default function AppShell({
   const accentBg = isZora ? "bg-pink-500/10" : "bg-emerald-500/10";
   const accentDot = isZora ? "bg-pink-400" : "bg-emerald-400";
   const aiName = isZora ? "Zora" : "Ultron";
+  const backendConnected = backendStatus === "CONNECTED";
 
   // Voice control: wake-word listening wired to the bottom mic toggle.
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -73,11 +75,11 @@ export default function AppShell({
           </span>
         </div>
 
-        {/* Minimal status capsule — no clutter */}
-        <div className={`flex items-center gap-1.5 text-[8px] px-2 py-1.5 rounded-full border backdrop-blur-3xl ${accentRing} ${accentBg}`}>
-          <div className={`w-1.5 h-1.5 ${accentDot} rounded-full animate-pulse`} />
-          <span className={`font-bold tracking-widest uppercase ${accentText}`}>
-            {isZora ? "Zora Online" : "Ultron Online"}
+        {/* Backend status comes from the real /api/health poll. */}
+        <div className={`flex items-center gap-1.5 text-[8px] px-2 py-1.5 rounded-full border backdrop-blur-3xl ${backendConnected ? `${accentRing} ${accentBg}` : 'border-amber-400/20 bg-amber-500/5'}`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${backendConnected ? accentDot : 'bg-amber-400'}`} />
+          <span className={`font-bold tracking-widest uppercase ${backendConnected ? accentText : 'text-amber-300'}`}>
+            Backend {backendStatus || 'UNKNOWN'}
           </span>
         </div>
       </header>
@@ -129,17 +131,7 @@ export default function AppShell({
 
           {/* Center Bottom floating pill control bar */}
           <div className="absolute bottom-6 flex items-center gap-3 bg-white/[0.02] border border-white/5 px-4 py-2 rounded-full backdrop-blur-3xl font-mono text-[9px]">
-            {/* Camera icon */}
-            <button className="text-white/20 hover:text-white/50 transition-colors px-2">
-              📷
-            </button>
-
-            {/* Red crossed status indicator from mockup */}
-            <div className="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-[8px] text-rose-400">
-              ✖
-            </div>
-            
-            {/* Status pill button - switches personality on click */}
+            {/* Personality selection control. */}
             <button 
               onClick={togglePersonality}
               className={`px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
@@ -148,7 +140,7 @@ export default function AppShell({
                   : "bg-emerald-500/10 border-emerald-400/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]"
               }`}
             >
-              {isZora ? "Zora Online" : "Ultron Online"}
+              {isZora ? "Zora Selected" : "Ultron Selected"}
             </button>
 
             {/* Coding Mode toggle — NVIDIA coding brain */}
@@ -212,6 +204,7 @@ export default function AppShell({
           handleSendMessage={handleSendMessage}
           isProcessing={isProcessing}
           activePersonality={activePersonality}
+          backendStatus={backendStatus}
           logs={logs}
         />
 

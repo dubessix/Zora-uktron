@@ -105,8 +105,9 @@ class VoiceSystem:
             self._dispatch_voice_event("idle")
             raise
         except Exception as e:
-            print(f"[VOICE_SYSTEM] Error during speech output stream: {e}")
+            print(f"[VOICE_SYSTEM] Speech provider unavailable: {e}")
             self._dispatch_voice_event("idle")
+            raise
 
     def handle_user_barge_in(self) -> bool:
         """Triggered when client mic registers voice, cancelling active speech task."""

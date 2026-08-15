@@ -5,7 +5,7 @@ Supports structured AI action metadata payloads and explicit backend tool execut
 """
 
 import asyncio
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -64,6 +64,12 @@ class ConfirmActionRequest(BaseModel):
 
 class CodingModeRequest(BaseModel):
     enabled: bool = Field(..., description="True to force NVIDIA coding mode ON, False to revert to auto-detect.")
+
+
+class PersonalityRequest(BaseModel):
+    session_id: Optional[str] = None
+    personality: Literal["ultron", "zora"]
+
 
 class BackupRequest(BaseModel):
     backup_path: Optional[str] = Field(None, description="Approved backup file to restore from.")
@@ -193,16 +199,24 @@ class SpeakRequest(BaseModel):
 
 @api_router.post("/speak", status_code=status.HTTP_200_OK)
 async def speak_text(request: SpeakRequest):
-    """Text-to-speech: returns an audio stream (MP3) for the given text."""
+    """Start the provider before sending HTTP 200 so immediate failures return 503."""
+    from backend.app.voice.voice_system import VoiceSystem
+
+    voice = VoiceSystem()
+    stream = voice.speak(request.text, personality=request.personality)
     try:
-        from backend.app.voice.voice_system import VoiceSystem
-        voice = VoiceSystem()
-        async def audio_stream():
-            async for chunk in voice.speak(request.text, personality=request.personality):
-                yield chunk
-        return StreamingResponse(audio_stream(), media_type="audio/mpeg")
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"TTS failed: {e}")
+        first_chunk = await anext(stream)
+    except StopAsyncIteration as exc:
+        raise HTTPException(status_code=503, detail="TTS provider returned no audio.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"TTS unavailable: {exc}") from exc
+
+    async def audio_stream():
+        yield first_chunk
+        async for chunk in stream:
+            yield chunk
+
+    return StreamingResponse(audio_stream(), media_type="audio/mpeg")
 
 @api_router.get("/memory/recent", status_code=status.HTTP_200_OK)
 async def get_recent_memories(
@@ -298,6 +312,25 @@ async def provider_status(live: bool = Query(False, description="Make one tiny l
                 item["error"] = str(exc)[:240]
         report["providers"][provider] = item
     return report
+
+
+@api_router.post("/personality", status_code=status.HTTP_200_OK)
+async def set_session_personality(request: PersonalityRequest) -> dict:
+    """Persist an explicit UI personality selection for the resolved session."""
+    from backend.app.database.models import update_session_personality
+    from backend.app.session.session_manager import SessionManager
+
+    try:
+        session = SessionManager.get_or_create_session(request.session_id)
+        with get_db_connection() as conn:
+            update_session_personality(conn, session["id"], request.personality)
+        return {
+            "success": True,
+            "session_id": session["id"],
+            "personality": request.personality,
+        }
+    except DatabaseMaintenanceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @api_router.post("/coding-mode", status_code=status.HTTP_200_OK)

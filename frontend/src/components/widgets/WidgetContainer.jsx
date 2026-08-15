@@ -29,7 +29,7 @@ export default function WidgetContainer({
   // Double-click header bar to toggle collapsed/expanded states (Requirement: remember collapsed state)
   const handleHeaderDoubleClick = () => {
     setIsCollapsed(!isCollapsed);
-    print(`[WIDGET_CONTAINER] Widget '${widgetId}' collapsed state set to: ${!isCollapsed}`);
+    console.log(`[WIDGET_CONTAINER] Widget '${widgetId}' collapsed state set to: ${!isCollapsed}`);
   };
 
   return (
@@ -69,9 +69,4 @@ export default function WidgetContainer({
       )}
     </div>
   );
-}
-
-// Global print logging function helper for mock browser events console outputs
-function print(msg) {
-  console.log(msg);
 }

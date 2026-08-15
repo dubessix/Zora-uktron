@@ -1,82 +1,75 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { executeTool } from '../../api';
 
-/**
- * SystemWidget Content Component
- * Fetches and displays actual, real-time local CPU, RAM, disk, and battery telemetries from local system metrics.
- * Satisfies the CONSTITUTIONAL rule: Real Implementation Only!
- */
+/** Displays only telemetry reported by the local backend. */
 export default function SystemWidget() {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const fetchSystemMetrics = async () => {
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-        const response = await fetch(`${apiUrl}/api/tools/execute`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tool_id: "system_metrics",
-            arguments: {}
-          })
-        });
+  const load = async () => {
+    setStatus('loading');
+    setError('');
+    try {
+      const result = await executeTool('system_metrics', {});
+      if (!result.success) throw new Error(result.error || 'System metrics unavailable.');
+      setData(result.data);
+      setStatus('ready');
+    } catch (err) {
+      setData(null);
+      setStatus('unavailable');
+      setError(err.message || 'System metrics unavailable.');
+    }
+  };
 
-        if (response.ok) {
-          const res = await response.json();
-          if (res.success) {
-            setData(res.data);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch real-time system metrics: ", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  useEffect(() => { load(); }, []);
 
-    fetchSystemMetrics();
-  }, []);
-
-  if (loading) {
-    return <div className="text-[9px] text-[#8B8B96] uppercase animate-pulse">Syncing hardware bus...</div>;
+  if (status === 'loading') {
+    return <div className="text-[9px] text-[#8B8B96] uppercase animate-pulse">Reading local sensors...</div>;
+  }
+  if (!data) {
+    return (
+      <div className="space-y-2 font-mono text-[9px]">
+        <p className="text-rose-300">Unavailable: {error}</p>
+        <button onClick={load} className="text-[#7DD3FC] uppercase">Retry</button>
+      </div>
+    );
   }
 
-  const hardware = data || {
-    cpu: "37.2% (Fallback)",
-    ram: "82.2% (Fallback)",
-    proc_ram_mb: 0,
-    disk: "142 GB / 256 GB (Used)",
-    battery: "94% (Charging)",
-    network: "Latency: 31ms // Status: Stable"
-  };
+  const uptime = data.uptime_seconds == null
+    ? 'Unavailable'
+    : `${(data.uptime_seconds / 3600).toFixed(1)} hours`;
 
   return (
     <div className="space-y-3 font-mono text-[10px]">
-      {/* Metrics list */}
-      <div className="space-y-2.5">
-        <div>
-          <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">CPU Load</span>
-          <p className="text-xs font-bold text-[#F5F5F7] mt-1">{hardware.cpu}</p>
-        </div>
-        <div>
-          <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">RAM Utilization</span>
-          <p className="text-xs font-bold text-[#F5F5F7] mt-1">{hardware.ram}</p>
-          <p className="text-[8px] text-[#8B8B96] mt-0.5">Ultron process: {hardware.proc_ram_mb} MB</p>
-        </div>
-        <div>
-          <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">Disk Space</span>
-          <p className="text-xs font-bold text-[#F5F5F7] mt-1">{hardware.disk}</p>
-        </div>
-        <div>
-          <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">Battery state</span>
-          <p className="text-xs font-bold text-[#F5F5F7] mt-1">{hardware.battery}</p>
-        </div>
-        <div>
-          <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">Network Link</span>
-          <p className="text-xs font-bold text-[#7DD3FC] mt-1">{hardware.network}</p>
-        </div>
+      <div className="flex justify-between text-[7px] uppercase tracking-widest text-white/40">
+        <span>Reported local telemetry</span>
+        <button onClick={load} className="text-[#7DD3FC]">Refresh</button>
       </div>
+      <div className="space-y-2.5">
+        <Metric label="CPU Load" value={data.cpu} />
+        <Metric label="RAM Utilization" value={data.ram} detail={`Ultron process: ${data.proc_ram_mb} MB`} />
+        <Metric label="Disk Space" value={data.disk} />
+        <Metric label="Temperature" value={data.temperature_display} />
+        <Metric label="Battery" value={data.battery_display} />
+        <Metric label="Network counters" value={data.network_display} />
+        <Metric label="System uptime" value={uptime} />
+      </div>
+      {data.unavailable_fields?.length > 0 && (
+        <p className="text-[7px] text-amber-300/70 uppercase">
+          Not reported by this device: {data.unavailable_fields.join(', ')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value, detail }) {
+  return (
+    <div>
+      <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold block">{label}</span>
+      <p className="text-xs font-bold text-[#F5F5F7] mt-1 break-words">{value ?? 'Unavailable'}</p>
+      {detail && <p className="text-[8px] text-[#8B8B96] mt-0.5">{detail}</p>}
     </div>
   );
 }

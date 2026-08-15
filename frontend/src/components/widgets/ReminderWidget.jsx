@@ -14,6 +14,7 @@ export default function ReminderWidget() {
   const [targetTime, setTargetTime] = useState('5m');
   const [recurrence, setRecurrence] = useState('one_time');
   const [loading, setLoading] = useState(false);
+  const [listAvailable, setListAvailable] = useState(null);
   const [message, setMessage] = useState(null);
 
   // Fetch all reminders from the backend
@@ -28,11 +29,13 @@ export default function ReminderWidget() {
         })
       });
       const resData = await response.json();
-      if (resData.success) {
-        setReminders(resData.data.reminders || []);
-      }
+      if (!resData.success) throw new Error(resData.error || 'Reminder list unavailable.');
+      setReminders(resData.data.reminders || []);
+      setListAvailable(true);
     } catch (err) {
-      console.error('Failed to fetch reminders:', err);
+      setReminders([]);
+      setListAvailable(false);
+      setMessage({ text: err.message || 'Reminder list unavailable.', type: 'error' });
     }
   };
 
@@ -93,11 +96,10 @@ export default function ReminderWidget() {
         })
       });
       const resData = await response.json();
-      if (resData.success) {
-        fetchReminders();
-      }
+      if (!resData.success) throw new Error(resData.error || `${action} failed.`);
+      fetchReminders();
     } catch (err) {
-      console.error(`Failed to execute ${action}:`, err);
+      setMessage({ text: err.message || `${action} failed.`, type: 'error' });
     }
   };
 
@@ -119,7 +121,9 @@ export default function ReminderWidget() {
           🕒 Scheduler Cache
         </span>
         <span className="bg-white/5 px-2 py-0.5 rounded-full text-[8px] text-white/50 uppercase">
-          {reminders.filter(r => r.status === 'pending' || r.status === 'snoozed').length} Pending
+          {listAvailable === true
+            ? `${reminders.filter(r => r.status === 'pending' || r.status === 'snoozed').length} Pending`
+            : listAvailable === false ? 'Unavailable' : 'Loading'}
         </span>
       </div>
 
@@ -198,7 +202,7 @@ export default function ReminderWidget() {
       <div className="space-y-2 flex-1 overflow-y-auto max-h-[140px] custom-scrollbar">
         <span className="text-[8px] text-white/40 block uppercase">Upcoming Triggers</span>
         
-        {reminders.length === 0 ? (
+        {listAvailable === true && reminders.length === 0 ? (
           <div className="text-center py-4 text-white/25 text-[8px] border border-dashed border-white/5 uppercase">
             No active schedules
           </div>
@@ -254,9 +258,9 @@ export default function ReminderWidget() {
                     <button
                       onClick={() => handleAction('dismiss', rem.id)}
                       className="px-1.5 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-sm text-[8px] uppercase"
-                      title="Mark as triggered"
+                      title="Dismiss this reminder"
                     >
-                      Trigger
+                      Dismiss
                     </button>
                     <button
                       onClick={() => handleAction('delete', rem.id)}

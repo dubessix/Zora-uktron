@@ -45,17 +45,18 @@ class ReminderTool(BaseTool):
         
         # Try relative offset parsing first
         clean = time_str.strip().lower().lstrip("+")
-        
+        if not clean or clean.startswith("-"):
+            raise ValueError("target_time must be a future ISO time or positive relative duration.")
+
         # Matches formats like '10m', '30s', '2h', '1d'
-        # Used as the fallback timestamp if all parsing strategies fail below.
-        match = datetime.datetime.now(datetime.timezone.utc)
-        
         digits = "".join([c for c in clean if c.isdigit() or c == "."])
         unit = "".join([c for c in clean if not c.isdigit() and c != "."])
         
         if digits and unit:
             try:
                 val = float(digits)
+                if val <= 0:
+                    raise ValueError("Relative target_time must be greater than zero.")
                 if "s" in unit:
                     return now + datetime.timedelta(seconds=val)
                 elif "m" in unit:
@@ -75,8 +76,9 @@ class ReminderTool(BaseTool):
             except ValueError:
                 continue
                 
-        # Return fallback of 5 minutes if all parsing fails (uses `match` fallback)
-        return match + datetime.timedelta(minutes=5)
+        raise ValueError(
+            "Invalid target_time. Use ISO format or a positive relative value such as 10m, 2h, or 1d."
+        )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         action = kwargs.get("action", "list").lower()
@@ -97,7 +99,10 @@ class ReminderTool(BaseTool):
                 if not target_time_str:
                     return {"success": False, "error": "Parameter 'target_time' is required for action='create'.", "data": {}}
                 
-                parsed_dt = self._parse_time(target_time_str)
+                try:
+                    parsed_dt = self._parse_time(target_time_str)
+                except ValueError as exc:
+                    return {"success": False, "error": str(exc), "data": {}}
                 new_id = str(uuid.uuid4())
                 
                 cursor.execute(

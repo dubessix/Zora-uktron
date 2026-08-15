@@ -1,101 +1,90 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { executeTool } from '../../api';
 
-/**
- * WeatherWidget Content Component
- * Fetches and displays actual, real-time weather metrics and forecasts from the backend Open-Meteo tool.
- * Satisfies the CONSTITUTIONAL rule: Real Implementation Only!
- */
+/** Displays only live Open-Meteo values returned by the backend. */
 export default function WeatherWidget() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [weather, setWeather] = useState(null);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const fetchWeather = async () => {
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-        const response = await fetch(`${apiUrl}/api/tools/execute`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tool_id: "weather_tool",
-            arguments: { latitude: 22.57, longitude: 88.36 }
-          })
-        });
-
-        if (response.ok) {
-          const res = await response.json();
-          if (res.success) {
-            setData(res.data);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch real-time weather: ", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchWeather();
-  }, []);
-
-  if (loading) {
-    return <div className="text-[9px] text-[#8B8B96] uppercase animate-pulse">Syncing weather satellites...</div>;
-  }
-
-  const weather = data || {
-    location: "Kolkata, IN (Offline Fallback)",
-    temp: "28.0°C",
-    condition: "Scattered Clouds",
-    hourly: [
-      { time: "02 PM", temp: "29°C" },
-      { time: "05 PM", temp: "27°C" },
-      { time: "08 PM", temp: "25°C" }
-    ],
-    weekly: [
-      { day: "MON", temp: "28°C", cond: "Storm" },
-      { day: "TUE", temp: "30°C", cond: "Sunny" },
-      { day: "WED", temp: "27°C", cond: "Rain" }
-    ]
+  const load = async () => {
+    setStatus('loading');
+    setError('');
+    try {
+      const result = await executeTool('weather_tool', { latitude: 22.57, longitude: 88.36 });
+      if (!result.success) throw new Error(result.error || 'Live weather unavailable.');
+      setWeather(result.data);
+      setStatus('ready');
+    } catch (err) {
+      setWeather(null);
+      setStatus('unavailable');
+      setError(err.message || 'Live weather unavailable.');
+    }
   };
 
+  useEffect(() => { load(); }, []);
+
+  if (status === 'loading') {
+    return <div className="text-[9px] text-[#8B8B96] uppercase animate-pulse">Requesting live weather...</div>;
+  }
+  if (!weather) {
+    return (
+      <div className="space-y-2 font-mono text-[9px]">
+        <p className="text-rose-300">Unavailable: {error}</p>
+        <p className="text-white/30">No estimate or cached forecast was substituted.</p>
+        <button onClick={load} className="text-[#7DD3FC] uppercase">Retry</button>
+      </div>
+    );
+  }
+
+  const hourly = weather.hourly || [];
+  const weekly = weather.weekly || [];
   return (
     <div className="space-y-4 font-mono text-[10px]">
-      {/* Current Weather Card */}
       <div className="flex justify-between items-center bg-white/5 p-3 rounded-sm">
         <div>
           <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold">{weather.location}</span>
           <p className="text-lg font-bold text-amber-300 mt-1">{weather.temp}</p>
           <span className="text-[8px] text-white/40 uppercase mt-0.5 block">{weather.condition}</span>
+          <span className="text-[7px] text-white/30 block mt-1">Wind: {weather.windspeed}</span>
         </div>
-        <span className="text-3xl">⛅</span>
+        <div className="text-right text-[7px] text-emerald-300 uppercase">
+          {weather.source}<br />{weather.observed_at || 'time not reported'}
+        </div>
       </div>
 
-      {/* Hourly forecast */}
-      <div className="space-y-2">
-        <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold">Hourly Forecast</span>
+      <ForecastSection title="Upcoming hourly values" empty="Provider returned no upcoming hourly values." count={hourly.length}>
         <div className="grid grid-cols-3 gap-2 text-center">
-          {weather.hourly.map((h, idx) => (
-            <div key={idx} className="bg-white/[0.01] border border-white/5 p-1.5 rounded-sm">
-              <span className="text-[7px] text-white/30 block">{h.time}</span>
-              <span className="text-[10px] font-bold text-[#F5F5F7] mt-1 block">{h.temp}</span>
+          {hourly.map((item) => (
+            <div key={item.time} className="bg-white/[0.01] border border-white/5 p-1.5 rounded-sm">
+              <span className="text-[7px] text-white/30 block">{item.time}</span>
+              <span className="text-[10px] font-bold text-[#F5F5F7] mt-1 block">{item.temp}</span>
+              <span className="text-[7px] text-white/30 block">{item.condition}</span>
             </div>
           ))}
         </div>
-      </div>
+      </ForecastSection>
 
-      {/* Weekly forecast */}
-      <div className="space-y-1.5">
-        <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold">Weekly Forecast</span>
+      <ForecastSection title="Daily maximum forecast" empty="Provider returned no daily values." count={weekly.length}>
         <div className="space-y-1">
-          {weather.weekly.map((w, idx) => (
-            <div key={idx} className="flex justify-between items-center bg-white/[0.01] border border-white/5 px-2 py-1.5 rounded-sm">
-              <span className="font-bold text-[#F5F5F7] text-[9px]">{w.day}</span>
-              <span className="text-white/40 text-[9px]">{w.cond}</span>
-              <span className="font-bold text-[#7DD3FC] text-[9px]">{w.temp}</span>
+          {weekly.map((item) => (
+            <div key={item.date || item.day} className="flex justify-between items-center bg-white/[0.01] border border-white/5 px-2 py-1.5 rounded-sm">
+              <span className="font-bold text-[#F5F5F7] text-[9px]">{item.day}</span>
+              <span className="text-white/40 text-[9px]">{item.cond}</span>
+              <span className="font-bold text-[#7DD3FC] text-[9px]">{item.temp}</span>
             </div>
           ))}
         </div>
-      </div>
+      </ForecastSection>
+    </div>
+  );
+}
+
+function ForecastSection({ title, empty, count, children }) {
+  return (
+    <div className="space-y-2">
+      <span className="text-[7px] text-[#8B8B96] uppercase tracking-widest font-bold">{title}</span>
+      {count ? children : <p className="text-[8px] text-white/30">{empty}</p>}
     </div>
   );
 }

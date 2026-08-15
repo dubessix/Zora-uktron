@@ -291,14 +291,12 @@ async def shutdown_event_handler():
 @app.get("/api/health", response_model=HealthStatusResponse, status_code=status.HTTP_200_OK)
 async def get_health_status() -> dict:
     """Retrieve active backend processing status and local system resource consumption metrics."""
-    process = psutil.Process(os.getpid())
-    memory_info = process.memory_info()
-    
-    metrics = {
-        "memory_rss_mb": memory_info.rss / (1024 ** 2),
-        "cpu_percent": process.cpu_percent(interval=None),
-        "total_system_ram_usage_percent": psutil.virtual_memory().percent,
-    }
+    from backend.app.tools.system_metrics_tool import collect_system_metrics
+
+    metrics = collect_system_metrics()
+    # Compatibility aliases retained for existing frontend consumers.
+    metrics["memory_rss_mb"] = metrics["process_ram_mb"]
+    metrics["total_system_ram_usage_percent"] = metrics["ram_percent"]
     
     env_details = {
         "os_platform": platform.system(),

@@ -58,7 +58,7 @@ export default function FileExplorerWidget() {
       {error && <p className="text-rose-400">{error}</p>}
       {loading ? <p className="text-white/25">Loading…</p> : (
         <div className="space-y-1 max-h-40 overflow-y-auto">
-          {entries.length === 0 && <p className="text-white/25">(empty folder)</p>}
+          {!error && entries.length === 0 && <p className="text-white/25">(empty folder)</p>}
           {entries.map((e, i) => (
             <button key={i} onClick={() => e.type === "folder" && load(`${path === "." ? path + "/" : path}/${e.name}`.replace(/\/+/g,"/"))}
               className="flex w-full items-center justify-between text-left text-[#F5F5F7] hover:bg-white/5 rounded-sm px-1">

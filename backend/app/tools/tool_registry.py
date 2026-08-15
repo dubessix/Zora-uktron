@@ -200,6 +200,7 @@ class ToolRegistry:
             "world_monitor": ("backend.app.tools.world_monitor_tool", "WorldMonitorTool"),
             "github_integration": ("backend.app.tools.github_integration_tool", "GitHubIntegrationTool"),
             "database_restore": ("backend.app.tools.database_tools", "DatabaseRestoreTool"),
+            "universal_search": ("backend.app.tools.universal_search_tool", "UniversalSearchTool"),
         }
 
     def register(self, tool: BaseTool) -> None:

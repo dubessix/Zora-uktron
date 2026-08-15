@@ -111,9 +111,11 @@ export default function App() {
           setSystemMetrics(data.system_metrics);
         } else {
           setBackendStatus("ERROR");
+          setSystemMetrics(null);
         }
       } catch (err) {
         setBackendStatus("DISCONNECTED");
+        setSystemMetrics(null);
       }
     };
 
@@ -122,14 +124,24 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Handle active personality toggling (smooth handoff)
-  const togglePersonality = () => {
+  // Persist UI personality selection; never claim a switch that the backend rejected.
+  const togglePersonality = async () => {
     const nextPers = activePersonality === "ultron" ? "zora" : "ultron";
-    setActivePersonality(nextPers);
-    setAiState("planning"); // Transition state pulse
-    setTimeout(() => {
+    setAiState("planning");
+    try {
+      const result = await api('/api/personality', {
+        method: 'POST',
+        body: JSON.stringify({ session_id: sessionId, personality: nextPers }),
+      });
+      if (!result.success) throw new Error('Personality update was not accepted.');
+      setSessionId(result.session_id);
+      setActivePersonality(result.personality);
+      addNotification('Personality selected', `${result.personality} will answer the next turn.`, 'low');
+    } catch (err) {
+      addNotification('Personality unchanged', err.message || 'Backend unavailable.', 'medium');
+    } finally {
       setAiState("idle");
-    }, 1000);
+    }
   };
 
   // Toggle Coding Mode (manual override -> NVIDIA brain for all turns)
@@ -214,7 +226,7 @@ export default function App() {
   }, []);
 
   const speakResponse = async (text, personality = "ultron") => {
-    if (!text || text.startsWith("[Mock")) return; // skip mock/debug lines
+    if (!text || text.startsWith("[Offline]")) return; // no synthesized speech for unavailable AI output
     try {
       // Stop any currently-playing TTS before starting a new one (barge-in / no overlap).
       stopSpeaking();
@@ -224,7 +236,10 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, personality })
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        addNotification('Voice unavailable', `TTS request failed with status ${res.status}.`, 'medium');
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -238,7 +253,9 @@ export default function App() {
         if (audioRef.current === audio) audioRef.current = null;
         URL.revokeObjectURL(url);
       };
-    } catch (err) { /* silent */ }
+    } catch (err) {
+      addNotification('Voice unavailable', err.message || 'TTS playback failed.', 'medium');
+    }
   };
 
   // Toggle individual widget visibility
@@ -449,6 +466,7 @@ export default function App() {
         handleSendMessage={handleSendMessage}
         isProcessing={isProcessing}
         activePersonality={activePersonality}
+        backendStatus={backendStatus}
         systemMetrics={systemMetrics}
         aiState={aiState}
         setAiState={setAiState}
