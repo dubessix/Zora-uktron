@@ -19,6 +19,14 @@ http://127.0.0.1:5173
 
 Press `Ctrl+C` in the launcher terminal. The launcher asks both process groups to terminate, waits for a bounded grace period, and force-stops only as a last resort. An unexpected child exit stops its sibling and returns a failure code.
 
+## First-open Jarvis briefing
+
+The first successful UI connection on each local calendar day requests one daily briefing. The greeting follows the actual open time, so opening at afternoon/evening/night does not produce a morning greeting. The successful date is stored in browser local storage to prevent repeat briefings on reload. If persistent browser storage is blocked, a page-level guard still prevents repeats during that open page.
+
+There is no fixed 8 AM background briefing poll. Reminders, emergency monitoring, and durability scheduling remain active and unchanged.
+
+When the browser tab is hidden, health polling slows to 30 seconds; making the tab visible triggers an immediate refresh.
+
 ## Chat and providers
 
 - Normal/casual turns prefer Groq.

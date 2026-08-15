@@ -203,44 +203,6 @@ async def run_emergency_monitor():
             
         await asyncio.sleep(120.0)
 
-async def run_proactive_intelligence_loop():
-    """
-    PROACTIVE INTELLIGENCE LOOP (Requirements 8 & 9)
-    1. Check Downloads folder file count. If > 50, automatically trigger OrganizeFolderTool.
-    2. At 08:00 AM, compile DailyBriefingTool and push events to /ws/events.
-    """
-    print("[PROACTIVE_INTELLIGENCE] Starting proactive auto-organizer and morning briefing loops...")
-    last_briefing_date = None
-    
-    while True:
-        try:
-            # --- 1. Downloads auto-organizer removed (manual-only now for safety).
-            #     Use "organize my downloads" to trigger OrganizeFolderTool explicitly.
-
-            # --- 2. Morning 08:00 AM Auto-Briefing Trigger (fires once per hour) ---
-            now = datetime.datetime.now()
-            today_str = now.date().isoformat()
-            
-            # Fire once during the whole 8 o'clock hour (not just minute==0, which a
-            # 120s loop can miss).
-            if now.hour == 8 and today_str != last_briefing_date:
-                last_briefing_date = today_str
-                print("[PROACTIVE_INTELLIGENCE] It is 08:00 AM. Compiling and broadcasting Daily Briefing...")
-                from backend.app.tools.daily_briefing_tool import DailyBriefingTool
-                tool = DailyBriefingTool()
-                res = await tool.execute()
-                if res.get("success"):
-                    event_payload = {
-                        "type": "daily_briefing_triggered",
-                        "briefing": res["data"]
-                    }
-                    await ws_manager.broadcast("events", event_payload)
-                    
-        except Exception as e:
-            print(f"[PROACTIVE_INTELLIGENCE] Loop exception: {e}")
-            
-        await asyncio.sleep(120.0)
-
 async def startup_event_handler():
     """Initializes standard SQLite databases and applies parameterized table migrations."""
     try:
@@ -264,7 +226,6 @@ async def startup_event_handler():
         tasks = get_background_task_manager()
         tasks.start_singleton("reminder_scheduler", run_reminder_scheduler)
         tasks.start_singleton("emergency_monitor", run_emergency_monitor)
-        tasks.start_singleton("proactive_intelligence", run_proactive_intelligence_loop)
         tasks.start_singleton("durability_scheduler", run_durability_scheduler)
     except Exception as e:
         print(f"[ERROR] Core startup initialization failed: {e}")

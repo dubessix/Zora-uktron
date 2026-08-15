@@ -36,4 +36,10 @@
 - Added vulnerability, Ruff, Bandit, coverage, wheel-install, and build release gates.
 - Replaced obsolete models/endpoints/counts and absolute quality claims in documentation.
 
+### Safe idle refinement
+
+- Replaced the unused fixed 8 AM briefing polling loop with one first-successful-UI-open briefing per local date and time-appropriate greeting.
+- Hidden browser tabs use a slower health poll and refresh immediately on return.
+- AI, coding tools, reminders, emergency monitoring, durability, permissions, database schema, and tool contracts remain unchanged.
+
 Git commit history is the source of truth for exact changes and hashes.

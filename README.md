@@ -82,6 +82,8 @@ The launcher:
 7. monitors both child processes and stops the sibling if either exits;
 8. performs bounded graceful shutdown with forced cleanup as a last resort.
 
+On the first successful UI connection of each local calendar day, Ultron creates one time-appropriate Jarvis briefing (morning, afternoon, evening, or late-hour). It does not run a fixed 8 AM polling loop. Hidden browser tabs reduce health polling from five to thirty seconds and refresh immediately when visible again.
+
 Default URLs:
 
 - Frontend: `http://127.0.0.1:5173`

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AppShell from './components/AppShell';
 import NotificationToast from './components/NotificationToast';
-import { api } from './api';
+import { api, executeTool } from './api';
 
 /**
  * Ultron Web Client Root App
@@ -28,6 +28,8 @@ export default function App() {
   const [confirmingAction, setConfirmingAction] = useState(false);
   // Real-time operational log (Log tab)
   const [logs, setLogs] = useState([]);
+  // One first-open briefing attempt per browser page; localStorage prevents repeats that day.
+  const briefingAttemptedRef = useRef(false);
 
   // Widget floating toggle states (Requirement: Remember coordinates & state)
   const [widgetState, setWidgetState] = useState({
@@ -99,9 +101,21 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Poll backend health and system metrics
+  // Poll normally while visible; hidden tabs wake less often and refresh immediately on return.
   useEffect(() => {
+    let timer = null;
+    let cancelled = false;
+    let inFlight = false;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      clearTimeout(timer);
+      timer = setTimeout(checkHealth, document.hidden ? 30000 : 5000);
+    };
+
     const checkHealth = async () => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
       try {
         const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
         const response = await fetch(`${apiUrl}/api/health`);
@@ -116,13 +130,79 @@ export default function App() {
       } catch (err) {
         setBackendStatus("DISCONNECTED");
         setSystemMetrics(null);
+      } finally {
+        inFlight = false;
+        scheduleNext();
       }
     };
 
+    const handleVisibility = () => {
+      clearTimeout(timer);
+      if (document.hidden) scheduleNext();
+      else checkHealth();
+    };
+
     checkHealth();
-    const interval = setInterval(checkHealth, 5000);
-    return () => clearInterval(interval);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
+
+  // Jarvis-style briefing once on the first successful UI open of each local calendar day.
+  useEffect(() => {
+    if (backendStatus !== 'CONNECTED' || briefingAttemptedRef.current) return;
+
+    const now = new Date();
+    const dateKey = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+    ].join('-');
+    try {
+      if (window.localStorage.getItem('ultron_daily_briefing_date') === dateKey) {
+        briefingAttemptedRef.current = true;
+        return;
+      }
+    } catch (_error) {
+      // Storage can be blocked by browser privacy settings; page-level guard still prevents repeats.
+    }
+
+    briefingAttemptedRef.current = true;
+    const runFirstOpenBriefing = async () => {
+      try {
+        const result = await executeTool('daily_briefing', {
+          include_weather: true,
+          include_tasks: true,
+          include_schedule: true,
+          include_news: true,
+        });
+        if (!result.success) throw new Error(result.error || 'Daily briefing unavailable.');
+        try {
+          window.localStorage.setItem('ultron_daily_briefing_date', dateKey);
+        } catch (_error) {
+          // Briefing still works when persistent browser storage is unavailable.
+        }
+        const text = result.data?.briefing_text || 'Daily briefing returned no text.';
+        setMessages(prev => [...prev, {
+          id: `daily_briefing_${dateKey}`,
+          sender: 'ai',
+          text,
+          personality: activePersonality,
+          response_ms: 0,
+        }]);
+        addNotification('Daily briefing ready', 'Jarvis briefing loaded from current local and live sources.', 'low');
+        setAiState('speaking');
+        speakResponse(text, activePersonality);
+        setTimeout(() => setAiState('idle'), 1200);
+      } catch (error) {
+        addNotification('Daily briefing unavailable', error.message || 'No values were substituted.', 'medium');
+      }
+    };
+    runFirstOpenBriefing();
+  }, [backendStatus]);
 
   // Persist UI personality selection; never claim a switch that the backend rejected.
   const togglePersonality = async () => {

@@ -32,7 +32,7 @@ export default function DailyBriefingWidget() {
   return (
     <div className="flex flex-col h-full w-full font-mono text-[10px] text-white/90 p-4 space-y-4 overflow-y-auto custom-scrollbar">
       <div className="flex justify-between items-center border-b border-white/5 pb-2">
-        <span className="text-[11px] font-bold tracking-widest text-[#7DD3FC] uppercase">Morning Briefing</span>
+        <span className="text-[11px] font-bold tracking-widest text-[#7DD3FC] uppercase">Daily Jarvis Briefing</span>
         <button onClick={fetchBriefing} disabled={status === 'loading'}
           className="bg-[#7DD3FC]/10 border border-[#7DD3FC]/30 text-[#7DD3FC] text-[8px] px-2 py-0.5 rounded-sm uppercase tracking-wider disabled:opacity-30">
           {status === 'loading' ? 'Compiling...' : 'Refresh'}

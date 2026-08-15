@@ -21,6 +21,17 @@ class DailyBriefingArgs(BaseModel):
     include_news: bool = Field(True, description="Fetch currently verifiable public AI-news search results.")
 
 
+def _greeting_for_hour(hour: int) -> tuple[str, str]:
+    """Return a local-time greeting suitable for first-open briefing at any hour."""
+    if 5 <= hour < 12:
+        return "morning", "Good morning, Debjeet, Sir."
+    if 12 <= hour < 17:
+        return "afternoon", "Good afternoon, Debjeet, Sir."
+    if 17 <= hour < 22:
+        return "evening", "Good evening, Debjeet, Sir."
+    return "night", "Good evening, Debjeet, Sir. It is a late-hour briefing."
+
+
 class DailyBriefingTool(BaseTool):
     def __init__(self) -> None:
         super().__init__(
@@ -172,7 +183,8 @@ class DailyBriefingTool(BaseTool):
                     ).fetchall()
                 ]
 
-        lines = [f"=== DAILY BRIEFING: {today_date.upper()} ===", "", "Good morning, Debjeet, Sir."]
+        greeting_period, greeting = _greeting_for_hour(now.hour)
+        lines = [f"=== DAILY BRIEFING: {today_date.upper()} ===", "", greeting]
         if include_weather:
             if weather_data.get("available"):
                 wind = weather_data.get("windspeed") or "windspeed not reported"
@@ -212,6 +224,7 @@ class DailyBriefingTool(BaseTool):
             "success": True,
             "data": {
                 "date": today_date,
+                "greeting_period": greeting_period,
                 "briefing_text": "\n".join(lines),
                 "weather": weather_data,
                 "news": news_data,
