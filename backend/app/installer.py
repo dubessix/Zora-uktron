@@ -161,15 +161,34 @@ class InstallerEngine:
             start = scripts / "Start Ultron.cmd"
             stop = scripts / "Stop Ultron.cmd"
             settings = scripts / "Ultron Keys.cmd"
-            start.write_text(f'@echo off\r\ncd /d "{APPLICATION_HOME}"\r\n"{python}" -m backend.app.cli start\r\npause\r\n', encoding="utf-8")
-            stop.write_text(f'@echo off\r\ncd /d "{APPLICATION_HOME}"\r\n"{python}" -m backend.app.cli stop\r\ntimeout /t 2 >nul\r\n', encoding="utf-8")
+            log = APPLICATION_HOME / "data" / "logs" / "launcher-ui.log"
+            start.write_text(
+                f'@echo off\r\ncd /d "{APPLICATION_HOME}"\r\n'
+                f'if not exist "{log.parent}" mkdir "{log.parent}"\r\n'
+                f'"{python}" -m backend.app.cli start >> "{log}" 2>&1\r\n',
+                encoding="utf-8",
+            )
+            stop.write_text(
+                f'@echo off\r\ncd /d "{APPLICATION_HOME}"\r\n'
+                f'"{python}" -m backend.app.cli stop >> "{log}" 2>&1\r\n',
+                encoding="utf-8",
+            )
             settings.write_text(f'@echo off\r\n"{python}" -m backend.app.installer --keys\r\n', encoding="utf-8")
         else:
             start = scripts / "start-ultron"
             stop = scripts / "stop-ultron"
             settings = scripts / "ultron-keys"
-            start.write_text(f'#!/bin/sh\ncd "{APPLICATION_HOME}"\nexec "{python}" -m backend.app.cli start\n', encoding="utf-8")
-            stop.write_text(f'#!/bin/sh\ncd "{APPLICATION_HOME}"\nexec "{python}" -m backend.app.cli stop\n', encoding="utf-8")
+            log = APPLICATION_HOME / "data" / "logs" / "launcher-ui.log"
+            start.write_text(
+                f'#!/bin/sh\ncd "{APPLICATION_HOME}"\nmkdir -p "{log.parent}"\n'
+                f'exec "{python}" -m backend.app.cli start >> "{log}" 2>&1\n',
+                encoding="utf-8",
+            )
+            stop.write_text(
+                f'#!/bin/sh\ncd "{APPLICATION_HOME}"\nmkdir -p "{log.parent}"\n'
+                f'exec "{python}" -m backend.app.cli stop >> "{log}" 2>&1\n',
+                encoding="utf-8",
+            )
             settings.write_text(f'#!/bin/sh\nexec "{python}" -m backend.app.installer --keys\n', encoding="utf-8")
             for path in (start, stop, settings):
                 path.chmod(0o755)
@@ -209,6 +228,7 @@ class InstallerEngine:
                     f"$s.TargetPath='{target_q}';"
                     f"$s.WorkingDirectory='{root_q}';"
                     f"$s.IconLocation='{icon_q}';"
+                    "$s.WindowStyle=7;"
                     "$s.Save()"
                 )
                 subprocess.run(
@@ -224,8 +244,8 @@ class InstallerEngine:
         applications.mkdir(parents=True, exist_ok=True)
         icon = ROOT / "images" / "ultron_ui_refined.png"
         entries = {
-            "ultron.desktop": ("Ultron", paths["start"], True),
-            "ultron-stop.desktop": ("Stop Ultron", paths["stop"], True),
+            "ultron.desktop": ("Ultron", paths["start"], False),
+            "ultron-stop.desktop": ("Stop Ultron", paths["stop"], False),
             "ultron-keys.desktop": ("Ultron Keys", paths["settings"], False),
         }
         for filename, (name, executable, terminal) in entries.items():

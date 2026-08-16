@@ -70,7 +70,8 @@ class TestInstallerScripts(unittest.TestCase):
             desktop = home / ".local/share/applications/ultron.desktop"
             content = desktop.read_text(encoding="utf-8")
             self.assertIn(f'Exec="{scripts["start"]}"', content)
-            self.assertIn("Terminal=true", content)
+            self.assertIn("Terminal=false", content)
+            self.assertIn("launcher-ui.log", scripts["start"].read_text(encoding="utf-8"))
 
     def test_install_sequence_uses_runtime_requirements_and_preserves_cli_setup(self):
         engine = installer.InstallerEngine(Mock(), Mock())

@@ -20,7 +20,7 @@ Windows 11: double-click `SETUP_ULTRON_WINDOWS.bat`.
 
 Ubuntu: double-click/run `SETUP_ULTRON_UBUNTU.sh`.
 
-The small setup window shows live progress text at the top, installs runtime packages, preserves existing keys/data, runs Doctor/assets checks, and creates `Ultron`, `Stop Ultron`, and `Ultron Keys` entries in Windows Start Menu or Ubuntu Applications. Normal setup uses the signed prebuilt frontend and does not require Node/npm.
+The small setup window shows live progress text at the top, installs runtime packages, preserves existing keys/data, runs Doctor/assets checks, and creates `Ultron`, `Stop Ultron`, and `Ultron Keys` entries in Windows Start Menu or Ubuntu Applications. App-menu launch is hidden/minimized (no command typing); logs go to `data/logs/launcher-ui.log`. Normal setup uses the signed prebuilt frontend and does not require Node/npm.
 
 ## Manual install from source
 
