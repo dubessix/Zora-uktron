@@ -7,7 +7,7 @@ import { api, executeTool } from './api';
  * Ultron Web Client Root App
  * Coordinates websocket connections, local state parameters, and maps
  * standard data flows, notification toast systems, and keyboard fallbacks.
- * Dynamically launches and positions 12 distinct widgets.
+ * Dynamically launches and positions all registry-backed widgets.
  */
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("DISCONNECTED");

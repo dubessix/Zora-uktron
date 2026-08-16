@@ -1,4 +1,28 @@
 import React, { lazy } from 'react';
+import {
+  AlarmClock,
+  Bell,
+  Brain,
+  CalendarDays,
+  ChartNoAxesCombined,
+  CloudSun,
+  Code2,
+  Cpu,
+  FolderGit2,
+  FolderOpen,
+  GitBranch,
+  GitGraph,
+  Globe2,
+  ListTodo,
+  Music2,
+  Newspaper,
+  Search,
+  SearchCode,
+  ShieldCheck,
+  Sparkles,
+  SquareTerminal,
+  Telescope,
+} from 'lucide-react';
 
 // Lazy loading all widget components to optimize bundle footprint and render speed
 const TodoWidget = lazy(() => import('./TodoWidget'));
@@ -32,6 +56,7 @@ const GitCloneWidget = lazy(() => import('./GitCloneWidget'));
 export const WIDGET_REGISTRY = {
   todo: {
     id: "todo",
+    icon: ListTodo,
     title: "Daily Task Manager",
     category: "productivity",
     defaultWidth: 320,
@@ -40,6 +65,7 @@ export const WIDGET_REGISTRY = {
   },
   calendar: {
     id: "calendar",
+    icon: CalendarDays,
     title: "Day Planner & Schedule",
     category: "productivity",
     defaultWidth: 320,
@@ -48,6 +74,7 @@ export const WIDGET_REGISTRY = {
   },
   reminder: {
     id: "reminder",
+    icon: AlarmClock,
     title: "Reminder & Alarm Core",
     category: "system",
     defaultWidth: 320,
@@ -56,6 +83,7 @@ export const WIDGET_REGISTRY = {
   },
   code_optimizer: {
     id: "code_optimizer",
+    icon: Sparkles,
     title: "SOLID Code Optimizer",
     category: "system",
     defaultWidth: 320,
@@ -64,6 +92,7 @@ export const WIDGET_REGISTRY = {
   },
   semantic_code_graph: {
     id: "semantic_code_graph",
+    icon: GitGraph,
     title: "Semantic Code Graph",
     category: "system",
     defaultWidth: 320,
@@ -72,6 +101,7 @@ export const WIDGET_REGISTRY = {
   },
   coding: {
     id: "coding",
+    icon: Code2,
     title: "Coding Agent",
     category: "developer",
     defaultWidth: 340,
@@ -80,6 +110,7 @@ export const WIDGET_REGISTRY = {
   },
   music: {
     id: "music",
+    icon: Music2,
     title: "Music Player",
     category: "music",
     defaultWidth: 320,
@@ -88,6 +119,7 @@ export const WIDGET_REGISTRY = {
   },
   world_monitor: {
     id: "world_monitor",
+    icon: Globe2,
     title: "World Monitor",
     category: "research",
     defaultWidth: 320,
@@ -96,6 +128,7 @@ export const WIDGET_REGISTRY = {
   },
   github_search: {
     id: "github_search",
+    icon: SearchCode,
     title: "GitHub Search",
     category: "developer",
     defaultWidth: 320,
@@ -104,6 +137,7 @@ export const WIDGET_REGISTRY = {
   },
   git_clone: {
     id: "git_clone",
+    icon: FolderGit2,
     title: "Git Clone",
     category: "developer",
     defaultWidth: 340,
@@ -112,6 +146,7 @@ export const WIDGET_REGISTRY = {
   },
   security_guardian: {
     id: "security_guardian",
+    icon: ShieldCheck,
     title: "Security Guardian",
     category: "system",
     defaultWidth: 320,
@@ -120,6 +155,7 @@ export const WIDGET_REGISTRY = {
   },
   daily_briefing: {
     id: "daily_briefing",
+    icon: Newspaper,
     title: "Daily Briefing Engine",
     category: "productivity",
     defaultWidth: 320,
@@ -128,6 +164,7 @@ export const WIDGET_REGISTRY = {
   },
   git: {
     id: "git",
+    icon: GitBranch,
     title: "Git Repository Watcher",
     category: "developer",
     defaultWidth: 320,
@@ -136,6 +173,7 @@ export const WIDGET_REGISTRY = {
   },
   file_explorer: {
     id: "file_explorer",
+    icon: FolderOpen,
     title: "Local File Explorer",
     category: "system",
     defaultWidth: 340,
@@ -144,6 +182,7 @@ export const WIDGET_REGISTRY = {
   },
   universal_search: {
     id: "universal_search",
+    icon: Search,
     title: "Universal search Engine",
     category: "system",
     defaultWidth: 320,
@@ -152,6 +191,7 @@ export const WIDGET_REGISTRY = {
   },
   deep_research: {
     id: "deep_research",
+    icon: Telescope,
     title: "Deep AI Research",
     category: "research",
     defaultWidth: 320,
@@ -160,6 +200,7 @@ export const WIDGET_REGISTRY = {
   },
   weather: {
     id: "weather",
+    icon: CloudSun,
     title: "Local Weather Watcher",
     category: "productivity",
     defaultWidth: 320,
@@ -168,6 +209,7 @@ export const WIDGET_REGISTRY = {
   },
   market: {
     id: "market",
+    icon: ChartNoAxesCombined,
     title: "Live Market Index",
     category: "productivity",
     defaultWidth: 320,
@@ -176,6 +218,7 @@ export const WIDGET_REGISTRY = {
   },
   terminal: {
     id: "terminal",
+    icon: SquareTerminal,
     title: "Terminal Subprocess logs",
     category: "developer",
     defaultWidth: 340,
@@ -184,6 +227,7 @@ export const WIDGET_REGISTRY = {
   },
   memory: {
     id: "memory",
+    icon: Brain,
     title: "Memory DB Viewer",
     category: "memory",
     defaultWidth: 320,
@@ -192,6 +236,7 @@ export const WIDGET_REGISTRY = {
   },
   notification: {
     id: "notification",
+    icon: Bell,
     title: "System Notification Hub",
     category: "system",
     defaultWidth: 320,
@@ -200,6 +245,7 @@ export const WIDGET_REGISTRY = {
   },
   system: {
     id: "system",
+    icon: Cpu,
     title: "Hardware System Metrics",
     category: "system",
     defaultWidth: 320,

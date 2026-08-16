@@ -82,10 +82,14 @@ class TestApprovedWidgetBehaviorLock(unittest.TestCase):
 
     def test_widget_launchers_toggle_existing_registry_ids_without_hardcoded_components(self):
         shell = (COMPONENTS / "AppShell.jsx").read_text(encoding="utf-8")
-        self.assertIn("Object.keys(WIDGET_REGISTRY).map", shell)
-        self.assertIn("onClick={() => toggleWidget(key)}", shell)
+        rail = (COMPONENTS / "WidgetRail.jsx").read_text(encoding="utf-8")
+        self.assertIn("Object.entries(WIDGET_REGISTRY).map", rail)
+        self.assertIn("onClick={() => toggleWidget(widgetId)}", rail)
+        self.assertIn("import WidgetRail", shell)
         self.assertNotIn("import TodoWidget", shell)
         self.assertNotIn("import CalendarWidget", shell)
+        self.assertNotIn("import TodoWidget", rail)
+        self.assertNotIn("import CalendarWidget", rail)
 
 
 class TestApprovedPersonalityThemeLock(unittest.TestCase):

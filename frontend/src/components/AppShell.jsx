@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import LeftPanel from './LeftPanel';
 import RightPanel from './RightPanel';
 import BlobCanvas from './BlobCanvas';
+import WidgetRail from './WidgetRail';
 import useVoice from '../hooks/useVoice';
 
 // Import dynamic widget registry structures (Requirement: Never hardcode widgets in AppShell)
@@ -13,7 +14,7 @@ import WidgetContainer from './widgets/WidgetContainer';
  * Implements the responsive 3-panel widescreen dashboard layout.
  * Houses left system stats, center canvas particle core, right chat dialogues,
  * and dynamically iterates over the WIDGET_REGISTRY to render open draggable widgets.
- * The IRIS header name + accent color switch dynamically between Ultron (emerald)
+ * The identity name + accent color switch dynamically between Ultron (emerald)
  * and Zora (pink). The bottom mic toggles browser-native wake-word listening.
  */
 export default function AppShell({ 
@@ -63,8 +64,14 @@ export default function AppShell({
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen p-6 select-none bg-transparent overflow-hidden text-[#F5F5F7] relative">
-      
+    <div className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-[#F5F5F7]">
+      <WidgetRail
+        widgetState={widgetState}
+        toggleWidget={toggleWidget}
+        activePersonality={activePersonality}
+      />
+
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden p-6">
       {/* ==============================================================================
           1. SYSTEM HEADER & TOP NAVIGATION (Dynamic IRIS identity)
          ============================================================================== */}
@@ -105,25 +112,6 @@ export default function AppShell({
             <span className={`uppercase tracking-wider font-bold ${voice.wakeDetected ? "text-pink-400" : "text-[#7DD3FC]"}`}>
               {voice.wakeDetected ? "WAKED" : aiState}
             </span>
-          </div>
-
-          {/* Quick-toggle widget hot-buttons inside center pane */}
-          <div className="absolute top-6 right-6 flex gap-2">
-            {Object.keys(WIDGET_REGISTRY).map(key => {
-              const config = WIDGET_REGISTRY[key];
-              const isVisible = widgetState[key]?.visible;
-              return (
-                <button 
-                  key={key}
-                  onClick={() => toggleWidget(key)}
-                  className={`px-2 py-0.5 border text-[8px] font-mono rounded-sm transition-all uppercase ${
-                    isVisible ? "border-[#7DD3FC]/40 text-[#7DD3FC] bg-[#7DD3FC]/5" : "border-white/5 text-white/30"
-                  }`}
-                >
-                  {config.id}
-                </button>
-              );
-            })}
           </div>
 
           {/* Core Canvas particle loop component */}
@@ -255,6 +243,7 @@ export default function AppShell({
         );
       })}
 
+      </div>
     </div>
   );
 }
