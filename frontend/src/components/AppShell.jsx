@@ -101,7 +101,7 @@ export default function AppShell({
       <div className="flex-1 grid grid-cols-12 gap-6 items-stretch overflow-hidden z-10">
         
         {/* Left column: Relational resource meters */}
-        <LeftPanel systemMetrics={systemMetrics} />
+        <LeftPanel systemMetrics={systemMetrics} backendStatus={backendStatus} />
 
         {/* Center column: HTML5 Canvas particle loop & concentric orbital rings */}
         <main className="col-span-12 lg:col-span-6 flex flex-col items-center justify-center relative bg-white/[0.01] border border-white/5 rounded-sm p-6 backdrop-blur-xl">

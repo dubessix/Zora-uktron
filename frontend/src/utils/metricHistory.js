@@ -74,6 +74,24 @@ export function calculateNetworkRates(previous, current) {
   };
 }
 
+export function sparklinePoints(values, width = 100, height = 32) {
+  const reported = (Array.isArray(values) ? values : []).filter(
+    (value) => finiteNumberOrNull(value) !== null,
+  );
+  if (reported.length < 2) return '';
+  const minimum = Math.min(...reported);
+  const maximum = Math.max(...reported);
+  const range = maximum - minimum;
+  const rounded = (value) => Math.round(value * 100) / 100;
+  return reported
+    .map((value, index) => {
+      const x = (index / (reported.length - 1)) * width;
+      const y = range === 0 ? height / 2 : height - ((value - minimum) / range) * height;
+      return `${rounded(x)},${rounded(y)}`;
+    })
+    .join(' ');
+}
+
 export function formatBytesPerSecond(value) {
   const numeric = finiteNumberOrNull(value);
   if (numeric === null || numeric < 0) return 'Unavailable';

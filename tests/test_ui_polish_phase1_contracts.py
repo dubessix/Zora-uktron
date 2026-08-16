@@ -70,7 +70,7 @@ class TestApprovedWidgetBehaviorLock(unittest.TestCase):
         left = (COMPONENTS / "LeftPanel.jsx").read_text(encoding="utf-8")
         container = (WIDGETS / "WidgetContainer.jsx").read_text(encoding="utf-8")
 
-        self.assertIn("<LeftPanel systemMetrics={systemMetrics} />", shell)
+        self.assertIn("<LeftPanel systemMetrics={systemMetrics} backendStatus={backendStatus} />", shell)
         self.assertNotIn("widgetState", left)
         self.assertNotIn("toggleWidget", left)
         self.assertNotIn("WidgetContainer", left)

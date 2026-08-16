@@ -33,7 +33,8 @@ class TestPhase10FrontendArchitecture(unittest.TestCase):
             self.assertNotIn("VISION FEED", content, "Legacy Vision Feed should be removed from Left Panel.")
             # Real reported telemetry remains; fabricated latency/load values do not.
             self.assertIn("Network counters", content)
-            self.assertIn("System uptime", content)
+            self.assertIn('label="Uptime"', content)
+            self.assertIn("uptime_seconds", content)
             self.assertIn('label="RAM"', content)
             self.assertIn("Local round trip", content)
             self.assertIn("health_latency_ms", content)
