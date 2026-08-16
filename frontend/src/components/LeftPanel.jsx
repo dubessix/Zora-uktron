@@ -39,19 +39,19 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
       : 'Collecting';
 
   return (
-    <aside className="col-span-12 lg:col-span-3 h-full min-w-0 space-y-3 overflow-y-auto pr-1 font-mono scrollbar-thin">
-      <section className="rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#F5F5F7]">
+    <aside className="col-span-12 lg:col-span-3 h-full min-w-0 space-y-3 overflow-y-auto pr-1 font-mono scrollbar-thin [@media(max-height:800px)]:space-y-2 2xl:space-y-4">
+      <section className="rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl [@media(max-height:800px)]:p-3 2xl:p-4">
+        <div className="mb-3 flex items-center justify-between [@media(max-height:800px)]:mb-2 2xl:mb-4">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#F5F5F7] 2xl:text-[11px]">
             <Activity size={14} strokeWidth={1.8} className="text-emerald-400" aria-hidden="true" />
             <span>System overview</span>
           </div>
-          <span className={`text-[8px] font-semibold uppercase tracking-widest ${hasTelemetry ? 'text-emerald-400' : 'text-amber-300'}`}>
+          <span className={`text-[8px] font-semibold uppercase tracking-widest 2xl:text-[9px] ${hasTelemetry ? 'text-emerald-400' : 'text-amber-300'}`}>
             {trendStatus}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:gap-2 2xl:gap-3">
           <TrendMetricCard
             label="CPU"
             value={percent(cpu)}
@@ -81,20 +81,20 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
       </section>
 
       <section
-        className="rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl"
+        className="rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl [@media(max-height:800px)]:p-3 2xl:p-4"
         aria-label="Network counters"
       >
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between [@media(max-height:800px)]:mb-2 2xl:mb-4">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/15 bg-cyan-400/5 text-cyan-300">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/15 bg-cyan-400/5 text-cyan-300 2xl:h-9 2xl:w-9">
               <Network size={16} strokeWidth={1.7} aria-hidden="true" />
             </span>
             <div>
-              <h2 className="text-[10px] font-bold uppercase tracking-widest text-emerald-300">Network</h2>
-              <p className="mt-0.5 text-[8px] text-white/42">Telemetry link</p>
+              <h2 className="text-[10px] font-bold uppercase tracking-widest text-emerald-300 2xl:text-[11px]">Network</h2>
+              <p className="mt-0.5 text-[8px] text-white/42 2xl:text-[9px]">Telemetry link</p>
             </div>
           </div>
-          <span className={`rounded-full border px-2 py-1 text-[7px] font-bold uppercase tracking-widest ${
+          <span className={`rounded-full border px-2 py-1 text-[7px] font-bold uppercase tracking-widest 2xl:px-2.5 2xl:text-[8px] ${
             backendConnected
               ? 'border-emerald-400/20 bg-emerald-400/5 text-emerald-300'
               : 'border-amber-400/20 bg-amber-400/5 text-amber-300'
@@ -103,7 +103,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
           </span>
         </div>
 
-        <div className="mb-3 grid grid-cols-2 gap-2.5">
+        <div className="mb-3 grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:mb-2 [@media(max-height:800px)]:gap-2 2xl:mb-4 2xl:gap-3">
           <NetworkValue
             label="Local round trip"
             value={healthLatency === null ? 'Unavailable' : `${healthLatency.toFixed(1)} ms`}
@@ -117,7 +117,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
         </div>
 
         {network.available ? (
-          <div className="space-y-3">
+          <div className="space-y-3 [@media(max-height:800px)]:space-y-2 2xl:space-y-4">
             <RateRow
               icon={ArrowUp}
               label="TX rate"
@@ -143,7 +143,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
         )}
       </section>
 
-      <section className="grid grid-cols-2 gap-2.5">
+      <section className="grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:gap-2 2xl:gap-3">
         <DetailMetricCard
           icon={Cpu}
           label="CPU load"
@@ -179,10 +179,10 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
 function TrendMetricCard({ label, value, history, color, available = true }) {
   const isUnavailable = value === 'Unavailable';
   return (
-    <div className="min-w-0 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2.5">
-      <span className="block text-[7px] font-semibold uppercase tracking-widest text-white/42">{label}</span>
-      <div className="mt-1.5 flex min-h-9 items-end justify-between gap-1.5">
-        <span className={`shrink-0 whitespace-nowrap font-bold text-[#F5F5F7] ${isUnavailable ? 'text-[10px]' : 'text-[16px]'}`}>
+    <div className="min-w-0 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2.5 2xl:px-3.5 2xl:py-3.5">
+      <span className="block text-[7px] font-semibold uppercase tracking-widest text-white/42 2xl:text-[8px]">{label}</span>
+      <div className="mt-1.5 flex min-h-9 items-end justify-between gap-1.5 2xl:mt-2 2xl:min-h-11">
+        <span className={`shrink-0 whitespace-nowrap font-bold text-[#F5F5F7] ${isUnavailable ? 'text-[10px] 2xl:text-[11px]' : 'text-[16px] 2xl:text-[18px]'}`}>
           {value}
         </span>
         <MiniSparkline values={history} color={color} available={available} />
@@ -193,14 +193,14 @@ function TrendMetricCard({ label, value, history, color, available = true }) {
 
 function MiniSparkline({ values, color, available = true }) {
   if (!available) {
-    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25">No sensor</span>;
+    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25 2xl:w-[76px] 2xl:text-[7px]">No sensor</span>;
   }
   const points = sparklinePoints(values, 58, 24);
   if (!points) {
-    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25">Collecting</span>;
+    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25 2xl:w-[76px] 2xl:text-[7px]">Collecting</span>;
   }
   return (
-    <svg width="58" height="24" viewBox="0 0 58 24" role="img" aria-label="Recent reported trend" className="shrink-0">
+    <svg width="58" height="24" viewBox="0 0 58 24" role="img" aria-label="Recent reported trend" className="shrink-0 2xl:h-[31px] 2xl:w-[76px]">
       <polyline
         points={points}
         fill="none"
@@ -215,9 +215,9 @@ function MiniSparkline({ values, color, available = true }) {
 
 function NetworkValue({ label, value, color }) {
   return (
-    <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2.5">
-      <span className="block text-[7px] uppercase tracking-widest text-white/35">{label}</span>
-      <span className={`mt-1.5 block break-words text-[14px] font-bold ${color}`}>{value}</span>
+    <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2.5 2xl:px-3.5 2xl:py-3.5">
+      <span className="block text-[7px] uppercase tracking-widest text-white/35 2xl:text-[8px]">{label}</span>
+      <span className={`mt-1.5 block break-words text-[14px] font-bold 2xl:mt-2 2xl:text-[16px] ${color}`}>{value}</span>
     </div>
   );
 }
@@ -225,32 +225,33 @@ function NetworkValue({ label, value, color }) {
 function RateRow({ icon: Icon, label, value, activity, color }) {
   const width = Number.isFinite(activity) ? Math.max(0, Math.min(100, activity)) : 0;
   return (
-    <div className="grid grid-cols-[18px_1fr_auto] items-center gap-2">
-      <Icon size={14} strokeWidth={1.8} style={{ color }} aria-hidden="true" />
+    <div className="grid grid-cols-[18px_1fr_auto] items-center gap-2 2xl:grid-cols-[20px_1fr_auto] 2xl:gap-3">
+      <Icon size={14} strokeWidth={1.8} style={{ color }} aria-hidden="true" className="2xl:h-4 2xl:w-4" />
       <div>
-        <div className="mb-1.5 flex items-center justify-between text-[7px] uppercase tracking-wider text-white/35">
+        <div className="mb-1.5 flex items-center justify-between text-[7px] uppercase tracking-wider text-white/35 2xl:text-[8px]">
           <span>{label}</span>
         </div>
-        <div className="h-1 rounded-full bg-white/[0.06]">
+        <div className="h-1 rounded-full bg-white/[0.06] 2xl:h-1.5">
           <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${width}%`, backgroundColor: color }} />
         </div>
       </div>
-      <span className="max-w-20 text-right text-[7px] font-semibold text-white/60">{value}</span>
+      <span className="max-w-20 text-right text-[7px] font-semibold text-white/60 2xl:max-w-24 2xl:text-[8px]">{value}</span>
     </div>
   );
 }
 
 function DetailMetricCard({ icon: Icon, label, value, progress, color, status }) {
   const width = numberOrNull(progress);
+  const isUnavailable = value === 'Unavailable';
   return (
-    <div className="min-h-24 rounded-xl border bg-[#0B1112]/88 p-3.5 backdrop-blur-xl" style={{ borderColor: `${color}2E` }}>
-      <div className="flex items-center gap-2 text-white/45">
-        <Icon size={14} strokeWidth={1.7} style={{ color }} aria-hidden="true" />
-        <span className="text-[7px] font-semibold uppercase tracking-widest">{label}</span>
+    <div className="min-h-24 rounded-xl border bg-[#0B1112]/88 p-3.5 backdrop-blur-xl [@media(max-height:800px)]:min-h-20 [@media(max-height:800px)]:p-3 2xl:min-h-28 2xl:p-4" style={{ borderColor: `${color}2E` }}>
+      <div className="flex items-center gap-2 text-white/45 2xl:gap-2.5">
+        <Icon size={14} strokeWidth={1.7} style={{ color }} aria-hidden="true" className="2xl:h-4 2xl:w-4" />
+        <span className="text-[7px] font-semibold uppercase tracking-widest 2xl:text-[8px]">{label}</span>
       </div>
-      <span className="mt-3 block break-words text-[18px] font-bold" style={{ color }}>{value}</span>
+      <span className={`mt-3 block whitespace-nowrap font-bold [@media(max-height:800px)]:mt-2 2xl:mt-4 ${isUnavailable ? 'text-[16px] 2xl:text-[18px]' : 'text-[18px] 2xl:text-[21px]'}`} style={{ color }}>{value}</span>
       {width !== null && (
-        <div className="mt-3 h-1 rounded-full bg-white/[0.06]">
+        <div className="mt-3 h-1 rounded-full bg-white/[0.06] [@media(max-height:800px)]:mt-2 2xl:mt-4 2xl:h-1.5">
           <div
             className="h-full rounded-full"
             style={{ width: `${Math.max(0, Math.min(100, width))}%`, backgroundColor: color }}
@@ -258,7 +259,7 @@ function DetailMetricCard({ icon: Icon, label, value, progress, color, status })
         </div>
       )}
       {status && (
-        <span className="mt-2 inline-flex rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[7px] uppercase tracking-widest text-white/55">
+        <span className="mt-2 inline-flex rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[7px] uppercase tracking-widest text-white/55 [@media(max-height:800px)]:mt-1.5 2xl:mt-3 2xl:px-2.5 2xl:text-[8px]">
           {status}
         </span>
       )}

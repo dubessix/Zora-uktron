@@ -98,16 +98,16 @@ export default function AppShell({
         activePersonality={activePersonality}
       />
 
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4 2xl:p-5">
       {/* ==============================================================================
           1. SYSTEM HEADER & TOP NAVIGATION (Dynamic assistant identity)
          ============================================================================== */}
-      <header className="relative z-10 mb-4 flex items-center justify-between border-b border-white/[0.06] pb-3 font-mono">
+      <header className="relative z-10 mb-4 flex items-center justify-between border-b border-white/[0.06] pb-3 font-mono 2xl:mb-5 2xl:pb-4">
         <div className="flex min-w-0 items-center gap-3">
           <span
             role="img"
             aria-label={`${aiName} identity`}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-all duration-500"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-all duration-500 2xl:h-10 2xl:w-10"
             style={{
               color: theme.primary,
               borderColor: theme.border,
@@ -115,10 +115,10 @@ export default function AppShell({
               boxShadow: `0 0 18px ${theme.glow}`,
             }}
           >
-            <Orbit size={18} strokeWidth={1.8} aria-hidden="true" />
+            <Orbit size={18} strokeWidth={1.8} aria-hidden="true" className="2xl:h-5 2xl:w-5" />
           </span>
           <span
-            className={`text-2xl font-black italic tracking-tight uppercase transition-all duration-500 ${accentText}`}
+            className={`text-2xl 2xl:text-3xl font-black italic tracking-tight uppercase transition-all duration-500 ${accentText}`}
             style={{
               fontFamily: "'Arial Black', 'Segoe UI', system-ui, sans-serif",
               color: theme.primary,
@@ -127,20 +127,20 @@ export default function AppShell({
           >
             {aiName}
           </span>
-          <span className="hidden border-l border-white/10 pl-3 text-[8px] uppercase tracking-[0.16em] text-white/38 xl:inline">
+          <span className="hidden border-l border-white/10 pl-3 text-[8px] uppercase tracking-[0.16em] text-white/38 xl:inline 2xl:text-[9px]">
             Personal Desktop Assistant
           </span>
         </div>
 
         {/* Claude-Code-style honest live activity text from real frontend/backend events. */}
-        <div className="absolute left-1/2 -translate-x-1/2 max-w-[48%] text-center text-[9px] text-[#7DD3FC] tracking-wide truncate" title={activityText}>
+        <div className="absolute left-1/2 -translate-x-1/2 max-w-[48%] text-center text-[9px] text-[#7DD3FC] tracking-wide truncate 2xl:text-[10px]" title={activityText}>
           {activityText || 'Ready'}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
           {/* Provider badge reports redacted configured-key state; it never implies a live check. */}
           <div
-            className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[7px] backdrop-blur-3xl ${
+            className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[7px] backdrop-blur-3xl 2xl:px-3 2xl:py-2 2xl:text-[8px] ${
               providerUnavailable || !backendConnected
                 ? 'border-amber-400/20 bg-amber-500/5 text-amber-300'
                 : configuredProviderCount > 0
@@ -155,7 +155,7 @@ export default function AppShell({
           </div>
 
           {/* Backend status comes from the real /api/health poll. */}
-          <div className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[8px] backdrop-blur-3xl ${backendConnected ? `${accentRing} ${accentBg}` : 'border-amber-400/20 bg-amber-500/5'}`}>
+          <div className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[8px] backdrop-blur-3xl 2xl:px-3 2xl:py-2 2xl:text-[9px] ${backendConnected ? `${accentRing} ${accentBg}` : 'border-amber-400/20 bg-amber-500/5'}`}>
             <Server size={11} strokeWidth={1.8} className={backendConnected ? accentText : 'text-amber-300'} aria-hidden="true" />
             <div className={`h-1.5 w-1.5 rounded-full ${backendConnected ? accentDot : 'bg-amber-400'}`} />
             <span className={`font-bold tracking-widest uppercase ${backendConnected ? accentText : 'text-amber-300'}`}>
@@ -166,16 +166,16 @@ export default function AppShell({
       </header>
 
       {/* 2. THREE-PANEL CORE GRID WORKSPACE */}
-      <div className="z-10 grid min-h-0 flex-1 grid-cols-12 items-stretch gap-4 overflow-hidden">
+      <div className="z-10 grid min-h-0 flex-1 grid-cols-12 items-stretch gap-4 overflow-hidden 2xl:gap-5">
         
         {/* Left column: Relational resource meters */}
         <LeftPanel systemMetrics={systemMetrics} backendStatus={backendStatus} />
 
         {/* Center column: HTML5 Canvas particle loop & concentric orbital rings */}
-        <main className="relative col-span-12 flex min-h-0 min-w-0 flex-col items-center justify-center rounded-xl border border-white/[0.07] bg-[#080C0F]/60 p-6 backdrop-blur-xl lg:col-span-6">
+        <main className="relative col-span-12 flex min-h-0 min-w-0 flex-col items-center justify-center rounded-xl border border-white/[0.07] bg-[#080C0F]/60 p-6 backdrop-blur-xl lg:col-span-6 2xl:p-8">
           
           {/* Header context indicators */}
-          <div className="absolute top-6 left-6 font-mono text-[9px] text-[#8B8B96] flex items-center gap-2">
+          <div className="absolute top-6 left-6 font-mono text-[9px] text-[#8B8B96] flex items-center gap-2 2xl:left-8 2xl:top-8 2xl:text-[10px]">
             <span>CORE STATUS:</span>
             <span className={`uppercase tracking-wider font-bold ${voice.wakeDetected ? accentText : "text-[#7DD3FC]"}`}>
               {voice.wakeDetected ? "WAKED" : aiState}
@@ -192,7 +192,7 @@ export default function AppShell({
           </div>
 
           {/* Center Bottom floating pill control bar */}
-          <div className="absolute bottom-5 flex items-center gap-2 rounded-full border border-white/[0.09] bg-[#0A0F12]/88 px-2.5 py-2 font-mono text-[9px] shadow-[0_12px_35px_rgba(0,0,0,0.38)] backdrop-blur-3xl">
+          <div className="absolute bottom-5 flex items-center gap-2 rounded-full border border-white/[0.09] bg-[#0A0F12]/88 px-2.5 py-2 font-mono text-[9px] shadow-[0_12px_35px_rgba(0,0,0,0.38)] backdrop-blur-3xl 2xl:bottom-8 2xl:scale-110">
             {/* Personality selection control. */}
             <button
               onClick={togglePersonality}

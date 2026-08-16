@@ -104,7 +104,7 @@ class TestApprovedPersonalityThemeLock(unittest.TestCase):
         self.assertIn("getPersonalityTheme(personality)", core)
         self.assertIn("theme.coreParticle", core)
         self.assertIn("theme.coreOrbit", core)
-        self.assertIn("[aiState, personality, amplitude]", core)
+        self.assertRegex(core, r"\[aiState, personality, amplitude(?:, isFullHdViewport)?\]")
 
     def test_frontend_claims_personality_only_after_backend_persistence(self):
         app = (FRONTEND / "App.jsx").read_text(encoding="utf-8")

@@ -57,7 +57,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
                 aria-label={`Open ${config.title}`}
                 aria-pressed={isVisible}
                 title={config.title}
-                className={`group relative flex h-10 w-full items-center rounded-lg border transition-colors duration-150 ${
+                className={`group relative flex h-10 w-full items-center rounded-lg border transition-colors duration-150 2xl:h-11 ${
                   expanded ? "justify-start gap-3 px-2.5" : "justify-center px-0"
                 } ${
                   isVisible
@@ -71,7 +71,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
                     aria-hidden="true"
                   />
                 )}
-                <Icon size={18} strokeWidth={1.7} aria-hidden="true" className="shrink-0" />
+                <Icon size={18} strokeWidth={1.7} aria-hidden="true" className="h-[18px] w-[18px] shrink-0 2xl:h-5 2xl:w-5" />
                 {expanded && (
                   <span className="truncate text-left text-[10px] font-semibold tracking-wide">
                     {config.title}
@@ -82,7 +82,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
           })}
         </div>
 
-        <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-white/[0.07] px-0.5 pt-3">
+        <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-white/[0.07] px-0.5 pt-3 2xl:gap-2.5">
           <button
             type="button"
             onClick={() => {
@@ -95,11 +95,11 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
             onBlur={hideLauncherName}
             aria-label={expanded ? "Collapse widget labels" : "Expand widget labels"}
             title={expanded ? "Collapse widget labels" : "Expand widget labels"}
-            className={`flex h-10 w-full items-center rounded-lg border border-white/[0.06] bg-white/[0.02] text-white/45 transition-colors hover:border-white/15 hover:bg-white/[0.05] hover:text-white/80 ${
+            className={`flex h-10 w-full items-center rounded-lg border border-white/[0.06] bg-white/[0.02] text-white/45 transition-colors hover:border-white/15 hover:bg-white/[0.05] hover:text-white/80 2xl:h-11 ${
               expanded ? "justify-start gap-3 px-2.5" : "justify-center"
             }`}
           >
-            {expanded ? <X size={18} strokeWidth={1.7} /> : <Plus size={18} strokeWidth={1.7} />}
+            {expanded ? <X size={18} strokeWidth={1.7} className="2xl:h-5 2xl:w-5" /> : <Plus size={18} strokeWidth={1.7} className="2xl:h-5 2xl:w-5" />}
             {expanded && <span className="text-[10px] font-semibold">Collapse labels</span>}
           </button>
 
@@ -116,7 +116,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
             aria-label="Open system widget"
             aria-pressed={Boolean(widgetState.system?.visible)}
             title="Open system widget"
-            className={`flex h-10 w-full items-center rounded-lg border transition-colors ${
+            className={`flex h-10 w-full items-center rounded-lg border transition-colors 2xl:h-11 ${
               expanded ? "justify-start gap-3 px-2.5" : "justify-center"
             } ${
               widgetState.system?.visible
@@ -124,7 +124,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
                 : "border-white/[0.06] bg-white/[0.02] text-white/45 hover:border-white/15 hover:bg-white/[0.05] hover:text-white/80"
             }`}
           >
-            <Settings size={18} strokeWidth={1.7} aria-hidden="true" />
+            <Settings size={18} strokeWidth={1.7} aria-hidden="true" className="2xl:h-5 2xl:w-5" />
             {expanded && <span className="text-[10px] font-semibold">System widget</span>}
           </button>
         </div>

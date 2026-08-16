@@ -34,13 +34,13 @@ class TestMetricCardTypography(unittest.TestCase):
 class TestCentreCoreScale(unittest.TestCase):
     def test_core_uses_larger_but_still_bounded_canvas_geometry(self):
         source = CORE.read_text(encoding="utf-8")
-        self.assertIn("const width = 520", source)
-        self.assertIn("const height = 520", source)
+        self.assertIn("isFullHdViewport ? 640 : 520", source)
+        self.assertIn("const width = canvasSize", source)
+        self.assertIn("const height = canvasSize", source)
         self.assertIn("138 + Math.sin", source)
-        self.assertIn("210 * coreScale", source)
-        self.assertIn("215 * coreScale", source)
-        self.assertIn("width: '520px'", source)
-        self.assertIn("height: '520px'", source)
+        self.assertIn("210 * presentationScale * coreScale", source)
+        self.assertIn("215 * presentationScale * coreScale", source)
+        self.assertIn("const displaySize", source)
         self.assertIn("max-w-full", source)
 
 

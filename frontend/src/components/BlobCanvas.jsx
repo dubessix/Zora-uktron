@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { getPersonalityTheme } from '../theme/personalityTheme';
 
 /**
@@ -15,6 +15,17 @@ export default function BlobCanvas({
 }) {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
+  const [isFullHdViewport, setIsFullHdViewport] = useState(() => (
+    typeof window !== 'undefined' && window.innerWidth >= 1700 && window.innerHeight >= 900
+  ));
+
+  useEffect(() => {
+    const updatePresentationSize = () => {
+      setIsFullHdViewport(window.innerWidth >= 1700 && window.innerHeight >= 900);
+    };
+    window.addEventListener('resize', updatePresentationSize);
+    return () => window.removeEventListener('resize', updatePresentationSize);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,14 +33,16 @@ export default function BlobCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // High-DPI hardware scaling
+    // High-DPI hardware scaling with a roomier presentation on full-HD laptops.
     const scale = window.devicePixelRatio || 1;
-    canvas.width = 520 * scale;
-    canvas.height = 520 * scale;
+    const canvasSize = isFullHdViewport ? 640 : 520;
+    const presentationScale = isFullHdViewport ? 1.2 : 1;
+    canvas.width = canvasSize * scale;
+    canvas.height = canvasSize * scale;
     ctx.scale(scale, scale);
 
-    const width = 520;
-    const height = 520;
+    const width = canvasSize;
+    const height = canvasSize;
     const center = { x: width / 2, y: height / 2 };
 
     // Initialize 200 standard coordinate nodes forming a sphere
@@ -123,13 +136,13 @@ export default function BlobCanvas({
 
         // Ellipse Loop 1
         ctx.beginPath();
-        ctx.ellipse(0, 0, 210 * coreScale, 72 * coreScale, Math.PI / 4, 0, 2 * Math.PI);
+        ctx.ellipse(0, 0, 210 * presentationScale * coreScale, 72 * presentationScale * coreScale, Math.PI / 4, 0, 2 * Math.PI);
         ctx.stroke();
 
         // Ellipse Loop 2 (Counter tilted)
         ctx.rotate(-time * 0.025);
         ctx.beginPath();
-        ctx.ellipse(0, 0, 215 * coreScale, 77 * coreScale, -Math.PI / 6, 0, 2 * Math.PI);
+        ctx.ellipse(0, 0, 215 * presentationScale * coreScale, 77 * presentationScale * coreScale, -Math.PI / 6, 0, 2 * Math.PI);
         ctx.stroke();
 
         ctx.restore();
@@ -137,12 +150,13 @@ export default function BlobCanvas({
 
       // Draw backing glowing neon core
       ctx.beginPath();
-      const radialGlow = ctx.createRadialGradient(center.x, center.y, 12, center.x, center.y, 170 * coreScale);
+      const glowRadius = 170 * presentationScale * coreScale;
+      const radialGlow = ctx.createRadialGradient(center.x, center.y, 12, center.x, center.y, glowRadius);
       radialGlow.addColorStop(0, glowColor);
       radialGlow.addColorStop(1, "rgba(10, 10, 15, 0)");
       ctx.fillStyle = radialGlow;
       ctx.globalAlpha = alphaMultiplier;
-      ctx.arc(center.x, center.y, 170 * coreScale, 0, 2 * Math.PI);
+      ctx.arc(center.x, center.y, glowRadius, 0, 2 * Math.PI);
       ctx.fill();
 
       // Draw particle coordinate array
@@ -151,14 +165,14 @@ export default function BlobCanvas({
         const y_rot = Math.cos(p.phi);
         
         // Compute current coordinates
-        const radialOffset = (138 + Math.sin(time + p.drift) * noiseAmplitude) * coreScale;
+        const radialOffset = (138 + Math.sin(time + p.drift) * noiseAmplitude) * presentationScale * coreScale;
         
         const x = center.x + x_rot * radialOffset;
         const y = center.y + y_rot * radialOffset;
 
         ctx.beginPath();
         ctx.fillStyle = primaryColor;
-        ctx.arc(x, y, p.size, 0, 2 * Math.PI);
+        ctx.arc(x, y, p.size * presentationScale, 0, 2 * Math.PI);
         ctx.fill();
 
         // Dynamic network lines (Working state)
@@ -166,7 +180,7 @@ export default function BlobCanvas({
           const nextP = particles[idx + 1];
           const nx_rot = Math.sin(nextP.phi) * Math.cos(nextP.theta + angle);
           const ny_rot = Math.cos(nextP.phi);
-          const n_offset = (138 + Math.sin(time + nextP.drift) * noiseAmplitude) * coreScale;
+          const n_offset = (138 + Math.sin(time + nextP.drift) * noiseAmplitude) * presentationScale * coreScale;
           const nx = center.x + nx_rot * n_offset;
           const ny = center.y + ny_rot * n_offset;
 
@@ -190,12 +204,14 @@ export default function BlobCanvas({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [aiState, personality, amplitude]);
+  }, [aiState, personality, amplitude, isFullHdViewport]);
+
+  const displaySize = isFullHdViewport ? 640 : 520;
 
   return (
     <canvas 
       ref={canvasRef} 
-      style={{ width: '520px', height: '520px' }}
+      style={{ width: `${displaySize}px`, height: `${displaySize}px` }}
       className="max-w-full aspect-square"
     />
   );
