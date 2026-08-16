@@ -50,7 +50,9 @@ def get_approved_backup_root() -> Path:
 
 
 def _fsync_file(path: Path) -> None:
-    with open(path, "rb") as handle:
+    # Windows requires a writable file descriptor for FlushFileBuffers/fsync.
+    # These are newly-created app-owned backup/restore files, so r+b is valid.
+    with open(path, "r+b") as handle:
         os.fsync(handle.fileno())
 
 

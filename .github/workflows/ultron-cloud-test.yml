@@ -40,12 +40,12 @@ jobs:
 
     steps:
       - name: Download this exact Ultron version
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
 
       - name: Select Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -70,30 +70,39 @@ jobs:
           python -c "import sys; print('Testing with', sys.executable, sys.version)"
           python -m pip install -r requirements-dev.txt
 
+      - name: Prepare diagnostic output
+        run: python -c "from pathlib import Path; Path('cloud-test-results').mkdir(exist_ok=True)"
+
       - name: Verify clean source and packaged installer
         id: python_suite
-        run: python -m pytest -q
+        continue-on-error: true
+        run: python -m pytest -q --junitxml=cloud-test-results/pytest.xml
 
       - name: Independent Python verification
         id: unittest_suite
+        continue-on-error: true
         run: python -m unittest discover -s tests -p "test*.py"
 
       - name: Build frontend from the locked package list
         id: frontend_build
+        continue-on-error: true
         run: |
           npm --prefix frontend ci
           npm --prefix frontend run build
 
       - name: Create and inspect real cloud shortcuts
         id: shortcut_acceptance
+        continue-on-error: true
         run: python .github/scripts/cloud_shortcut_acceptance.py
 
       - name: Run isolated real Start, Health and Stop cycle
         id: runtime_acceptance
+        continue-on-error: true
         run: python .github/scripts/cloud_runtime_acceptance.py
 
       - name: Confirm repository data was untouched
         id: data_isolation
+        continue-on-error: true
         run: python -c "from pathlib import Path; assert not Path('data').exists(), 'Cloud test touched source data/'; print('Source production data remained absent.')"
 
       - name: Write Ubuntu result summary
@@ -134,9 +143,23 @@ jobs:
 
       - name: Keep cloud logs for seven days
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ultron-${{ runner.os }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/ultron-cloud-artifacts
+          path: |
+            ${{ runner.temp }}/ultron-cloud-artifacts
+            cloud-test-results
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Enforce all cloud acceptance gates
+        if: always()
+        env:
+          PYTHON_SUITE: ${{ steps.python_suite.outcome }}
+          UNITTEST_SUITE: ${{ steps.unittest_suite.outcome }}
+          FRONTEND_BUILD: ${{ steps.frontend_build.outcome }}
+          SHORTCUT_ACCEPTANCE: ${{ steps.shortcut_acceptance.outcome }}
+          RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
+          DATA_ISOLATION: ${{ steps.data_isolation.outcome }}
+        run: >-
+          python -c "import os,sys; names=('PYTHON_SUITE','UNITTEST_SUITE','FRONTEND_BUILD','SHORTCUT_ACCEPTANCE','RUNTIME_ACCEPTANCE','DATA_ISOLATION'); failed=[f'{name}={os.environ.get(name)}' for name in names if os.environ.get(name) != 'success']; print('Cloud acceptance failures: ' + (', '.join(failed) if failed else 'none')); sys.exit(bool(failed))"

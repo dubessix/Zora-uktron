@@ -5,6 +5,7 @@ Natively integrates an un-mocked, stateful Self-Healing Compiler Loop (Autoreact
 """
 
 import os
+import ntpath
 import shlex
 import signal
 import platform
@@ -30,8 +31,41 @@ _DEFAULT_APPROVED_COMMANDS = {
 }
 
 _SHELL_METACHARS = (";", "&", "|", ">", "<", "`", "$(")
+_WINDOWS_EXECUTABLE_SUFFIXES = (".exe", ".cmd", ".bat", ".com")
 MAX_TERMINAL_OUTPUT_BYTES = 1024 * 1024
 TERMINAL_TIMEOUT_SECONDS = 20.0
+
+
+def _split_command(command: str) -> list[str]:
+    """Split with native Windows quoting without destroying backslashes."""
+    if os.name != "nt":
+        return shlex.split(command)
+
+    import ctypes
+    from ctypes import wintypes
+
+    argc = ctypes.c_int(0)
+    parser = ctypes.windll.shell32.CommandLineToArgvW
+    parser.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    parser.restype = ctypes.POINTER(wintypes.LPWSTR)
+    argv = parser(command, ctypes.byref(argc))
+    if not argv:
+        raise ValueError("Windows could not parse the command line.")
+    try:
+        return [argv[index] for index in range(argc.value)]
+    finally:
+        local_free = ctypes.windll.kernel32.LocalFree
+        local_free.argtypes = [wintypes.HLOCAL]
+        local_free.restype = wintypes.HLOCAL
+        local_free(ctypes.cast(argv, wintypes.HLOCAL))
+
+
+def _normalized_executable_name(value: str) -> str:
+    name = ntpath.basename(value).lower()
+    for suffix in _WINDOWS_EXECUTABLE_SUFFIXES:
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
 
 
 def _requires_shell(command: str) -> bool:
@@ -40,7 +74,7 @@ def _requires_shell(command: str) -> bool:
         return True
     # Unbalanced quotes are unsafe to split naively -> treat as shell.
     try:
-        shlex.split(command)
+        _split_command(command)
     except ValueError:
         return True
     return False
@@ -63,12 +97,12 @@ def _load_approved_commands() -> set[str]:
 def _approved_command(command: str) -> bool:
     """Every command, with or without shell syntax, needs an approved executable."""
     try:
-        parts = shlex.split(command)
+        parts = _split_command(command)
     except ValueError:
         return False
     if not parts:
         return False
-    first = os.path.basename(parts[0]).lower()
+    first = _normalized_executable_name(parts[0])
     return first in _load_approved_commands()
 
 class TerminalRunArgs(BaseModel):
@@ -122,8 +156,17 @@ class TerminalRunTool(BaseTool):
             if os.name != "nt":
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             else:
-                proc.kill()
-        except (ProcessLookupError, PermissionError):
+                killed = await asyncio.to_thread(
+                    subprocess.run,
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=10.0,
+                )
+                if killed.returncode != 0 and proc.returncode is None:
+                    proc.kill()
+        except (OSError, ProcessLookupError, PermissionError, subprocess.SubprocessError):
             try:
                 proc.kill()
             except ProcessLookupError:
@@ -131,7 +174,10 @@ class TerminalRunTool(BaseTool):
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
         except (asyncio.TimeoutError, ProcessLookupError):
-            pass
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
 
     def _attempt_self_healing_analysis(self, stderr: str, project_root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
         """
@@ -311,12 +357,15 @@ class TerminalRunTool(BaseTool):
                 "cwd": str(project_root),
                 "stdout": asyncio.subprocess.PIPE,
                 "stderr": asyncio.subprocess.PIPE,
-                "start_new_session": True,
             }
+            if os.name == "nt":
+                common["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            else:
+                common["start_new_session"] = True
             if use_shell:
                 proc = await asyncio.create_subprocess_shell(command, **common)
             else:
-                argv = shlex.split(command)
+                argv = _split_command(command)
                 if not argv:
                     return {"success": False, "error": "Command parameter is empty.", "data": {}}
                 proc = await asyncio.create_subprocess_exec(*argv, **common)

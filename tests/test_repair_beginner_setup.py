@@ -34,12 +34,13 @@ class TestPrivateKeyEditor(unittest.TestCase):
 
 
 class TestInstallerScripts(unittest.TestCase):
-    def test_linux_scripts_quote_paths_with_spaces(self):
+    def test_platform_scripts_quote_paths_with_spaces(self):
         with tempfile.TemporaryDirectory(prefix="Ultron Folder ") as temp:
             root = Path(temp)
             fake_venv = root / ".venv"
-            (fake_venv / "bin").mkdir(parents=True)
-            (fake_venv / "bin" / "python").write_text("", encoding="utf-8")
+            python = fake_venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            python.parent.mkdir(parents=True)
+            python.write_text("", encoding="utf-8")
             engine = installer.InstallerEngine(Mock(), Mock())
             with patch.object(installer, "ROOT", root), patch.object(
                 installer, "APPLICATION_HOME", root
@@ -47,10 +48,12 @@ class TestInstallerScripts(unittest.TestCase):
                 scripts = engine._write_launch_scripts()
             start = scripts["start"].read_text(encoding="utf-8")
             stop = scripts["stop"].read_text(encoding="utf-8")
-            self.assertIn(f'cd "{root}"', start)
+            expected_cd = f'cd /d "{root}"' if os.name == "nt" else f'cd "{root}"'
+            self.assertIn(expected_cd, start)
             self.assertIn(' -m backend.app.cli start', start)
             self.assertIn(' -m backend.app.cli stop', stop)
-            self.assertTrue(scripts["start"].stat().st_mode & 0o100)
+            if os.name != "nt":
+                self.assertTrue(scripts["start"].stat().st_mode & 0o100)
 
     def test_linux_application_menu_shortcuts_quote_space_paths(self):
         with tempfile.TemporaryDirectory(prefix="Ultron Menu ") as temp:

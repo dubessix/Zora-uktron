@@ -100,7 +100,7 @@ class TestTruthfulSystemMetrics(unittest.TestCase):
         ), patch("backend.app.tools.system_metrics_tool.psutil.virtual_memory", return_value=vm), patch(
             "backend.app.tools.system_metrics_tool.psutil.disk_usage", return_value=disk
         ), patch("backend.app.tools.system_metrics_tool.psutil.sensors_battery", return_value=None), patch(
-            "backend.app.tools.system_metrics_tool.psutil.sensors_temperatures", return_value={}
+            "backend.app.tools.system_metrics_tool.psutil.sensors_temperatures", return_value={}, create=True
         ), patch("backend.app.tools.system_metrics_tool.psutil.net_io_counters", return_value=net), patch(
             "backend.app.tools.system_metrics_tool.psutil.net_if_stats", return_value={}
         ), patch("backend.app.tools.system_metrics_tool.psutil.boot_time", return_value=100.0), patch(

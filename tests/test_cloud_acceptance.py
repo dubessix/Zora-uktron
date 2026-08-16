@@ -23,6 +23,9 @@ def test_cloud_workflow_is_manual_read_only_and_cross_platform():
     assert "push" not in parsed["on"]
     assert "${{ secrets." not in source
     assert "persist-credentials: false" in source
+    assert "actions/checkout@v6" in source
+    assert "actions/setup-python@v6" in source
+    assert "actions/upload-artifact@v6" in source
 
 
 def test_cloud_workflow_runs_real_shortcut_runtime_and_data_checks():
@@ -34,6 +37,8 @@ def test_cloud_workflow_runs_real_shortcut_runtime_and_data_checks():
         "cloud_shortcut_acceptance.py",
         "cloud_runtime_acceptance.py",
         "assert not Path('data').exists()",
+        "cloud-test-results/pytest.xml",
+        "Enforce all cloud acceptance gates",
     )
     for item in required:
         assert item in source

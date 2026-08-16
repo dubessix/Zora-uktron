@@ -14,7 +14,11 @@ from pydantic import BaseModel
 from backend.app.core.orchestrator import CognitiveOrchestrator
 from backend.app.runtime_paths import isolated_test_artifact_path
 from backend.app.security.pending_actions import get_pending_action_registry
-from backend.app.tools.system_tools import MAX_TERMINAL_OUTPUT_BYTES, TerminalRunTool
+from backend.app.tools.system_tools import (
+    MAX_TERMINAL_OUTPUT_BYTES,
+    TerminalRunTool,
+    _normalized_executable_name,
+)
 from backend.app.tools.tool_base import BaseTool
 from backend.app.tools.tool_registry import ToolRegistry
 
@@ -227,6 +231,10 @@ class TestVerifiedAtomicWrites(unittest.IsolatedAsyncioTestCase):
 
 
 class TestTerminalBoundsAndCleanup(unittest.IsolatedAsyncioTestCase):
+    def test_windows_executable_path_normalizes_to_allowlist_name(self):
+        self.assertEqual(_normalized_executable_name(r"C:\\Python312\\python.exe"), "python")
+        self.assertEqual(_normalized_executable_name(r"C:\\Node\\npm.cmd"), "npm")
+
     async def test_unlisted_executable_is_blocked(self):
         result = await TerminalRunTool().execute(command="uname -a")
         self.assertFalse(result["success"])

@@ -93,6 +93,24 @@ class TestLoopbackConfiguration(unittest.TestCase):
         self.assertIn("backend.app.static_server", source)
         self.assertIn('"--host",\n            self.host', source)
 
+    def test_frontend_digest_is_stable_across_lf_and_windows_crlf_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="ultron_digest_") as temp:
+            root = Path(temp)
+            linux = root / "linux"
+            windows = root / "windows"
+            for folder, newline in ((linux, "\n"), (windows, "\r\n")):
+                (folder / "src").mkdir(parents=True)
+                (folder / "src" / "App.jsx").write_bytes(
+                    f"export default function App() {{{newline}  return null{newline}}}{newline}".encode("utf-8")
+                )
+                (folder / "package.json").write_bytes(
+                    f'{{{newline}  "name": "ultron"{newline}}}{newline}'.encode("utf-8")
+                )
+            self.assertEqual(
+                ServiceLauncher._frontend_digest(linux),
+                ServiceLauncher._frontend_digest(windows),
+            )
+
     def test_fastapi_uses_lifespan_not_deprecated_event_hooks(self):
         source = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
         self.assertNotIn("@app.on_event", source)
@@ -281,8 +299,8 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
             0,
         ]
         with patch("launcher.platform.system", return_value="Linux"), patch(
-            "launcher.os.getpgid", return_value=98765
-        ), patch("launcher.os.killpg") as killpg:
+            "launcher.os.getpgid", return_value=98765, create=True
+        ), patch("launcher.os.killpg", create=True) as killpg:
             stopped = launcher.terminate_process_tree(process, grace_seconds=0.01)
         self.assertTrue(stopped)
         self.assertEqual(

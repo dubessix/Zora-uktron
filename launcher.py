@@ -25,6 +25,10 @@ import yaml
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_BACKEND_PORT = 8000
 DEFAULT_FRONTEND_PORT = 5173
+_FRONTEND_TEXT_SUFFIXES = {
+    ".css", ".html", ".js", ".json", ".jsx", ".md", ".mjs", ".cjs",
+    ".ts", ".tsx", ".txt", ".yaml", ".yml",
+}
 
 
 class LauncherError(RuntimeError):
@@ -216,7 +220,12 @@ class ServiceLauncher:
         for path, relative in cls._frontend_files(root):
             digest.update(relative.as_posix().encode("utf-8"))
             digest.update(b"\0")
-            digest.update(path.read_bytes())
+            content = path.read_bytes()
+            if path.suffix.lower() in _FRONTEND_TEXT_SUFFIXES:
+                # Git may check text out as CRLF on Windows. Release signatures
+                # must identify the same source on both supported platforms.
+                content = content.replace(b"\r\n", b"\n")
+            digest.update(content)
             digest.update(b"\0")
         return digest.hexdigest()
 

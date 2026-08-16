@@ -5,7 +5,7 @@ context builders, SQLite audit logs, and timeout handlers.
 """
 
 import unittest
-import os
+import sys
 
 from backend.app.tools.tool_registry import ToolRegistry
 from backend.app.tools.context_builder import ToolContextBuilder
@@ -160,8 +160,9 @@ class TestPhase7ToolSystemArchitecture(unittest.IsolatedAsyncioTestCase):
         """Test 6: Verify that long-running commands successfully abort under configured timeouts."""
         registry = ToolRegistry()
         
-        # Command runs for 5 seconds, but we set timeout to 0.1 seconds
-        args = {"command": "sleep 5" if os.name != "nt" else "timeout 5"}
+        # Use the same allowlisted Python process on both platforms; Windows
+        # timeout.exe is intentionally not in the product command allowlist.
+        args = {"command": f'"{sys.executable}" -c "import time; time.sleep(5)"'}
         
         session = "phase7_timeout"
         pending = await registry.execute_tool(
