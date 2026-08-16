@@ -274,6 +274,8 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
         )
         self.assertTrue(first.acquire_instance_lock())
         try:
+            self.assertNotEqual(first.mutex_path, first.lock_path)
+            self.assertEqual(int(first.lock_path.read_text(encoding="utf-8")), os.getpid())
             self.assertFalse(second.acquire_instance_lock())
         finally:
             first.release_instance_lock()
@@ -300,12 +302,14 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
         ]
         with patch("launcher.platform.system", return_value="Linux"), patch(
             "launcher.os.getpgid", return_value=98765, create=True
-        ), patch("launcher.os.killpg", create=True) as killpg:
+        ), patch("launcher.os.killpg", create=True) as killpg, patch(
+            "launcher.signal.SIGKILL", 9, create=True
+        ):
             stopped = launcher.terminate_process_tree(process, grace_seconds=0.01)
         self.assertTrue(stopped)
         self.assertEqual(
             [call.args[1] for call in killpg.call_args_list],
-            [signal.SIGTERM, signal.SIGKILL],
+            [signal.SIGTERM, 9],
         )
 
     def test_verified_prebuilt_frontend_avoids_node_and_npm(self):

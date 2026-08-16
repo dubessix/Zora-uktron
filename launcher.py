@@ -91,6 +91,7 @@ class ServiceLauncher:
 
         lock_id = hashlib.sha256(str(self.application_home).encode("utf-8")).hexdigest()[:16]
         self.lock_path = Path(tempfile.gettempdir()) / f"ultron-launcher-{lock_id}.lock"
+        self.mutex_path = Path(tempfile.gettempdir()) / f"ultron-launcher-{lock_id}.mutex"
         self.stop_request_path = Path(tempfile.gettempdir()) / f"ultron-stop-{lock_id}.request"
         self._lock_handle = None
         self.preparation_process = None
@@ -125,9 +126,10 @@ class ServiceLauncher:
         print(f"\033[1;{color_code}m[{service}]\033[0m {message}", flush=True)
 
     def acquire_instance_lock(self) -> bool:
-        """Take one cross-platform process lock so duplicate launchers fail closed."""
-        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(self.lock_path, "a+", encoding="utf-8")
+        """Take one cross-platform mutex while keeping launcher PID readable."""
+        self.mutex_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(self.mutex_path, "a+", encoding="utf-8")
+        pid_temp = self.lock_path.with_suffix(f".lock.{os.getpid()}.tmp")
         try:
             if platform.system() == "Windows":
                 import msvcrt
@@ -140,15 +142,17 @@ class ServiceLauncher:
             else:
                 import fcntl
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            handle.seek(0)
-            handle.truncate()
-            handle.write(str(os.getpid()))
-            handle.flush()
+            # Windows denies other processes access to the byte locked by
+            # msvcrt. Keep that mutex in a separate file so Stop Ultron can
+            # always read the public PID/control record while the app runs.
+            pid_temp.write_text(str(os.getpid()), encoding="utf-8")
+            os.replace(pid_temp, self.lock_path)
             self._lock_handle = handle
             self.stop_request_path.unlink(missing_ok=True)
             return True
         except (OSError, BlockingIOError):
             handle.close()
+            pid_temp.unlink(missing_ok=True)
             return False
 
     def release_instance_lock(self) -> None:
@@ -204,7 +208,7 @@ class ServiceLauncher:
     @staticmethod
     def _frontend_files(root: Path):
         excluded = {"node_modules", "dist", "prebuilt", ".vite"}
-        for path in sorted(root.rglob("*")):
+        for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
             if not path.is_file():
                 continue
             relative = path.relative_to(root)
