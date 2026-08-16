@@ -35,7 +35,9 @@ class TestPhase10FrontendArchitecture(unittest.TestCase):
             self.assertIn("Network counters", content)
             self.assertIn("System uptime", content)
             self.assertIn('label="RAM"', content)
-            self.assertNotIn("Latency", content)
+            self.assertIn("Local round trip", content)
+            self.assertIn("health_latency_ms", content)
+            self.assertNotIn("31ms", content)
             self.assertNotIn("TX Signal load", content)
 
     def test_blob_canvas_coordinates(self):

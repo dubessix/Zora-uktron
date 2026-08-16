@@ -1,15 +1,20 @@
 import React from 'react';
+import useMetricHistory from '../hooks/useMetricHistory';
+import { formatBytesPerSecond } from '../utils/metricHistory';
 
 /** Dashboard summary using only values reported by /api/health. */
 export default function LeftPanel({ systemMetrics }) {
   const metrics = systemMetrics || {};
+  const { history, networkRates } = useMetricHistory(systemMetrics);
   const cpu = numberOrNull(metrics.cpu_percent);
   const ram = numberOrNull(metrics.ram_percent ?? metrics.total_system_ram_usage_percent);
   const temperature = numberOrNull(metrics.temperature_c);
   const disk = numberOrNull(metrics.disk_percent);
   const uptime = numberOrNull(metrics.uptime_seconds);
+  const healthLatency = numberOrNull(metrics.health_latency_ms);
   const network = metrics.network || {};
   const hasTelemetry = cpu !== null && ram !== null;
+  const hasTrendHistory = history.cpu.length >= 2 && history.ram.length >= 2;
 
   return (
     <aside className="col-span-12 lg:col-span-3 h-full flex flex-col gap-4 overflow-y-auto pr-1">
@@ -17,7 +22,7 @@ export default function LeftPanel({ systemMetrics }) {
         <div className="flex justify-between items-center mb-3">
           <span className="text-[9px] uppercase font-bold tracking-widest text-[#F5F5F7]">System overview</span>
           <span className={`text-[7px] tracking-widest font-mono uppercase ${hasTelemetry ? 'text-emerald-400' : 'text-amber-300'}`}>
-            {hasTelemetry ? 'Reported' : 'Waiting for backend'}
+            {hasTelemetry ? (hasTrendHistory ? 'Live trends' : 'Collecting trends') : 'Waiting for backend'}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3 font-mono text-[10px]">
@@ -38,8 +43,9 @@ export default function LeftPanel({ systemMetrics }) {
         {network.available ? (
           <div className="space-y-2 text-[8px] text-white/50">
             <div className="flex justify-between"><span>Interfaces up</span><span>{network.interfaces_up}</span></div>
-            <div className="flex justify-between"><span>TX since boot</span><span>{formatBytes(network.bytes_sent)}</span></div>
-            <div className="flex justify-between"><span>RX since boot</span><span>{formatBytes(network.bytes_received)}</span></div>
+            <div className="flex justify-between"><span>Local round trip</span><span>{healthLatency === null ? 'Unavailable' : `${healthLatency.toFixed(1)} ms`}</span></div>
+            <div className="flex justify-between"><span>TX rate</span><span>{networkRates.available ? formatBytesPerSecond(networkRates.txBytesPerSecond) : rateStatus(networkRates.status)}</span></div>
+            <div className="flex justify-between"><span>RX rate</span><span>{networkRates.available ? formatBytesPerSecond(networkRates.rxBytesPerSecond) : rateStatus(networkRates.status)}</span></div>
           </div>
         ) : (
           <p className="text-[8px] text-white/30">This device did not report network counters.</p>
@@ -87,7 +93,8 @@ function percent(value) {
   return value === null ? 'Unavailable' : `${value.toFixed(1)}%`;
 }
 
-function formatBytes(value) {
-  if (typeof value !== 'number') return 'Unavailable';
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+function rateStatus(status) {
+  if (status === 'collecting') return 'Collecting…';
+  if (status === 'counter_reset') return 'Counter reset';
+  return 'Unavailable';
 }

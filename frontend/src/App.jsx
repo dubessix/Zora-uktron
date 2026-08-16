@@ -119,11 +119,17 @@ export default function App() {
       inFlight = true;
       try {
         const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+        const requestStarted = performance.now();
         const response = await fetch(`${apiUrl}/api/health`);
         if (response.ok) {
           const data = await response.json();
+          const healthLatencyMs = Math.max(0, performance.now() - requestStarted);
           setBackendStatus("CONNECTED");
-          setSystemMetrics(data.system_metrics);
+          setSystemMetrics({
+            ...(data.system_metrics || {}),
+            health_latency_ms: Math.round(healthLatencyMs * 10) / 10,
+            sampled_at_ms: Date.now(),
+          });
           setActivityText(prev => prev.startsWith("Connecting") || prev.startsWith("Backend")
             ? "Ready — local backend connected."
             : prev);
