@@ -2,6 +2,15 @@ import React, { useState } from 'react';
 import { Plus, Settings, X } from 'lucide-react';
 import { WIDGET_REGISTRY } from './widgets/WidgetManager';
 
+const RAIL_CATEGORY_TONES = Object.freeze({
+  productivity: "text-emerald-300/50 hover:text-emerald-200/80",
+  system: "text-cyan-300/50 hover:text-cyan-200/80",
+  developer: "text-sky-300/50 hover:text-sky-200/80",
+  music: "text-pink-300/50 hover:text-pink-200/80",
+  research: "text-violet-300/50 hover:text-violet-200/80",
+  memory: "text-amber-300/50 hover:text-amber-200/80",
+});
+
 /**
  * Far-left launcher rail. It only opens/closes existing centre overlays; widget
  * rendering, dragging, sizing, and backend contracts remain owned elsewhere.
@@ -34,6 +43,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
           {Object.entries(WIDGET_REGISTRY).map(([widgetId, config]) => {
             const Icon = config.icon;
             const isVisible = Boolean(widgetState[widgetId]?.visible);
+            const idleTone = RAIL_CATEGORY_TONES[config.category] || "text-white/45 hover:text-white/75";
             return (
               <button
                 key={widgetId}
@@ -52,7 +62,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
                 } ${
                   isVisible
                     ? `${activeBorder} ${activeBackground} ${activeText}`
-                    : "border-transparent text-white/38 hover:border-white/10 hover:bg-white/[0.04] hover:text-white/75"
+                    : `${idleTone} border-transparent hover:border-white/10 hover:bg-white/[0.04]`
                 }`}
               >
                 {isVisible && (
@@ -72,7 +82,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
           })}
         </div>
 
-        <div className="mt-2 space-y-1 border-t border-white/[0.07] pt-2">
+        <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-white/[0.07] px-0.5 pt-3">
           <button
             type="button"
             onClick={() => {
@@ -85,7 +95,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
             onBlur={hideLauncherName}
             aria-label={expanded ? "Collapse widget labels" : "Expand widget labels"}
             title={expanded ? "Collapse widget labels" : "Expand widget labels"}
-            className={`flex h-10 w-full items-center rounded-lg border border-transparent text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/75 ${
+            className={`flex h-10 w-full items-center rounded-lg border border-white/[0.06] bg-white/[0.02] text-white/45 transition-colors hover:border-white/15 hover:bg-white/[0.05] hover:text-white/80 ${
               expanded ? "justify-start gap-3 px-2.5" : "justify-center"
             }`}
           >
@@ -111,7 +121,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
             } ${
               widgetState.system?.visible
                 ? `${activeBorder} ${activeBackground} ${activeText}`
-                : "border-transparent text-white/40 hover:border-white/10 hover:bg-white/[0.04] hover:text-white/75"
+                : "border-white/[0.06] bg-white/[0.02] text-white/45 hover:border-white/15 hover:bg-white/[0.05] hover:text-white/80"
             }`}
           >
             <Settings size={18} strokeWidth={1.7} aria-hidden="true" />

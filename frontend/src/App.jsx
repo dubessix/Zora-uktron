@@ -11,6 +11,7 @@ import { api, executeTool } from './api';
  */
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("DISCONNECTED");
+  const [providerStatus, setProviderStatus] = useState(null);
   const [systemMetrics, setSystemMetrics] = useState(null);
   
   const [sessionId, setSessionId] = useState(null);
@@ -162,6 +163,27 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
+
+  // Read redacted provider configuration only after the local backend is healthy.
+  // This is configuration state, not a claim that any provider was live-tested.
+  useEffect(() => {
+    let cancelled = false;
+    if (backendStatus !== 'CONNECTED') {
+      setProviderStatus(null);
+      return () => { cancelled = true; };
+    }
+
+    const loadProviderStatus = async () => {
+      try {
+        const report = await api('/api/providers/status');
+        if (!cancelled) setProviderStatus({ ...report, state: 'reported' });
+      } catch (_error) {
+        if (!cancelled) setProviderStatus({ providers: {}, state: 'unavailable' });
+      }
+    };
+    loadProviderStatus();
+    return () => { cancelled = true; };
+  }, [backendStatus]);
 
   // Jarvis-style briefing once on the first successful UI open of each local calendar day.
   useEffect(() => {
@@ -646,6 +668,7 @@ export default function App() {
         isProcessing={isProcessing}
         activePersonality={activePersonality}
         backendStatus={backendStatus}
+        providerStatus={providerStatus}
         systemMetrics={systemMetrics}
         aiState={aiState}
         activityText={activityText}

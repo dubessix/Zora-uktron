@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Code2, Mic } from 'lucide-react';
+import { Check, Code2, KeyRound, Mic, Orbit, Server } from 'lucide-react';
 import LeftPanel from './LeftPanel';
 import RightPanel from './RightPanel';
 import BlobCanvas from './BlobCanvas';
@@ -27,6 +27,7 @@ export default function AppShell({
   isProcessing, 
   activePersonality,
   backendStatus,
+  providerStatus,
   systemMetrics,
   aiState,
   activityText,
@@ -51,6 +52,23 @@ export default function AppShell({
   const accentDot = isZora ? "bg-pink-400" : "bg-emerald-400";
   const aiName = theme.name;
   const backendConnected = backendStatus === "CONNECTED";
+  const providerEntries = Object.entries(providerStatus?.providers || {});
+  const configuredProviderCount = providerEntries.filter(([, item]) => item?.configured).length;
+  const providerCount = providerEntries.length;
+  const providerReported = providerStatus?.state === 'reported' && providerCount > 0;
+  const providerUnavailable = backendConnected && providerStatus?.state === 'unavailable';
+  const providerLabel = !backendConnected
+    ? 'AI status offline'
+    : providerUnavailable
+      ? 'AI status unavailable'
+      : !providerReported
+        ? 'Checking AI status'
+        : configuredProviderCount === 0
+          ? 'No AI Provider'
+          : `${configuredProviderCount}/${providerCount} AI Providers`;
+  const providerTitle = providerReported
+    ? providerEntries.map(([name, item]) => `${name.toUpperCase()}: ${item.configured ? 'configured' : 'not configured'}`).join(' · ')
+    : providerLabel;
 
   // Voice control: wake-word listening wired to the bottom mic toggle.
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -87,6 +105,19 @@ export default function AppShell({
       <header className="relative z-10 mb-4 flex items-center justify-between border-b border-white/[0.06] pb-3 font-mono">
         <div className="flex min-w-0 items-center gap-3">
           <span
+            role="img"
+            aria-label={`${aiName} identity`}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-all duration-500"
+            style={{
+              color: theme.primary,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              boxShadow: `0 0 18px ${theme.glow}`,
+            }}
+          >
+            <Orbit size={18} strokeWidth={1.8} aria-hidden="true" />
+          </span>
+          <span
             className={`text-2xl font-black italic tracking-tight uppercase transition-all duration-500 ${accentText}`}
             style={{
               fontFamily: "'Arial Black', 'Segoe UI', system-ui, sans-serif",
@@ -106,12 +137,31 @@ export default function AppShell({
           {activityText || 'Ready'}
         </div>
 
-        {/* Backend status comes from the real /api/health poll. */}
-        <div className={`flex items-center gap-1.5 text-[8px] px-2 py-1.5 rounded-full border backdrop-blur-3xl ${backendConnected ? `${accentRing} ${accentBg}` : 'border-amber-400/20 bg-amber-500/5'}`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${backendConnected ? accentDot : 'bg-amber-400'}`} />
-          <span className={`font-bold tracking-widest uppercase ${backendConnected ? accentText : 'text-amber-300'}`}>
-            Backend {backendStatus || 'UNKNOWN'}
-          </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Provider badge reports redacted configured-key state; it never implies a live check. */}
+          <div
+            className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[7px] backdrop-blur-3xl ${
+              providerUnavailable || !backendConnected
+                ? 'border-amber-400/20 bg-amber-500/5 text-amber-300'
+                : configuredProviderCount > 0
+                  ? `${accentRing} ${accentBg} ${accentText}`
+                  : 'border-white/[0.08] bg-white/[0.025] text-white/45'
+            }`}
+            title={providerTitle}
+            data-provider-state={providerStatus?.state || 'offline'}
+          >
+            <KeyRound size={11} strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-w-32 truncate font-bold uppercase tracking-wider">{providerLabel}</span>
+          </div>
+
+          {/* Backend status comes from the real /api/health poll. */}
+          <div className={`flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[8px] backdrop-blur-3xl ${backendConnected ? `${accentRing} ${accentBg}` : 'border-amber-400/20 bg-amber-500/5'}`}>
+            <Server size={11} strokeWidth={1.8} className={backendConnected ? accentText : 'text-amber-300'} aria-hidden="true" />
+            <div className={`h-1.5 w-1.5 rounded-full ${backendConnected ? accentDot : 'bg-amber-400'}`} />
+            <span className={`font-bold tracking-widest uppercase ${backendConnected ? accentText : 'text-amber-300'}`}>
+              Backend {backendStatus || 'UNKNOWN'}
+            </span>
+          </div>
         </div>
       </header>
 
@@ -142,32 +192,39 @@ export default function AppShell({
           </div>
 
           {/* Center Bottom floating pill control bar */}
-          <div className="absolute bottom-6 flex items-center gap-3 bg-white/[0.02] border border-white/5 px-4 py-2 rounded-full backdrop-blur-3xl font-mono text-[9px]">
+          <div className="absolute bottom-5 flex items-center gap-2 rounded-full border border-white/[0.09] bg-[#0A0F12]/88 px-2.5 py-2 font-mono text-[9px] shadow-[0_12px_35px_rgba(0,0,0,0.38)] backdrop-blur-3xl">
             {/* Personality selection control. */}
-            <button 
+            <button
               onClick={togglePersonality}
-              className={`px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
+              aria-label={`Switch assistant from ${aiName}`}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[8px] font-bold uppercase tracking-widest transition-all duration-500 ${
                 isZora
-                  ? "bg-pink-500/10 border-pink-400/20 text-pink-300 shadow-[0_0_15px_rgba(236,72,153,0.15)]"
-                  : "bg-emerald-500/10 border-emerald-400/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]"
+                  ? "bg-pink-500/10 border-pink-400/25 text-pink-300 shadow-[0_0_15px_rgba(236,72,153,0.15)]"
+                  : "bg-emerald-500/10 border-emerald-400/25 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]"
               }`}
             >
-              {isZora ? "Zora Selected" : "Ultron Selected"}
+              <Orbit size={12} strokeWidth={1.8} aria-hidden="true" />
+              <span>{isZora ? "Zora Selected" : "Ultron Selected"}</span>
             </button>
 
+            <span className="h-5 w-px bg-white/[0.08]" aria-hidden="true" />
+
             {/* Coding Mode toggle — NVIDIA coding brain */}
-            <button 
+            <button
               onClick={toggleCodingMode}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
+              aria-label={codingMode ? "Disable coding mode" : "Enable coding mode"}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[8px] font-bold uppercase tracking-widest transition-all duration-500 ${
                 codingMode
                   ? "bg-sky-500/10 border-sky-400/30 text-sky-300 shadow-[0_0_15px_rgba(56,189,248,0.2)]"
-                  : "border-white/10 text-white/30 hover:text-white/60"
+                  : "border-white/[0.10] bg-white/[0.02] text-white/45 hover:border-white/20 hover:text-white/75"
               }`}
               title={codingMode ? "Coding Mode ON (NVIDIA brain for all turns). Click to revert to auto." : "Coding Mode OFF (auto-detect). Click to force NVIDIA coding brain."}
             >
               <Code2 size={12} strokeWidth={1.8} aria-hidden="true" />
               <span>{codingMode ? "Coding ON" : "Coding"}</span>
             </button>
+
+            <span className="h-5 w-px bg-white/[0.08]" aria-hidden="true" />
 
             {/* Shown only for a real, exact, one-time backend pending action. */}
             {pendingAction?.confirmation_token && (
@@ -183,14 +240,15 @@ export default function AppShell({
             )}
 
             {/* Mic icon — real wake-word listening toggle with pulse-ring effect */}
-            <button 
+            <button
               onClick={handleMicToggle}
-              className={`relative flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-500 ${
+              aria-label={voice.isListening ? "Stop voice listening" : "Enable voice listening"}
+              className={`relative flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-500 ${
                 voice.isListening
                   ? isZora
                     ? "text-pink-400 border-pink-400/40 bg-pink-500/10"
                     : "text-emerald-400 border-emerald-400/40 bg-emerald-500/10"
-                  : "text-white/20 border-white/10 hover:text-white/60 hover:border-white/20"
+                  : "border-white/[0.10] bg-white/[0.025] text-white/40 hover:border-white/20 hover:text-white/75"
               }`}
               title={voice.isListening ? "Listening for wake word... (click to stop)" : "Enable voice (click to start listening)"}
             >
