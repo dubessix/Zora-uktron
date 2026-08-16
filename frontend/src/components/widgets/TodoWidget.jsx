@@ -60,12 +60,12 @@ export default function TodoWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setNewTodoText("");
-        fetchTodos();
-      }
+      if (!data.success) throw new Error(data.error || 'Task creation failed.');
+      setNewTodoText("");
+      setError("");
+      fetchTodos();
     } catch (err) {
-      console.error('Failed to add task:', err);
+      setError(err.message || 'Task creation failed.');
     } finally {
       setLoading(false);
     }
@@ -87,11 +87,11 @@ export default function TodoWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        fetchTodos();
-      }
+      if (!data.success) throw new Error(data.error || 'Task update failed.');
+      setError("");
+      fetchTodos();
     } catch (err) {
-      console.error('Failed to toggle task:', err);
+      setError(err.message || 'Task update failed.');
     }
   };
 
@@ -109,11 +109,11 @@ export default function TodoWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        fetchTodos();
-      }
+      if (!data.success) throw new Error(data.error || 'Task deletion failed.');
+      setError("");
+      fetchTodos();
     } catch (err) {
-      console.error('Failed to delete task:', err);
+      setError(err.message || 'Task deletion failed.');
     }
   };
 

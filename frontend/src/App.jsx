@@ -422,20 +422,43 @@ export default function App() {
       const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const wsBase = apiUrl.replace(/^http/, "ws");
       let ws;
+      let openedAndSent = false;
+      let settled = false;
+      let timeoutId = null;
+      let acc = "";
+
+      const finish = (data, canFallback, error = null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        if (wsRef.current === ws) wsRef.current = null;
+        try { ws?.close(); } catch {}
+        resolve({ data, canFallback, error });
+      };
+
       try {
         ws = new WebSocket(`${wsBase}/ws/chat?client_id=web`);
-      } catch (e) { resolve(null); return; }
+      } catch (error) {
+        finish(null, true, error.message || 'WebSocket could not be created.');
+        return;
+      }
       wsRef.current = ws;
-      let acc = "";
-      ws.onopen = () => ws.send(JSON.stringify({ content: text, session_id: sessionId || "" }));
+      ws.onopen = () => {
+        try {
+          ws.send(JSON.stringify({ content: text, session_id: sessionId || "" }));
+          openedAndSent = true;
+        } catch (error) {
+          finish(null, true, error.message || 'WebSocket send failed.');
+        }
+      };
       ws.onmessage = (ev) => {
         let msg; try { msg = JSON.parse(ev.data); } catch { return; }
         if (msg.type === "progress") return;
         if (msg.type === "token") { acc += msg.content; }
-        else if (msg.type === "done") {
-          // Forward structured_action + resolved session_id so WS chat behaves
-          // exactly like the REST path (widgets open, session stays in sync).
-          const data = {
+        else if (msg.type === "error") {
+          finish(null, false, msg.message || 'Backend WebSocket returned an error.');
+        } else if (msg.type === "done") {
+          finish({
             id: msg.message_id,
             content: acc,
             personality: msg.active_personality,
@@ -447,15 +470,23 @@ export default function App() {
             session_id: msg.session_id || null,
             provider_route: msg.provider_route || {},
             pending_confirmation: msg.pending_confirmation || null
-          };
-          try { ws.close(); } catch {}
-          wsRef.current = null;
-          resolve(data);
+          }, false);
         }
       };
-      ws.onerror = () => { try { ws.close(); } catch {} wsRef.current = null; resolve(null); };
-      // Safety timeout so a dead backend never leaves the promise hanging forever.
-      setTimeout(() => { if (wsRef.current === ws) { try { ws.close(); } catch {} wsRef.current = null; resolve(null); } }, 90000);
+      ws.onerror = () => finish(
+        null,
+        !openedAndSent,
+        openedAndSent ? 'WebSocket failed after the request was sent; it was not replayed.' : 'WebSocket connection failed.'
+      );
+      ws.onclose = () => finish(
+        null,
+        !openedAndSent,
+        openedAndSent ? 'WebSocket closed before completion; it was not replayed.' : 'WebSocket did not connect.'
+      );
+      timeoutId = setTimeout(
+        () => finish(null, false, 'WebSocket timed out after the request was sent; it was not replayed.'),
+        90000,
+      );
     });
   };
 
@@ -476,8 +507,20 @@ export default function App() {
     // The backend's Structured AI Action is the sole trigger governing the UI.
 
     try {
-      // C-1: stream via WebSocket for real token-by-token typing.
-      const data = await sendViaWS(userText);
+      // Stream through WebSocket. REST fallback is allowed only if the request
+      // was never sent, preventing duplicate tool/chat side effects.
+      const wsResult = await sendViaWS(userText);
+      let data = wsResult.data;
+      if (!data && wsResult.canFallback) {
+        data = await api('/api/chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            session_id: sessionId,
+            project_id: 'personal',
+            content: userText,
+          }),
+        });
+      }
       if (data) {
         // Reconcile session with the backend's resolved session id (if any).
         if (data.session_id) setSessionId(data.session_id);
@@ -520,7 +563,7 @@ export default function App() {
         setMessages(prev => [...prev, {
           id: "error_" + Date.now(),
           sender: "system_error",
-          text: "System communication error."
+          text: wsResult.error || "System communication error."
         }]);
         setAiState("idle");
       }
@@ -528,7 +571,7 @@ export default function App() {
       setMessages(prev => [...prev, {
         id: "error_" + Date.now(),
         sender: "system_error",
-        text: "Dropped. Backend server is offline."
+        text: err.message || "Backend request failed."
       }]);
       setAiState("idle");
     } finally {

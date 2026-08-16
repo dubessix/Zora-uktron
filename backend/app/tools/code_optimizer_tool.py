@@ -31,6 +31,9 @@ class CodeOptimizerTool(BaseTool):
             usage_examples=["optimize_code(filepath='backend/app/main.py', optimization_type='solid', apply_changes=False)"]
         )
 
+    def permission_for_arguments(self, arguments: Dict[str, Any]) -> int:
+        return 2 if bool(arguments.get("apply_changes")) else 0
+
     def _analyze_ast(self, file_content: str, filepath: str) -> Dict[str, Any]:
         """Perform raw AST analysis to spot specific structural anti-patterns without external API calls."""
         findings = []

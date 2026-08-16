@@ -12,10 +12,12 @@ export default function SemanticCodeGraphWidget() {
   const [targetPath, setTargetPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
+  const [error, setError] = useState('');
 
   const runQuery = async (type = queryType) => {
     setLoading(true);
     setResults(null);
+    setError('');
 
     try {
       const response = await fetch(`${apiBase}/api/tools/execute`, {
@@ -31,11 +33,10 @@ export default function SemanticCodeGraphWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setResults(data.data);
-      }
+      if (!data.success) throw new Error(data.error || 'Semantic graph query failed.');
+      setResults(data.data);
     } catch (e) {
-      console.error('Failed to run graph query:', e);
+      setError(e.message || 'Semantic graph query failed.');
     } finally {
       setLoading(false);
     }
@@ -117,6 +118,12 @@ export default function SemanticCodeGraphWidget() {
           </div>
         ) : null}
       </div>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 p-2 rounded-sm text-[8px] uppercase">
+          {error}
+        </div>
+      )}
 
       {/* Query Results presentation */}
       {results && (

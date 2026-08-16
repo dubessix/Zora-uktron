@@ -51,4 +51,15 @@
 - Exact-commit fresh archive import, tool load, test, audit, build, launcher, REST, WebSocket, CRUD, confirmation, optimizer, live-data, and TTS-byte smoke checks passed.
 - A future-due reminder was observed through the real scheduler broadcast and persisted as triggered within the five-second polling window.
 
+### Exhaustive widget/frontend-backend audit
+
+- Verified all 22 registered widget files and every lazy import; mapped each tool-backed widget to a real registered backend tool.
+- Routed Market quotes through standardized backend World Monitor data instead of a direct browser fetch.
+- Standardized World Monitor success/error payloads so ToolRegistry preserves earthquakes, market quotes, sentiment, and public-search details.
+- Git Clone now passes the verified cloned path to VS Code; GUI dispatch remains explicitly unverified.
+- Task, calendar, and semantic graph widgets now surface mutation/query failures instead of failing silently.
+- Typed chat now falls back to REST only when a WebSocket request was never sent; an interrupted sent request is not replayed.
+- Read-only Code Optimizer analysis no longer requests destructive confirmation; applying changes still requires exact confirmation.
+- Live Git Clone exact confirmation, market/world schemas, semantic graph, optimizer, and frontend root were exercised in isolated storage.
+
 Git commit history is the source of truth for exact changes and hashes.

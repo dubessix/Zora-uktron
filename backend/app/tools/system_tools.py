@@ -78,6 +78,11 @@ class TerminalRunArgs(BaseModel):
 class AppLaunchArgs(BaseModel):
     pass
 
+
+class VSCodeLaunchArgs(BaseModel):
+    path: Optional[str] = Field(None, description="Approved file or directory to open in VS Code.")
+
+
 class TerminalRunTool(BaseTool):
     def __init__(self) -> None:
         super().__init__(
@@ -466,9 +471,29 @@ class VSCodeLauncherTool(BaseTool):
             category="system",
             tags=["open", "launch", "code", "vscode", "editor", "ide"],
             permission_level=2,
-            args_model=AppLaunchArgs,
-            usage_examples=["open_vscode()"]
+            args_model=VSCodeLaunchArgs,
+            usage_examples=["open_vscode(path='.')"]
         )
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        return await _launch_verified(["code", "code-insiders"])
+        path_value = kwargs.get("path")
+        arguments = []
+        resolved_path = None
+        if path_value:
+            from backend.app.security.path_guard import check_path
+
+            resolved_path = Path(str(path_value)).expanduser().resolve(strict=False)
+            decision = check_path(str(resolved_path))
+            if not decision["safe"]:
+                return {
+                    "success": False,
+                    "error": f"VS Code path blocked ({decision['reason']}): {resolved_path}",
+                    "data": {},
+                }
+            if not resolved_path.exists():
+                return {"success": False, "error": f"VS Code path does not exist: {resolved_path}", "data": {}}
+            arguments.append(str(resolved_path))
+        result = await _launch_verified(["code", "code-insiders"], arguments)
+        if result.get("success") and resolved_path is not None:
+            result["data"]["requested_path"] = str(resolved_path)
+        return result

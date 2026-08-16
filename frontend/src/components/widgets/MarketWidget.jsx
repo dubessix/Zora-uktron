@@ -1,60 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { executeTool } from '../../api';
 
-/**
- * MarketWidget — real crypto prices (Set B: no fake BTC).
- * Fetches live prices from the free CoinGecko API.
- */
+/** Live crypto quotes routed through the standardized backend world-monitor tool. */
 export default function MarketWidget() {
   const [coins, setCoins] = useState([]);
-  const [status, setStatus] = useState("loading");
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
+  const [source, setSource] = useState('');
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(
-          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin,solana&vs_currencies=usd&include_24hr_change=true"
-        );
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const map = {
-          bitcoin: "BTC", ethereum: "ETH", binancecoin: "BNB", solana: "SOL"
-        };
-        const list = Object.entries(data).map(([id, v]) => ({
-          symbol: `${map[id] || id.toUpperCase()}/USD`,
-          price: `$${v.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-          change: v.usd_24h_change == null
-            ? "Unavailable"
-            : `${v.usd_24h_change > 0 ? "+" : ""}${v.usd_24h_change.toFixed(2)}%`,
-          up: v.usd_24h_change == null ? null : v.usd_24h_change >= 0
-        }));
-        setCoins(list);
-        setStatus("ok");
-      } catch (err) { setStatus("offline"); } 
-    };
-    load();
-  }, []);
+  const load = async () => {
+    setStatus('loading');
+    setError('');
+    try {
+      const result = await executeTool('world_monitor', {
+        endpoint: 'list_market_quotes',
+        parameters: {},
+      });
+      if (!result.success) throw new Error(result.error || 'Live market quotes unavailable.');
+      setCoins(result.data.quotes || []);
+      setSource(result.data.source || 'Source not reported');
+      setStatus('ready');
+    } catch (err) {
+      setCoins([]);
+      setSource('');
+      setStatus('unavailable');
+      setError(err.message || 'Live market quotes unavailable.');
+    }
+  };
+
+  useEffect(() => { load(); }, []);
 
   return (
     <div className="space-y-2 font-mono text-[10px]">
       <div className="flex justify-between text-[7px] uppercase tracking-widest text-white/40 font-bold">
-        <span>Live Market</span>
-        <span className={status === "offline" ? "text-rose-400" : "text-emerald-400"}>
-          {status === "loading" ? "loading…" : status === "offline" ? "offline" : "LIVE"}
-        </span>
+        <span>Market quotes {source && `· ${source}`}</span>
+        <button onClick={load} className={status === 'unavailable' ? 'text-rose-400' : 'text-emerald-400'}>
+          {status === 'loading' ? 'loading…' : status === 'unavailable' ? 'retry' : 'LIVE'}
+        </button>
       </div>
-      {status !== "ok" && coins.length === 0 && (
-        <p className="text-[9px] text-white/30">{status === "offline" ? "Could not fetch live prices." : "Loading…"}</p>
-      )}
+      {status === 'unavailable' && <p className="text-[9px] text-rose-300">Unavailable: {error}</p>}
+      {status === 'ready' && coins.length === 0 && <p className="text-[9px] text-white/30">Provider returned no valid quotes.</p>}
       <div className="space-y-1.5">
-        {coins.map((c, i) => (
-          <div key={i} className="flex items-center justify-between border border-white/5 bg-white/[0.01] p-2 rounded-sm">
-            <span className="text-[#F5F5F7]">{c.symbol}</span>
-            <span className="flex items-center gap-2">
-              <span className="text-white/70">{c.price}</span>
-              <span className={c.up == null ? "text-white/40" : c.up ? "text-emerald-400" : "text-rose-400"}>{c.change}</span>
-            </span>
-          </div>
-        ))}
+        {coins.map((coin) => {
+          const change = coin.change_24h;
+          return (
+            <div key={coin.asset} className="flex items-center justify-between border border-white/5 bg-white/[0.01] p-2 rounded-sm">
+              <span className="text-[#F5F5F7]">{coin.symbol}/USD</span>
+              <span className="flex items-center gap-2">
+                <span className="text-white/70">${Number(coin.price_usd).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                <span className={change == null ? 'text-white/40' : change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                  {change == null ? 'Unavailable' : `${change > 0 ? '+' : ''}${Number(change).toFixed(2)}%`}
+                </span>
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

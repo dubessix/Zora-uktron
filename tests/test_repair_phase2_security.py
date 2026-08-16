@@ -174,6 +174,7 @@ class TestExactToolConfirmation(unittest.IsolatedAsyncioTestCase):
             "git_clone": {"url": "https://example.com/repo.git", "directory": "/etc/repo"},
             "download_file": {"url": "https://example.com/a", "save_path": "/etc/a"},
             "play_music": {"filepath": "/etc/a.mp3"},
+            "open_vscode": {"path": "/etc"},
         }
         for tool_id, arguments in cases.items():
             with self.subTest(tool=tool_id):

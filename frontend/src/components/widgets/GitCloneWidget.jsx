@@ -27,8 +27,11 @@ export default function GitCloneWidget() {
   };
 
   const openVscode = async () => {
-    const r = await run("open_vscode", {});
-    setMsg(r.success ? "Opening in VS Code, Sir." : (r.error || "could not open"));
+    const requestedPath = dir.trim() || "repos";
+    const r = await run("open_vscode", { path: requestedPath });
+    setMsg(r.success
+      ? `${r.data?.message || 'VS Code launch dispatched.'} Path: ${r.data?.requested_path || requestedPath}`
+      : (r.error || "could not dispatch VS Code"));
   };
 
   return (

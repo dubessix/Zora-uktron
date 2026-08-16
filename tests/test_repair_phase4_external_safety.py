@@ -172,10 +172,11 @@ class TestHonestExternalOperations(unittest.IsolatedAsyncioTestCase):
     async def test_world_monitor_does_not_fabricate_fallback_intelligence(self):
         tool = WorldMonitorTool()
         with patch("backend.app.tools.world_monitor_tool.httpx.AsyncClient.get", side_effect=httpx.ConnectError("offline")):
-            result = await tool._search_live_news_tavily("test region")
+            result = await tool._search_live_news("test region")
         self.assertFalse(result["success"])
-        self.assertEqual(result["details"], [])
-        self.assertIn("no fallback facts were fabricated", result["headline"])
+        self.assertEqual(result["data"]["details"], [])
+        self.assertEqual(result["data"]["status"], "unavailable")
+        self.assertIn("unavailable", result["error"].lower())
 
 
 if __name__ == "__main__":

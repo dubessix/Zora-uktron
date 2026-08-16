@@ -193,17 +193,19 @@ class TestFinalDanceFeatureSet(unittest.TestCase):
             parameters={"min_magnitude": 5.0}
         ))
         self.assertTrue(res_eq["success"])
-        self.assertIn("headline", res_eq)
+        self.assertIn("headline", res_eq["data"])
+        self.assertIn("earthquakes", res_eq["data"])
 
         # 2. Test Fear & Greed Index
         res_fng = _run(tool.execute(endpoint="get_fear_greed_index"))
         self.assertTrue(res_fng["success"])
-        self.assertIn("score", res_fng)
+        self.assertIn("score", res_fng["data"])
 
         # 3. Test Market Quotes
         res_mq = _run(tool.execute(endpoint="list_market_quotes"))
         self.assertTrue(res_mq["success"])
-        self.assertIn("quotes", res_mq)
+        self.assertGreaterEqual(len(res_mq["data"]["quotes"]), 1)
+        self.assertEqual(res_mq["data"]["source"], "CoinGecko")
 
     def test_github_integration_automation(self):
         """Test: Verify un-mocked github integration tool can parse actions, list issues, and search code."""

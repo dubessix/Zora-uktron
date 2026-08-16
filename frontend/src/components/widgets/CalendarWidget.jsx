@@ -56,14 +56,14 @@ export default function CalendarWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setTitle('');
-        setStartTime('');
-        setEndTime('');
-        fetchEvents();
-      }
+      if (!data.success) throw new Error(data.error || 'Calendar event creation failed.');
+      setTitle('');
+      setStartTime('');
+      setEndTime('');
+      setError('');
+      fetchEvents();
     } catch (err) {
-      console.error('Failed to create calendar event:', err);
+      setError(err.message || 'Calendar event creation failed.');
     }
   };
 
@@ -82,11 +82,12 @@ export default function CalendarWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setSuggestions(data.data.suggestions || []);
-      }
+      if (!data.success) throw new Error(data.error || 'Smart schedule unavailable.');
+      setSuggestions(data.data.suggestions || []);
+      setError('');
     } catch (err) {
-      console.error('Failed to get smart calendar slots:', err);
+      setSuggestions([]);
+      setError(err.message || 'Smart schedule unavailable.');
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,7 @@ export default function CalendarWidget() {
 
   const deleteEvent = async (id) => {
     try {
-      await fetch(`${apiBase}/api/tools/execute`, {
+      const response = await fetch(`${apiBase}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -102,9 +103,12 @@ export default function CalendarWidget() {
           arguments: { action: 'delete', event_id: id }
         })
       });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Calendar event deletion failed.');
+      setError('');
       fetchEvents();
     } catch (err) {
-      console.error('Failed to delete event:', err);
+      setError(err.message || 'Calendar event deletion failed.');
     }
   };
 
@@ -129,12 +133,13 @@ export default function CalendarWidget() {
         })
       });
       const data = await response.json();
-      if (data.success) {
-        setSuggestions([]);
-        fetchEvents();
-      }
+      if (!data.success) throw new Error(data.error || 'Suggested slot booking failed.');
+      setSuggestions([]);
+      setTitle('');
+      setError('');
+      fetchEvents();
     } catch (err) {
-      console.error('Failed to book suggested slot:', err);
+      setError(err.message || 'Suggested slot booking failed.');
     }
   };
 

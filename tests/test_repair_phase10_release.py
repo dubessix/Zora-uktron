@@ -9,7 +9,7 @@ import re
 import tomllib
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from click.testing import CliRunner
 
@@ -17,6 +17,7 @@ from backend.app.runtime_paths import isolated_test_artifact_path
 from backend.app.tools.calendar_tool import CalendarTool
 from backend.app.tools.code_optimizer_tool import CodeOptimizerTool
 from backend.app.tools.reminder_tool import ReminderTool
+from backend.app.tools.system_tools import VSCodeLauncherTool
 from backend.app.tools.task_tool import TaskTool
 
 
@@ -62,6 +63,19 @@ class TestReleaseQualityConfiguration(unittest.TestCase):
 
 
 class TestConsoleLauncherOwnership(unittest.TestCase):
+    def test_vscode_launcher_receives_verified_requested_path(self):
+        directory = isolated_test_artifact_path("final_audit", "vscode_project")
+        directory.mkdir(parents=True, exist_ok=True)
+        launched = {"success": True, "data": {"message": "dispatched"}, "error": None}
+        with patch(
+            "backend.app.tools.system_tools._launch_verified",
+            new=AsyncMock(return_value=launched),
+        ) as start:
+            result = asyncio.run(VSCodeLauncherTool().execute(path=str(directory)))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["requested_path"], str(directory.resolve()))
+        self.assertEqual(start.await_args.args[1], [str(directory.resolve())])
+
     def test_ultron_start_runs_launcher_in_current_process(self):
         from backend.app import cli
 
@@ -78,6 +92,35 @@ class TestConsoleLauncherOwnership(unittest.TestCase):
 
 
 class TestOptimizerFailureSafety(unittest.TestCase):
+    def test_read_only_analysis_does_not_request_destructive_confirmation(self):
+        path = isolated_test_artifact_path("final_audit", "read_only_optimizer.py")
+        path.write_text("def okay():\n    return 1\n", encoding="utf-8")
+        from backend.app.tools.tool_registry import ToolRegistry
+
+        result = asyncio.run(
+            ToolRegistry().execute_tool(
+                "optimize_code",
+                {"filepath": str(path), "optimization_type": "solid", "apply_changes": False},
+                session_id="optimizer-read-only",
+            )
+        )
+        self.assertTrue(result["success"], result)
+        self.assertNotEqual(result.get("status"), "PENDING_CONFIRMATION")
+
+    def test_applying_changes_still_requires_exact_confirmation(self):
+        path = isolated_test_artifact_path("final_audit", "write_optimizer.py")
+        path.write_text("def greet(name):\n    message = 'Hi ' + name + '!'\n    return message\n", encoding="utf-8")
+        from backend.app.tools.tool_registry import ToolRegistry
+
+        result = asyncio.run(
+            ToolRegistry().execute_tool(
+                "optimize_code",
+                {"filepath": str(path), "optimization_type": "readability", "apply_changes": True},
+                session_id="optimizer-write",
+            )
+        )
+        self.assertEqual(result.get("status"), "PENDING_CONFIRMATION")
+
     def test_syntax_error_is_not_reported_as_success(self):
         path = isolated_test_artifact_path("final_audit", "invalid_source.py")
         path.write_text("def broken(:\n    pass\n", encoding="utf-8")
