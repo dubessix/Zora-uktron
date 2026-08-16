@@ -31,7 +31,7 @@ export default function RightPanel({
   }, [logs]);
 
   return (
-    <aside className="col-span-12 lg:col-span-3 h-full flex flex-col gap-4 bg-[#0B1112]/72 border border-white/[0.07] p-4 rounded-xl backdrop-blur-xl">
+    <aside className="col-span-12 flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0B1112]/72 p-4 backdrop-blur-xl lg:col-span-3">
       
       {/* Header + Chat/Log tabs */}
       <div className="flex items-center justify-between border-b border-white/5 pb-3">
@@ -58,14 +58,14 @@ export default function RightPanel({
             Log
           </button>
         </div>
-        <span className={`text-[8px] border px-2 py-0.5 rounded-full font-mono tracking-wider ${backendStatus === 'CONNECTED' ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400' : 'border-amber-500/20 bg-amber-500/5 text-amber-300'}`}>
+        <span className={`max-w-24 truncate text-[8px] border px-2 py-0.5 rounded-full font-mono tracking-wider ${backendStatus === 'CONNECTED' ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400' : 'border-amber-500/20 bg-amber-500/5 text-amber-300'}`}>
           {backendStatus || 'UNKNOWN'}
         </span>
       </div>
 
       {/* CHAT TAB */}
       {tab === "chat" && (
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+        <div className="min-h-0 flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-4 gap-4">
               <div className="w-8 h-8 rounded-full border border-[#7DD3FC]/10 bg-[#7DD3FC]/5 flex items-center justify-center text-[#7DD3FC] animate-pulse">
@@ -115,7 +115,7 @@ export default function RightPanel({
 
       {/* LOG TAB — real-time operational activity */}
       {tab === "log" && (
-        <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin bg-black/30 border border-white/5 rounded-sm p-2 space-y-1 font-mono text-[9px]">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin bg-black/30 border border-white/5 rounded-sm p-2 space-y-1 font-mono text-[9px]">
           {logs.length === 0 ? (
             <p className="text-white/30">No activity yet. Ask Ultron to run a tool — you'll see real-time logs here.</p>
           ) : (
@@ -135,15 +135,15 @@ export default function RightPanel({
       )}
 
       {/* Rounded text query input box (shared) */}
-      <form onSubmit={handleSendMessage} className="flex gap-2 border-t border-white/5 pt-3">
-        <div className="flex-1 flex items-center bg-white/[0.02] border border-white/5 rounded-full px-4 py-2 focus-within:border-[#7DD3FC]/30 transition-colors">
+      <form onSubmit={handleSendMessage} className="flex min-w-0 gap-2 border-t border-white/5 pt-3">
+        <div className="flex min-w-0 flex-1 items-center bg-white/[0.02] border border-white/5 rounded-full px-4 py-2 focus-within:border-[#7DD3FC]/30 transition-colors">
           <input 
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             disabled={isProcessing}
             placeholder={isProcessing ? "Processing..." : "Ask anything, Ultron is listening..."}
-            className="flex-1 bg-transparent text-[10px] text-[#F5F5F7] placeholder-white/20 focus:outline-none font-mono"
+            className="min-w-0 flex-1 bg-transparent text-[10px] text-[#F5F5F7] placeholder-white/20 focus:outline-none font-mono"
           />
           <button
             type="submit"

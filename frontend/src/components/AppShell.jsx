@@ -80,7 +80,7 @@ export default function AppShell({
         activePersonality={activePersonality}
       />
 
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden p-6">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4">
       {/* ==============================================================================
           1. SYSTEM HEADER & TOP NAVIGATION (Dynamic assistant identity)
          ============================================================================== */}
@@ -116,13 +116,13 @@ export default function AppShell({
       </header>
 
       {/* 2. THREE-PANEL CORE GRID WORKSPACE */}
-      <div className="flex-1 grid grid-cols-12 gap-6 items-stretch overflow-hidden z-10">
+      <div className="z-10 grid min-h-0 flex-1 grid-cols-12 items-stretch gap-4 overflow-hidden">
         
         {/* Left column: Relational resource meters */}
         <LeftPanel systemMetrics={systemMetrics} backendStatus={backendStatus} />
 
         {/* Center column: HTML5 Canvas particle loop & concentric orbital rings */}
-        <main className="col-span-12 lg:col-span-6 flex flex-col items-center justify-center relative bg-white/[0.01] border border-white/5 rounded-sm p-6 backdrop-blur-xl">
+        <main className="relative col-span-12 flex min-h-0 min-w-0 flex-col items-center justify-center rounded-xl border border-white/[0.07] bg-[#080C0F]/60 p-6 backdrop-blur-xl lg:col-span-6">
           
           {/* Header context indicators */}
           <div className="absolute top-6 left-6 font-mono text-[9px] text-[#8B8B96] flex items-center gap-2">
