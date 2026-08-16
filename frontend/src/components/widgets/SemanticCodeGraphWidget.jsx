@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Workflow } from 'lucide-react';
 import { apiBase } from '../../api';
 
 /**
@@ -51,8 +52,9 @@ export default function SemanticCodeGraphWidget() {
       
       {/* Header */}
       <div className="flex justify-between items-center border-b border-white/5 pb-2">
-        <span className="text-[11px] font-bold tracking-widest text-[#7DD3FC] uppercase">
-          🕸️ Semantic Code Graph
+        <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-[#7DD3FC] uppercase">
+          <Workflow size={13} strokeWidth={1.8} aria-hidden="true" />
+          Semantic Code Graph
         </span>
         <div className="flex gap-1.5">
           <button

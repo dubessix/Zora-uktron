@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Check, X } from 'lucide-react';
 import { apiBase } from '../../api';
 
 /**
@@ -183,7 +184,7 @@ export default function TodoWidget() {
                 <div className={`w-3 h-3 rounded-sm border flex items-center justify-center mt-0.5 ${
                   todo.status === 'done' ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-white/10"
                 }`}>
-                  {todo.status === 'done' && "✓"}
+                  {todo.status === 'done' && <Check size={9} strokeWidth={2} aria-hidden="true" />}
                 </div>
                 
                 {/* Title & Priority Badge */}
@@ -208,8 +209,10 @@ export default function TodoWidget() {
               <button 
                 onClick={() => deleteTask(todo.id)}
                 className="text-rose-400 hover:text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 px-1 py-0.5 border border-rose-500/10 rounded-sm text-[7px]"
+                aria-label="Delete task"
+                title="Delete task"
               >
-                ✖
+                <X size={11} strokeWidth={1.8} aria-hidden="true" />
               </button>
             </div>
           ))

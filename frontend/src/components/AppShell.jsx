@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Check, Code2, Mic } from 'lucide-react';
 import LeftPanel from './LeftPanel';
 import RightPanel from './RightPanel';
 import BlobCanvas from './BlobCanvas';
@@ -157,14 +158,15 @@ export default function AppShell({
             {/* Coding Mode toggle — NVIDIA coding brain */}
             <button 
               onClick={toggleCodingMode}
-              className={`px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border ${
                 codingMode
                   ? "bg-sky-500/10 border-sky-400/30 text-sky-300 shadow-[0_0_15px_rgba(56,189,248,0.2)]"
                   : "border-white/10 text-white/30 hover:text-white/60"
               }`}
               title={codingMode ? "Coding Mode ON (NVIDIA brain for all turns). Click to revert to auto." : "Coding Mode OFF (auto-detect). Click to force NVIDIA coding brain."}
             >
-              💻 {codingMode ? "Coding ON" : "Coding"}
+              <Code2 size={12} strokeWidth={1.8} aria-hidden="true" />
+              <span>{codingMode ? "Coding ON" : "Coding"}</span>
             </button>
 
             {/* Shown only for a real, exact, one-time backend pending action. */}
@@ -172,10 +174,11 @@ export default function AppShell({
               <button
                 onClick={onConfirmRun}
                 disabled={confirmingAction}
-                className="px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border border-amber-400/40 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.2)] disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[8px] font-bold tracking-widest uppercase transition-all duration-500 border border-amber-400/40 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.2)] disabled:opacity-40"
                 title={pendingAction.message || `Confirm ${pendingAction.tool_id}`}
               >
-                {confirmingAction ? 'Confirming…' : `✓ Confirm ${pendingAction.tool_id}`}
+                {!confirmingAction && <Check size={12} strokeWidth={1.8} aria-hidden="true" />}
+                <span>{confirmingAction ? 'Confirming…' : `Confirm ${pendingAction.tool_id}`}</span>
               </button>
             )}
 
@@ -191,7 +194,7 @@ export default function AppShell({
               }`}
               title={voice.isListening ? "Listening for wake word... (click to stop)" : "Enable voice (click to start listening)"}
             >
-              <span className={`text-sm ${voice.isListening ? "animate-pulse" : ""}`}>🎙️</span>
+              <Mic size={15} strokeWidth={1.8} aria-hidden="true" className={voice.isListening ? "animate-pulse" : ""} />
               {voice.isListening && (
                 <span className={`absolute inset-0 rounded-full animate-ping opacity-40 ${isZora ? "bg-pink-400/40" : "bg-emerald-400/40"}`} />
               )}

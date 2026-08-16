@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Clock3, X } from 'lucide-react';
 import { apiBase } from '../../api';
 
 /**
@@ -117,8 +118,9 @@ export default function ReminderWidget() {
       
       {/* 1. Header and Quick Stats */}
       <div className="flex justify-between items-center border-b border-white/5 pb-2">
-        <span className="text-[11px] font-bold tracking-widest text-[#7DD3FC] uppercase">
-          🕒 Scheduler Cache
+        <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-[#7DD3FC] uppercase">
+          <Clock3 size={13} strokeWidth={1.8} aria-hidden="true" />
+          Scheduler Cache
         </span>
         <span className="bg-white/5 px-2 py-0.5 rounded-full text-[8px] text-white/50 uppercase">
           {listAvailable === true
@@ -265,8 +267,10 @@ export default function ReminderWidget() {
                     <button
                       onClick={() => handleAction('delete', rem.id)}
                       className="px-1.5 py-0.5 bg-rose-500/5 hover:bg-rose-500/15 border border-rose-500/10 text-rose-400 rounded-sm text-[8px]"
+                      aria-label="Delete reminder"
+                      title="Delete reminder"
                     >
-                      ✖
+                      <X size={11} strokeWidth={1.8} aria-hidden="true" />
                     </button>
                   </>
                 )}

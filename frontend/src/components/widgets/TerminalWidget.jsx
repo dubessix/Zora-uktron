@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Lightbulb } from 'lucide-react';
 import { executeToolWithConfirmation } from '../../api';
 
 /**
@@ -29,7 +30,7 @@ export default function TerminalWidget() {
         const err = data.data?.stderr;
         if (err) setLogs(prev => [...prev, { line: err, type: "error" }]);
         const fix = data.data?.self_healing_fix;
-        if (fix && fix.fix_hint) setLogs(prev => [...prev, { line: `💡 ${fix.fix_hint}`, type: "error" }]);
+        if (fix && fix.fix_hint) setLogs(prev => [...prev, { line: fix.fix_hint, type: "error", hint: true }]);
       } else {
         setLogs(prev => [...prev, { line: data.status === "PENDING_CONFIRMATION" ? "confirmation cancelled" : `error: ${data.error || "command failed"}`, type: "error" }]);
       }
@@ -58,9 +59,10 @@ export default function TerminalWidget() {
       <div className="bg-black/40 border border-white/5 rounded-sm p-2 h-36 overflow-y-auto space-y-1">
         {logs.length === 0 && <p className="text-white/25">Run a command to see real output…</p>}
         {logs.map((l, i) => (
-          <p key={i} className={l.type === "cmd" ? "text-[#7DD3FC]" : l.type === "error" ? "text-rose-400" : "text-white/70"}>
-            {l.line}
-          </p>
+          <div key={i} className={`flex items-start gap-1.5 ${l.type === "cmd" ? "text-[#7DD3FC]" : l.type === "error" ? "text-rose-400" : "text-white/70"}`}>
+            {l.hint && <Lightbulb size={11} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 shrink-0" />}
+            <p>{l.line}</p>
+          </div>
         ))}
       </div>
     </div>

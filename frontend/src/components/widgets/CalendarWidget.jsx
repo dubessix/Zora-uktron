@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { apiBase } from '../../api';
 
 /**
@@ -217,8 +218,10 @@ export default function CalendarWidget() {
               <button 
                 onClick={() => deleteEvent(item.id)}
                 className="text-rose-400 hover:text-rose-500 bg-rose-500/5 px-1 py-0.5 border border-rose-500/10 rounded-sm text-[6px]"
+                aria-label="Delete calendar event"
+                title="Delete calendar event"
               >
-                ✖
+                <X size={11} strokeWidth={1.8} aria-hidden="true" />
               </button>
             </div>
           ))

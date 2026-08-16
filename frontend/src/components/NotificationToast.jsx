@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { X } from 'lucide-react';
 
 /**
  * NotificationToast Component
@@ -44,11 +45,13 @@ export default function NotificationToast({
         <span className={`text-[7px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-sm ${priorityBadgeBg}`}>
           {priority} Priority
         </span>
-        <button 
+        <button
           onClick={() => onDismiss(id)}
-          className="text-[9px] text-[#8B8B96] hover:text-white transition-colors"
+          aria-label="Dismiss notification"
+          title="Dismiss notification"
+          className="text-[#8B8B96] hover:text-white transition-colors"
         >
-          ✕
+          <X size={13} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </div>
       <div>

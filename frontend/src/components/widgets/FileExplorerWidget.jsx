@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FileText, Folder } from 'lucide-react';
 
 /**
  * FileExplorerWidget — real folder navigation (no fake D:\ drives).
@@ -62,8 +63,11 @@ export default function FileExplorerWidget() {
           {entries.map((e, i) => (
             <button key={i} onClick={() => e.type === "folder" && load(`${path === "." ? path + "/" : path}/${e.name}`.replace(/\/+/g,"/"))}
               className="flex w-full items-center justify-between text-left text-[#F5F5F7] hover:bg-white/5 rounded-sm px-1">
-              <span className={e.type === "folder" ? "text-[#7DD3FC]" : ""}>
-                {e.type === "folder" ? "📁 " : "📄 "}{e.name}
+              <span className={`flex min-w-0 items-center gap-1.5 ${e.type === "folder" ? "text-[#7DD3FC]" : ""}`}>
+                {e.type === "folder"
+                  ? <Folder size={12} strokeWidth={1.8} aria-hidden="true" className="shrink-0" />
+                  : <FileText size={12} strokeWidth={1.8} aria-hidden="true" className="shrink-0" />}
+                <span className="truncate">{e.name}</span>
               </span>
               <span className="text-white/30 text-[8px]">{e.type === "file" && e.size ? e.size : ""}</span>
             </button>

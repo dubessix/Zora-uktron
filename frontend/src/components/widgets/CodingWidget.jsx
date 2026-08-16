@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Code2 } from 'lucide-react';
 
 /**
  * CodingWidget
@@ -11,8 +12,9 @@ export default function CodingWidget({ log = [] }) {
   return (
     <div className="space-y-3 font-mono text-[10px]">
       <div className="flex items-center justify-between">
-        <span className="text-[8px] uppercase tracking-widest font-bold text-sky-300">
-          💻 Coding Agent
+        <span className="flex items-center gap-1.5 text-[8px] uppercase tracking-widest font-bold text-sky-300">
+          <Code2 size={12} strokeWidth={1.8} aria-hidden="true" />
+          Coding Agent
         </span>
         <button
           onClick={() => setOpen(!open)}

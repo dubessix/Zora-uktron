@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { ChevronRight, CircleCheck, Send } from 'lucide-react';
 import { getPersonalityTheme } from '../theme/personalityTheme';
 
 /**
@@ -68,7 +69,7 @@ export default function RightPanel({
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-4 gap-4">
               <div className="w-8 h-8 rounded-full border border-[#7DD3FC]/10 bg-[#7DD3FC]/5 flex items-center justify-center text-[#7DD3FC] animate-pulse">
-                ✓
+                <CircleCheck size={16} strokeWidth={1.8} aria-hidden="true" />
               </div>
               <p className="text-[10px] text-[#8B8B96] leading-relaxed uppercase tracking-wider font-mono">
                 {backendStatus === 'CONNECTED'
@@ -121,7 +122,7 @@ export default function RightPanel({
             logs.map((l, i) => (
               <div key={i} className="flex items-start gap-2">
                 <span className={l.level === "error" ? "text-rose-400" : l.level === "success" ? "text-emerald-400" : "text-[#7DD3FC]"}>
-                  ▸
+                  <ChevronRight size={12} strokeWidth={1.8} aria-hidden="true" />
                 </span>
                 <span className={l.level === "error" ? "text-rose-300" : l.level === "success" ? "text-emerald-300" : "text-white/70"}>
                   {l.message}
@@ -149,8 +150,10 @@ export default function RightPanel({
             disabled={isProcessing || !inputValue.trim()}
             className="text-xs ml-2 transition-all disabled:opacity-20"
             style={{ color: activeTheme.primary }}
+            aria-label="Send message"
+            title="Send message"
           >
-            ➤
+            <Send size={14} strokeWidth={1.8} aria-hidden="true" />
           </button>
         </div>
       </form>

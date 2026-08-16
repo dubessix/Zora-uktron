@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { executeToolWithConfirmation } from '../../api';
 
 /**
@@ -38,8 +39,9 @@ export default function SecurityGuardianWidget() {
       
       {/* Header */}
       <div className="flex justify-between items-center border-b border-white/5 pb-2">
-        <span className="text-[11px] font-bold tracking-widest text-rose-400 uppercase">
-          🛡️ Security Shield
+        <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-rose-400 uppercase">
+          <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
+          Security Shield
         </span>
         <button
           onClick={runAudit}
