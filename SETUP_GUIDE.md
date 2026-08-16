@@ -9,6 +9,18 @@ The setup window keeps live progress text at the top. Paste only the keys you ha
 
 The included verified prebuilt frontend means Node/npm is not required for the normal default-port installation. Node 20.19+ or 22.12+ is needed only for frontend development, changed frontend source, or a custom backend port.
 
+## GitHub Codespaces Ubuntu desktop demo (no card, no local install)
+
+1. Open the repository on GitHub and select `Code` → `Codespaces` → `Create codespace on main`.
+2. Wait while GitHub builds the Ubuntu development container. The first build downloads the lightweight desktop and browser, so it can take several minutes.
+3. The private forwarded page labelled `Ultron Ubuntu Desktop` opens. Select `Connect` and enter the demo desktop password `vscode`.
+4. The real `SETUP_ULTRON_UBUNTU.sh` wrapper opens the Ultron Setup window automatically. Leave every key field empty and select `Install / Repair`.
+5. Wait for `Ultron installation is ready`, then select `Start Ultron`. Chrome opens inside the cloud desktop at the normal loopback-only Ultron address.
+6. Test the UI and local demo widgets. No-key chat must return the explicit Offline message rather than a fabricated model answer.
+7. Use `Stop Ultron` when finished, then delete the Codespace from GitHub to stop compute/storage quota use.
+
+This is a temporary Ubuntu development container, not Windows 11 and not the owner's real laptop. It cannot provide final microphone, speaker, Spotify, Windows Start Menu, private-provider, or long-duration acceptance. Never enter real API keys, GitHub tokens, passwords, or personal files into the demo.
+
 ## Free cloud pre-check (does not touch the owner's laptop)
 
 On GitHub, open `Actions` → `Ultron Cloud Test` → `Run workflow`. GitHub creates temporary Ubuntu 24.04 and Windows cloud machines, installs the locked project, runs both Python suites and the frontend build, creates/inspects platform shortcuts, and performs an isolated real Start/Health/Stop cycle. The workflow is manual, read-only, uses no owner provider keys, retains diagnostic artifacts for seven days, and fails if source `data/` is touched.
