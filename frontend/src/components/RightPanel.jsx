@@ -31,10 +31,10 @@ export default function RightPanel({
   }, [logs]);
 
   return (
-    <aside className="col-span-12 flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0B1112]/72 p-4 backdrop-blur-xl lg:col-span-3">
+    <aside className="col-span-12 flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0B1112]/72 p-4 backdrop-blur-xl lg:col-span-3">
       
       {/* Header + Chat/Log tabs */}
-      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/5 pb-3">
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setTab("chat")}
@@ -65,7 +65,7 @@ export default function RightPanel({
 
       {/* CHAT TAB */}
       {tab === "chat" && (
-        <div className="min-h-0 flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+        <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto pr-1 scrollbar-thin">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-4 gap-4">
               <div className="w-8 h-8 rounded-full border border-[#7DD3FC]/10 bg-[#7DD3FC]/5 flex items-center justify-center text-[#7DD3FC] animate-pulse">
@@ -82,12 +82,12 @@ export default function RightPanel({
               const isUser = msg.sender === "user";
               const messageTheme = getPersonalityTheme(msg.personality);
               return (
-                <div key={msg.id} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+                <div key={msg.id} className={`flex min-w-0 flex-col ${isUser ? "items-end" : "items-start"}`}>
                   <div
-                    className={`max-w-[90%] p-3.5 rounded-2xl border backdrop-blur-md transition-all ${
+                    className={`min-w-0 rounded-2xl border p-4 backdrop-blur-md transition-all ${
                       isUser
-                        ? "bg-[#10B981]/5 border-emerald-500/10 text-[#F5F5F7] rounded-tr-none"
-                        : "rounded-tl-none"
+                        ? "max-w-[92%] bg-[#10B981]/5 border-emerald-500/10 text-[#F5F5F7] rounded-tr-none"
+                        : "w-full max-w-full rounded-tl-none"
                     }`}
                     style={isUser ? undefined : {
                       backgroundColor: messageTheme.surface,
@@ -95,12 +95,12 @@ export default function RightPanel({
                       color: messageTheme.text,
                     }}
                   >
-                    <span className="block text-[7px] opacity-40 uppercase tracking-widest mb-1.5 font-bold">
+                    <span className="mb-2 block text-[8px] font-bold uppercase tracking-widest opacity-50">
                       {isUser ? "Debjeet" : msg.personality ? msg.personality : "System"}
                     </span>
-                    <p className="text-[10px] leading-relaxed font-mono select-text whitespace-pre-wrap">{msg.text}</p>
+                    <p className="select-text whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-[11px] leading-[1.7] text-white/90">{msg.text}</p>
                     {msg.sender === "ai" && msg.response_ms !== undefined && (
-                      <span className="block text-[6px] text-right opacity-30 mt-1.5 tracking-wider uppercase font-mono">
+                      <span className="mt-2 block text-right font-mono text-[7px] uppercase tracking-wider opacity-35">
                         {msg.response_ms}ms
                       </span>
                     )}
@@ -115,16 +115,16 @@ export default function RightPanel({
 
       {/* LOG TAB — real-time operational activity */}
       {tab === "log" && (
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin bg-black/30 border border-white/5 rounded-sm p-2 space-y-1 font-mono text-[9px]">
+        <div className="min-h-0 min-w-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 p-2.5 pr-1 font-mono text-[10px] scrollbar-thin">
           {logs.length === 0 ? (
             <p className="text-white/30">No activity yet. Ask Ultron to run a tool — you'll see real-time logs here.</p>
           ) : (
             logs.map((l, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className={l.level === "error" ? "text-rose-400" : l.level === "success" ? "text-emerald-400" : "text-[#7DD3FC]"}>
+              <div key={i} className="flex min-w-0 items-start gap-2">
+                <span className={`shrink-0 ${l.level === "error" ? "text-rose-400" : l.level === "success" ? "text-emerald-400" : "text-[#7DD3FC]"}`}>
                   <ChevronRight size={12} strokeWidth={1.8} aria-hidden="true" />
                 </span>
-                <span className={l.level === "error" ? "text-rose-300" : l.level === "success" ? "text-emerald-300" : "text-white/70"}>
+                <span className={`min-w-0 break-words [overflow-wrap:anywhere] leading-relaxed ${l.level === "error" ? "text-rose-300" : l.level === "success" ? "text-emerald-300" : "text-white/70"}`}>
                   {l.message}
                 </span>
               </div>
@@ -135,15 +135,15 @@ export default function RightPanel({
       )}
 
       {/* Rounded text query input box (shared) */}
-      <form onSubmit={handleSendMessage} className="flex min-w-0 gap-2 border-t border-white/5 pt-3">
-        <div className="flex min-w-0 flex-1 items-center bg-white/[0.02] border border-white/5 rounded-full px-4 py-2 focus-within:border-[#7DD3FC]/30 transition-colors">
+      <form onSubmit={handleSendMessage} className="flex min-w-0 shrink-0 gap-2 border-t border-white/[0.07] pt-3">
+        <div className="flex min-w-0 flex-1 items-center rounded-full border border-white/[0.10] bg-white/[0.045] px-3.5 py-2.5 shadow-inner shadow-black/20 transition-colors focus-within:border-[#7DD3FC]/40 focus-within:bg-white/[0.06]">
           <input 
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             disabled={isProcessing}
             placeholder={isProcessing ? "Processing..." : "Ask anything, Ultron is listening..."}
-            className="min-w-0 flex-1 bg-transparent text-[10px] text-[#F5F5F7] placeholder-white/20 focus:outline-none font-mono"
+            className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#F5F5F7] placeholder-white/35 focus:outline-none"
           />
           <button
             type="submit"

@@ -8,11 +8,19 @@ import { WIDGET_REGISTRY } from './widgets/WidgetManager';
  */
 export default function WidgetRail({ widgetState, toggleWidget, activePersonality }) {
   const [expanded, setExpanded] = useState(false);
+  const [hoveredLauncher, setHoveredLauncher] = useState(null);
   const isZora = activePersonality === "zora";
   const activeText = isZora ? "text-pink-400" : "text-emerald-400";
   const activeBorder = isZora ? "border-pink-400/35" : "border-emerald-400/35";
   const activeBackground = isZora ? "bg-pink-500/10" : "bg-emerald-500/10";
   const activeIndicator = isZora ? "bg-pink-400" : "bg-emerald-400";
+
+  const showLauncherName = (event, label) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setHoveredLauncher({ label, top: bounds.top + (bounds.height / 2) });
+  };
+
+  const hideLauncherName = () => setHoveredLauncher(null);
 
   return (
     <aside
@@ -31,6 +39,11 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
                 key={widgetId}
                 type="button"
                 onClick={() => toggleWidget(widgetId)}
+                onMouseDown={hideLauncherName}
+                onMouseEnter={(event) => showLauncherName(event, config.title)}
+                onMouseLeave={hideLauncherName}
+                onFocus={(event) => showLauncherName(event, config.title)}
+                onBlur={hideLauncherName}
                 aria-label={`Open ${config.title}`}
                 aria-pressed={isVisible}
                 title={config.title}
@@ -62,7 +75,14 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
         <div className="mt-2 space-y-1 border-t border-white/[0.07] pt-2">
           <button
             type="button"
-            onClick={() => setExpanded((current) => !current)}
+            onClick={() => {
+              hideLauncherName();
+              setExpanded((current) => !current);
+            }}
+            onMouseEnter={(event) => showLauncherName(event, expanded ? "Collapse widget names" : "Show widget names")}
+            onMouseLeave={hideLauncherName}
+            onFocus={(event) => showLauncherName(event, expanded ? "Collapse widget names" : "Show widget names")}
+            onBlur={hideLauncherName}
             aria-label={expanded ? "Collapse widget labels" : "Expand widget labels"}
             title={expanded ? "Collapse widget labels" : "Expand widget labels"}
             className={`flex h-10 w-full items-center rounded-lg border border-transparent text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/75 ${
@@ -75,7 +95,14 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
 
           <button
             type="button"
-            onClick={() => toggleWidget('system')}
+            onClick={() => {
+              hideLauncherName();
+              toggleWidget('system');
+            }}
+            onMouseEnter={(event) => showLauncherName(event, "System widget")}
+            onMouseLeave={hideLauncherName}
+            onFocus={(event) => showLauncherName(event, "System widget")}
+            onBlur={hideLauncherName}
             aria-label="Open system widget"
             aria-pressed={Boolean(widgetState.system?.visible)}
             title="Open system widget"
@@ -92,6 +119,17 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
           </button>
         </div>
       </div>
+
+      {!expanded && hoveredLauncher && (
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed left-16 z-[1300] -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#10161A]/96 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wide text-white/85 shadow-[0_8px_24px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+          style={{ top: hoveredLauncher.top }}
+        >
+          <span className={`mr-2 inline-block h-1.5 w-1.5 rounded-full ${activeIndicator}`} aria-hidden="true" />
+          {hoveredLauncher.label}
+        </div>
+      )}
     </aside>
   );
 }

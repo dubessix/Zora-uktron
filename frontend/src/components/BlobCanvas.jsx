@@ -24,12 +24,12 @@ export default function BlobCanvas({
 
     // High-DPI hardware scaling
     const scale = window.devicePixelRatio || 1;
-    canvas.width = 400 * scale;
-    canvas.height = 400 * scale;
+    canvas.width = 520 * scale;
+    canvas.height = 520 * scale;
     ctx.scale(scale, scale);
 
-    const width = 400;
-    const height = 400;
+    const width = 520;
+    const height = 520;
     const center = { x: width / 2, y: height / 2 };
 
     // Initialize 200 standard coordinate nodes forming a sphere
@@ -123,13 +123,13 @@ export default function BlobCanvas({
 
         // Ellipse Loop 1
         ctx.beginPath();
-        ctx.ellipse(0, 0, 140 * coreScale, 45 * coreScale, Math.PI / 4, 0, 2 * Math.PI);
+        ctx.ellipse(0, 0, 210 * coreScale, 72 * coreScale, Math.PI / 4, 0, 2 * Math.PI);
         ctx.stroke();
 
         // Ellipse Loop 2 (Counter tilted)
         ctx.rotate(-time * 0.025);
         ctx.beginPath();
-        ctx.ellipse(0, 0, 145 * coreScale, 50 * coreScale, -Math.PI / 6, 0, 2 * Math.PI);
+        ctx.ellipse(0, 0, 215 * coreScale, 77 * coreScale, -Math.PI / 6, 0, 2 * Math.PI);
         ctx.stroke();
 
         ctx.restore();
@@ -137,12 +137,12 @@ export default function BlobCanvas({
 
       // Draw backing glowing neon core
       ctx.beginPath();
-      const radialGlow = ctx.createRadialGradient(center.x, center.y, 10, center.x, center.y, 110 * coreScale);
+      const radialGlow = ctx.createRadialGradient(center.x, center.y, 12, center.x, center.y, 170 * coreScale);
       radialGlow.addColorStop(0, glowColor);
       radialGlow.addColorStop(1, "rgba(10, 10, 15, 0)");
       ctx.fillStyle = radialGlow;
       ctx.globalAlpha = alphaMultiplier;
-      ctx.arc(center.x, center.y, 110 * coreScale, 0, 2 * Math.PI);
+      ctx.arc(center.x, center.y, 170 * coreScale, 0, 2 * Math.PI);
       ctx.fill();
 
       // Draw particle coordinate array
@@ -151,7 +151,7 @@ export default function BlobCanvas({
         const y_rot = Math.cos(p.phi);
         
         // Compute current coordinates
-        const radialOffset = (90 + Math.sin(time + p.drift) * noiseAmplitude) * coreScale;
+        const radialOffset = (138 + Math.sin(time + p.drift) * noiseAmplitude) * coreScale;
         
         const x = center.x + x_rot * radialOffset;
         const y = center.y + y_rot * radialOffset;
@@ -166,7 +166,7 @@ export default function BlobCanvas({
           const nextP = particles[idx + 1];
           const nx_rot = Math.sin(nextP.phi) * Math.cos(nextP.theta + angle);
           const ny_rot = Math.cos(nextP.phi);
-          const n_offset = (90 + Math.sin(time + nextP.drift) * noiseAmplitude) * coreScale;
+          const n_offset = (138 + Math.sin(time + nextP.drift) * noiseAmplitude) * coreScale;
           const nx = center.x + nx_rot * n_offset;
           const ny = center.y + ny_rot * n_offset;
 
@@ -195,7 +195,7 @@ export default function BlobCanvas({
   return (
     <canvas 
       ref={canvasRef} 
-      style={{ width: '400px', height: '400px' }}
+      style={{ width: '520px', height: '520px' }}
       className="max-w-full aspect-square"
     />
   );

@@ -68,6 +68,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
             label="Temp"
             value={temperature === null ? 'Unavailable' : `${temperature.toFixed(1)}°C`}
             history={history.temperature}
+            available={temperature !== null}
             color="#38BDF8"
           />
           <TrendMetricCard
@@ -175,25 +176,31 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
   );
 }
 
-function TrendMetricCard({ label, value, history, color }) {
+function TrendMetricCard({ label, value, history, color, available = true }) {
+  const isUnavailable = value === 'Unavailable';
   return (
-    <div className="min-w-0 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
+    <div className="min-w-0 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2.5">
       <span className="block text-[7px] font-semibold uppercase tracking-widest text-white/42">{label}</span>
-      <div className="mt-1.5 flex min-h-9 items-end justify-between gap-2">
-        <span className="min-w-0 break-words text-[16px] font-bold text-[#F5F5F7]">{value}</span>
-        <MiniSparkline values={history} color={color} />
+      <div className="mt-1.5 flex min-h-9 items-end justify-between gap-1.5">
+        <span className={`shrink-0 whitespace-nowrap font-bold text-[#F5F5F7] ${isUnavailable ? 'text-[10px]' : 'text-[16px]'}`}>
+          {value}
+        </span>
+        <MiniSparkline values={history} color={color} available={available} />
       </div>
     </div>
   );
 }
 
-function MiniSparkline({ values, color }) {
-  const points = sparklinePoints(values, 76, 28);
+function MiniSparkline({ values, color, available = true }) {
+  if (!available) {
+    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25">No sensor</span>;
+  }
+  const points = sparklinePoints(values, 58, 24);
   if (!points) {
-    return <span className="pb-1 text-[6px] uppercase tracking-wider text-white/25">Collecting</span>;
+    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25">Collecting</span>;
   }
   return (
-    <svg width="76" height="28" viewBox="0 0 76 28" role="img" aria-label="Recent reported trend">
+    <svg width="58" height="24" viewBox="0 0 58 24" role="img" aria-label="Recent reported trend" className="shrink-0">
       <polyline
         points={points}
         fill="none"
