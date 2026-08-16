@@ -26,6 +26,7 @@ export default function AppShell({
   backendStatus,
   systemMetrics,
   aiState,
+  activityText,
   setAiState,
   togglePersonality,
   widgetState,
@@ -67,12 +68,17 @@ export default function AppShell({
       {/* ==============================================================================
           1. SYSTEM HEADER & TOP NAVIGATION (Dynamic IRIS identity)
          ============================================================================== */}
-      <header className="flex justify-between items-center border-b border-white/5 pb-4 mb-6 z-10 font-mono">
+      <header className="relative flex justify-between items-center border-b border-white/5 pb-4 mb-6 z-10 font-mono">
         <div className="flex items-center gap-2">
           <span className={`text-2xl font-black italic tracking-tight uppercase transition-all duration-500 drop-shadow-[0_0_12px_rgba(16,185,129,0.35)] ${isZora ? "text-pink-400" : "text-emerald-400"}`}
             style={{ fontFamily: "'Arial Black', 'Segoe UI', system-ui, sans-serif", textShadow: isZora ? "0 0 18px rgba(236,72,153,0.55)" : "0 0 18px rgba(16,185,129,0.55)" }}>
             {aiName}
           </span>
+        </div>
+
+        {/* Claude-Code-style honest live activity text from real frontend/backend events. */}
+        <div className="absolute left-1/2 -translate-x-1/2 max-w-[48%] text-center text-[9px] text-[#7DD3FC] tracking-wide truncate" title={activityText}>
+          {activityText || 'Ready'}
         </div>
 
         {/* Backend status comes from the real /api/health poll. */}

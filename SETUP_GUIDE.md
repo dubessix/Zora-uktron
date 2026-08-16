@@ -1,16 +1,24 @@
 # Ultron Personal V1 Setup Guide
 
+## Beginner path (no command typing)
+
+- Windows 11: double-click `SETUP_ULTRON_WINDOWS.bat`.
+- Ubuntu: double-click/run `SETUP_ULTRON_UBUNTU.sh`.
+
+The setup window keeps live progress text at the top. Paste only the keys you have, click `Install / Repair`, and wait for the ready message. It creates application-menu entries for `Ultron`, `Stop Ultron`, and `Ultron Keys`. Re-running setup preserves `.env`, config, database, memory, reminders, and backups.
+
+The included verified prebuilt frontend means Node/npm is not required for the normal default-port installation. Node 20.19+ or 22.12+ is needed only for frontend development, changed frontend source, or a custom backend port.
+
 ## 1. Prerequisites
 
 Required:
 
 - Python 3.10 or newer
-- Node.js 20.19+ or 22.12+
-- npm
 - Git
 
 Optional:
 
+- Node.js 20.19+ or 22.12+ and npm for frontend rebuilding/custom ports
 - ffmpeg for media conversion/playback workflows
 - Spotify desktop for local Spotify controls
 - a Chromium/Edge browser for the Web Speech API

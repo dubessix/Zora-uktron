@@ -100,6 +100,15 @@ class TestWorldMarketWidgetSchema(unittest.TestCase):
 
 
 class TestFrontendBackendConnectionSafety(unittest.TestCase):
+    def test_live_activity_text_is_driven_by_backend_events(self):
+        app = (ROOT / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+        shell = (ROOT / "frontend" / "src" / "components" / "AppShell.jsx").read_text(encoding="utf-8")
+        self.assertIn("activityText", app)
+        self.assertIn("msg.detail", app)
+        self.assertIn("Ultron is streaming the response", app)
+        self.assertIn("activityText", shell)
+        self.assertIn("Claude-Code-style honest live activity text", shell)
+
     def test_chat_has_no_replay_after_websocket_send(self):
         source = (ROOT / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
         self.assertIn("openedAndSent", source)

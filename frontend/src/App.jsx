@@ -16,6 +16,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState(null);
   const [activePersonality, setActivePersonality] = useState("ultron");
   const [aiState, setAiState] = useState("idle");
+  const [activityText, setActivityText] = useState("Connecting to the local Ultron backend…");
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -123,13 +124,18 @@ export default function App() {
           const data = await response.json();
           setBackendStatus("CONNECTED");
           setSystemMetrics(data.system_metrics);
+          setActivityText(prev => prev.startsWith("Connecting") || prev.startsWith("Backend")
+            ? "Ready — local backend connected."
+            : prev);
         } else {
           setBackendStatus("ERROR");
           setSystemMetrics(null);
+          setActivityText("Backend health check returned an error.");
         }
       } catch (err) {
         setBackendStatus("DISCONNECTED");
         setSystemMetrics(null);
+        setActivityText("Backend disconnected — waiting for the local service.");
       } finally {
         inFlight = false;
         scheduleNext();
@@ -172,6 +178,7 @@ export default function App() {
 
     briefingAttemptedRef.current = true;
     const runFirstOpenBriefing = async () => {
+      setActivityText("Preparing today’s first-open Jarvis briefing…");
       try {
         const result = await executeTool('daily_briefing', {
           include_weather: true,
@@ -196,8 +203,13 @@ export default function App() {
         addNotification('Daily briefing ready', 'Jarvis briefing loaded from current local and live sources.', 'low');
         setAiState('speaking');
         speakResponse(text, activePersonality);
-        setTimeout(() => setAiState('idle'), 1200);
+        setActivityText("Daily briefing ready.");
+        setTimeout(() => {
+          setAiState('idle');
+          setActivityText("Ready — ask Ultron anything.");
+        }, 1200);
       } catch (error) {
+        setActivityText(`Daily briefing unavailable: ${error.message || 'no sourced data'}`);
         addNotification('Daily briefing unavailable', error.message || 'No values were substituted.', 'medium');
       }
     };
@@ -208,6 +220,7 @@ export default function App() {
   const togglePersonality = async () => {
     const nextPers = activePersonality === "ultron" ? "zora" : "ultron";
     setAiState("planning");
+    setActivityText(`Saving ${nextPers} as the active personality…`);
     try {
       const result = await api('/api/personality', {
         method: 'POST',
@@ -216,8 +229,10 @@ export default function App() {
       if (!result.success) throw new Error('Personality update was not accepted.');
       setSessionId(result.session_id);
       setActivePersonality(result.personality);
+      setActivityText(`${result.personality} selected and saved for this session.`);
       addNotification('Personality selected', `${result.personality} will answer the next turn.`, 'low');
     } catch (err) {
+      setActivityText(`Personality unchanged: ${err.message || 'backend unavailable'}`);
       addNotification('Personality unchanged', err.message || 'Backend unavailable.', 'medium');
     } finally {
       setAiState("idle");
@@ -228,6 +243,7 @@ export default function App() {
   const toggleCodingMode = async () => {
     const next = !codingMode;
     setCodingMode(next);
+    setActivityText(`${next ? 'Enabling' : 'Disabling'} coding mode…`);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
       const response = await fetch(`${apiUrl}/api/coding-mode`, {
@@ -236,12 +252,15 @@ export default function App() {
         body: JSON.stringify({ enabled: next })
       });
       if (!response.ok) {
-        // rollback on failure
         setCodingMode(!next);
+        setActivityText("Coding mode unchanged — backend rejected the request.");
         addNotification("Coding Mode", "Failed to toggle coding mode.", "medium");
+      } else {
+        setActivityText(`Coding mode ${next ? 'enabled' : 'disabled'}.`);
       }
     } catch (err) {
       setCodingMode(!next);
+      setActivityText("Coding mode unchanged — backend offline.");
       addNotification("Coding Mode", "Backend offline — coding mode not changed.", "medium");
     }
   };
@@ -262,6 +281,7 @@ export default function App() {
   const handleConfirmRun = async () => {
     if (!pendingAction?.confirmation_token || confirmingAction) return;
     setConfirmingAction(true);
+    setActivityText(`Running confirmed action: ${pendingAction.tool_id}…`);
     try {
       const result = await api('/api/actions/confirm', {
         method: 'POST',
@@ -280,12 +300,15 @@ export default function App() {
           response_ms: result.metadata?.execution_time_ms || 0,
         }]);
         setPendingAction(null);
+        setActivityText(`Confirmed action completed: ${pendingAction.tool_id}.`);
         addNotification('Action completed', message, 'medium');
       } else {
+        setActivityText(`Confirmed action failed: ${result.error || 'not executed'}`);
         addNotification('Confirmation failed', result.error || 'The pending action was not executed.', 'high');
         if (result.status === 'CONFIRMATION_REJECTED') setPendingAction(null);
       }
     } catch (err) {
+      setActivityText(`Confirmation failed: ${err.message || 'backend unavailable'}`);
       addNotification('Confirmation failed', err.message || 'Backend unavailable.', 'high');
     } finally {
       setConfirmingAction(false);
@@ -358,6 +381,7 @@ export default function App() {
     setInputValue("");
     setIsProcessing(true);
     setAiState("thinking");
+    setActivityText("Sending voice command to the backend…");
 
     const localUserMsgId = "user_" + Date.now();
     setMessages(prev => [...prev, { id: localUserMsgId, sender: "user", text: userText }]);
@@ -381,8 +405,14 @@ export default function App() {
           response_ms: data.response_ms
         }]);
         setAiState("speaking");
+        setActivityText("Voice command processed — speaking the response…");
         speakResponse(data.content, data.personality || "ultron");
-        setTimeout(() => setAiState("idle"), 1200);
+        setTimeout(() => {
+          setAiState("idle");
+          if (!data.pending_confirmation?.confirmation_token) {
+            setActivityText("Ready — ask Ultron anything.");
+          }
+        }, 1200);
         const structured = data.structured_action;
         if (structured && structured.action === "open_widget") {
           const targetWidgetId = structured.widget_id;
@@ -394,6 +424,7 @@ export default function App() {
         handleCodingResponse(data);
         if (data.pending_confirmation?.confirmation_token) {
           setPendingAction(data.pending_confirmation);
+          setActivityText(`Waiting for confirmation: ${data.pending_confirmation.tool_id}.`);
           addNotification('Confirmation required', data.pending_confirmation.message, 'high');
         }
       } else {
@@ -402,6 +433,7 @@ export default function App() {
           text: "System communication error."
         }]);
         setAiState("idle");
+        setActivityText("Voice command failed — backend returned an error.");
       }
     } catch (err) {
       setMessages(prev => [...prev, {
@@ -409,6 +441,7 @@ export default function App() {
         text: "Dropped. Backend server is offline."
       }]);
       setAiState("idle");
+      setActivityText("Voice command dropped — backend is offline.");
     } finally {
       setIsProcessing(false);
     }
@@ -433,6 +466,7 @@ export default function App() {
         clearTimeout(timeoutId);
         if (wsRef.current === ws) wsRef.current = null;
         try { ws?.close(); } catch {}
+        if (error) setActivityText(error);
         resolve({ data, canFallback, error });
       };
 
@@ -453,11 +487,18 @@ export default function App() {
       };
       ws.onmessage = (ev) => {
         let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-        if (msg.type === "progress") return;
-        if (msg.type === "token") { acc += msg.content; }
-        else if (msg.type === "error") {
+        if (msg.type === "progress") {
+          setActivityText(msg.detail || "Backend is processing the request…");
+          return;
+        }
+        if (msg.type === "token") {
+          acc += msg.content;
+          setActivityText("Ultron is streaming the response…");
+        } else if (msg.type === "error") {
+          setActivityText(`Chat stream error: ${msg.message || 'backend error'}`);
           finish(null, false, msg.message || 'Backend WebSocket returned an error.');
         } else if (msg.type === "done") {
+          setActivityText("Response received — updating the workspace…");
           finish({
             id: msg.message_id,
             content: acc,
@@ -498,6 +539,7 @@ export default function App() {
     setInputValue("");
     setIsProcessing(true);
     setAiState("thinking");
+    setActivityText("Connecting to chat stream…");
 
     const localUserMsgId = "user_" + Date.now();
     setMessages(prev => [...prev, { id: localUserMsgId, sender: "user", text: userText }]);
@@ -534,11 +576,18 @@ export default function App() {
         }]);
         
         setAiState("speaking");
+        setActivityText(data.coding ? "Coding response ready — updating coding tools…" : "Response ready — speaking…");
         speakResponse(data.content, data.personality || "ultron");
-        setTimeout(() => setAiState("idle"), 1200);
+        setTimeout(() => {
+          setAiState("idle");
+          if (!data.pending_confirmation?.confirmation_token) {
+            setActivityText("Ready — ask Ultron anything.");
+          }
+        }, 1200);
         handleCodingResponse(data);
         if (data.pending_confirmation?.confirmation_token) {
           setPendingAction(data.pending_confirmation);
+          setActivityText(`Waiting for confirmation: ${data.pending_confirmation.tool_id}.`);
           addNotification('Confirmation required', data.pending_confirmation.message, 'high');
         }
         // Open widgets driven ONLY by the backend structured action (never keyword guesses).
@@ -574,6 +623,7 @@ export default function App() {
         text: err.message || "Backend request failed."
       }]);
       setAiState("idle");
+      setActivityText(`Request failed: ${err.message || 'backend unavailable'}`);
     } finally {
       setIsProcessing(false);
     }
@@ -592,6 +642,7 @@ export default function App() {
         backendStatus={backendStatus}
         systemMetrics={systemMetrics}
         aiState={aiState}
+        activityText={activityText}
         setAiState={setAiState}
         togglePersonality={togglePersonality}
         widgetState={widgetState}

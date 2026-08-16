@@ -127,6 +127,12 @@ class TestPhase7WheelInstall(unittest.TestCase):
             "share/ultron/frontend/package-lock.json",
             "share/ultron/frontend/src/App.jsx",
             "share/ultron/frontend/src/index.css",
+            "share/ultron/frontend/prebuilt/index.html",
+            "share/ultron/frontend/prebuilt/build-meta.json",
+            "share/ultron/SETUP_ULTRON_WINDOWS.bat",
+            "share/ultron/SETUP_ULTRON_UBUNTU.sh",
+            "share/ultron/start_ultron.bat",
+            "share/ultron/start_ultron.sh",
         }
         for suffix in required_suffixes:
             self.assertTrue(
@@ -159,6 +165,7 @@ import runpy
 from pathlib import Path
 from backend.app.brain.model_config import validate_model_config
 from backend.app.install_paths import APPLICATION_HOME, ASSET_ROOT
+from backend.app.installer import ENV_FILE, SOURCE_MODE
 from backend.app.main import app
 from backend.app.personalities.base_personality import UltronPersonality
 from backend.app.runtime_paths import PRODUCTION_DATA_ROOT
@@ -172,6 +179,8 @@ assert len(prompt) > 200, len(prompt)
 assert len(skills) > 200, len(skills)
 assert APPLICATION_HOME == expected_home, (APPLICATION_HOME, expected_home)
 assert PRODUCTION_DATA_ROOT == expected_home / 'data', PRODUCTION_DATA_ROOT
+assert SOURCE_MODE is False
+assert ENV_FILE == expected_home / '.env'
 assert (ASSET_ROOT / 'frontend' / 'package.json').is_file(), ASSET_ROOT
 launcher_scope = runpy.run_path(str(ASSET_ROOT / 'launcher.py'), run_name='ultron_packaging_check')
 assert 'ServiceLauncher' in launcher_scope

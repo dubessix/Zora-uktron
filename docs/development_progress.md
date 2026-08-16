@@ -22,9 +22,9 @@ Status date: 2026-08-15 (Asia/Calcutta)
 
 Final local gate output for the Phase 10 commit candidate:
 
-- pytest: 272 passed plus 17 subtests;
-- independent unittest: 265 passed;
-- application coverage: 71%, with `fail_under = 70`;
+- pytest: 284 passed plus 17 subtests;
+- independent unittest: 277 passed;
+- application coverage: 70%, with `fail_under = 70`;
 - Python runtime/dev requirement audits: no known vulnerabilities;
 - npm lockfile audit: no known vulnerabilities;
 - `pip check`: no broken requirements;

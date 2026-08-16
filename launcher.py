@@ -87,6 +87,7 @@ class ServiceLauncher:
 
         lock_id = hashlib.sha256(str(self.application_home).encode("utf-8")).hexdigest()[:16]
         self.lock_path = Path(tempfile.gettempdir()) / f"ultron-launcher-{lock_id}.lock"
+        self.stop_request_path = Path(tempfile.gettempdir()) / f"ultron-stop-{lock_id}.request"
         self._lock_handle = None
         self.preparation_process = None
         self.backend_process = None
@@ -140,6 +141,7 @@ class ServiceLauncher:
             handle.write(str(os.getpid()))
             handle.flush()
             self._lock_handle = handle
+            self.stop_request_path.unlink(missing_ok=True)
             return True
         except (OSError, BlockingIOError):
             handle.close()
@@ -197,7 +199,7 @@ class ServiceLauncher:
 
     @staticmethod
     def _frontend_files(root: Path):
-        excluded = {"node_modules", "dist", ".vite"}
+        excluded = {"node_modules", "dist", "prebuilt", ".vite"}
         for path in sorted(root.rglob("*")):
             if not path.is_file():
                 continue
@@ -248,6 +250,40 @@ class ServiceLauncher:
             shutil.copy2(source, destination)
         self._write_marker(marker, source_digest)
         return True
+
+    def _prepare_from_prebuilt(self, source_digest: str, api_url: str, build_key: str) -> bool:
+        """Install release-built frontend assets when they match source and API defaults."""
+        prebuilt = self.source_frontend / "prebuilt"
+        metadata_path = prebuilt / "build-meta.json"
+        if not metadata_path.is_file():
+            return False
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if metadata.get("source_digest") != source_digest or metadata.get("api_url") != api_url:
+                return False
+            files = metadata.get("files") or {}
+            if not files or "index.html" not in files:
+                return False
+            for relative, expected in files.items():
+                source = (prebuilt / relative).resolve(strict=True)
+                if not source.is_relative_to(prebuilt.resolve()):
+                    return False
+                if hashlib.sha256(source.read_bytes()).hexdigest() != expected:
+                    self.log("Launcher", f"Prebuilt frontend checksum failed: {relative}", "31")
+                    return False
+            if self.frontend_dist.exists():
+                shutil.rmtree(self.frontend_dist)
+            self.frontend_dist.mkdir(parents=True, exist_ok=True)
+            for relative in files:
+                source = prebuilt / relative
+                destination = self.frontend_dist / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+            self._write_marker(self.frontend_dir / ".ultron_build.sha256", build_key)
+            self.log("Launcher", "Verified prebuilt frontend installed; Node/npm not required.")
+            return True
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return False
 
     def _node_build_supported(self) -> bool:
         executable = shutil.which("node")
@@ -336,6 +372,9 @@ class ServiceLauncher:
             and self._read_marker(build_marker) == build_key
         ):
             self.log("Launcher", "Frontend production build is current; skipping npm work.")
+            return True
+
+        if self._prepare_from_prebuilt(source_digest, api_url, build_key):
             return True
 
         if not self._node_build_supported():
@@ -455,6 +494,11 @@ class ServiceLauncher:
     ) -> bool:
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:
+            if self.stop_request_path.exists():
+                self.stop_request_path.unlink(missing_ok=True)
+                self._requested_exit_code = 0
+                self.shutdown()
+                return False
             if process is None or process.poll() is not None:
                 return False
             try:
@@ -496,6 +540,11 @@ class ServiceLauncher:
 
     def monitor_services(self, poll_interval: float = 0.5) -> int:
         while not self.is_shutting_down:
+            if self.stop_request_path.exists():
+                self.stop_request_path.unlink(missing_ok=True)
+                self.log("Launcher", "Stop requested from the desktop/application shortcut.", "33")
+                self._requested_exit_code = 0
+                return 0
             for name, process in (
                 ("backend", self.backend_process),
                 ("frontend", self.frontend_process),
@@ -570,6 +619,7 @@ class ServiceLauncher:
             self._requested_exit_code = 1
         for thread in self._output_threads:
             thread.join(timeout=1.0)
+        self.stop_request_path.unlink(missing_ok=True)
         self.release_instance_lock()
 
     def run(self) -> int:

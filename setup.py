@@ -19,7 +19,15 @@ def _requirements() -> list[str]:
 def _runtime_data_files() -> list[tuple[str, list[str]]]:
     """Install non-Python runtime assets below sys.prefix/share/ultron."""
     groups: dict[str, list[str]] = {
-        "share/ultron": ["config.yaml", "launcher.py", ".env.example"]
+        "share/ultron": [
+            "config.yaml",
+            "launcher.py",
+            ".env.example",
+            "SETUP_ULTRON_WINDOWS.bat",
+            "SETUP_ULTRON_UBUNTU.sh",
+            "start_ultron.bat",
+            "start_ultron.sh",
+        ]
     }
     frontend = ROOT / "frontend"
     for path in sorted(frontend.rglob("*")):

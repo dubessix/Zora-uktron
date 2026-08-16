@@ -9,12 +9,20 @@ This repository is a **Personal V1 release candidate**, not a claim of zero defe
 ## Requirements
 
 - Python 3.10+
-- Node.js 20.19+ or 22.12+
-- npm and Git
+- Git (for Git widgets and updates)
+- Node.js 20.19+ / npm only when rebuilding changed frontend source or using custom backend ports; normal setup uses verified prebuilt assets
 - ffmpeg is optional for media workflows
 - 8 GB RAM is recommended for the intended laptop profile; cloud AI is used instead of local LLMs
 
-## Install from source
+## Beginner one-click setup
+
+Windows 11: double-click `SETUP_ULTRON_WINDOWS.bat`.
+
+Ubuntu: double-click/run `SETUP_ULTRON_UBUNTU.sh`.
+
+The small setup window shows live progress text at the top, installs runtime packages, preserves existing keys/data, runs Doctor/assets checks, and creates `Ultron`, `Stop Ultron`, and `Ultron Keys` entries in Windows Start Menu or Ubuntu Applications. Normal setup uses the signed prebuilt frontend and does not require Node/npm.
+
+## Manual install from source
 
 ```bash
 git clone https://github.com/dubessix/Zora-uktron.git
@@ -67,8 +75,11 @@ Provider secrets belong only in the git-ignored `.env` or process environment. T
 
 ## Daily operation
 
+Beginner mode: open `Ultron` from Windows Start Menu/Desktop or Ubuntu Applications. Use `Stop Ultron` for graceful shutdown and `Ultron Keys` to update provider credentials. Commands remain available for diagnostics:
+
 ```bash
 ultron start
+ultron stop
 ```
 
 The launcher:
@@ -82,7 +93,7 @@ The launcher:
 7. monitors both child processes and stops the sibling if either exits;
 8. performs bounded graceful shutdown with forced cleanup as a last resort.
 
-On the first successful UI connection of each local calendar day, Ultron creates one time-appropriate Jarvis briefing (morning, afternoon, evening, or late-hour). It does not run a fixed 8 AM polling loop. Hidden browser tabs reduce health polling from five to thirty seconds and refresh immediately when visible again.
+The setup window shows honest install progress at the top. The main UI shows live activity text from real health/WebSocket/tool states (connecting, thinking, streaming, waiting confirmation, done/error). On the first successful UI connection of each local calendar day, Ultron creates one time-appropriate Jarvis briefing (morning, afternoon, evening, or late-hour). It does not run a fixed 8 AM polling loop. Hidden browser tabs reduce health polling from five to thirty seconds and refresh immediately when visible again.
 
 Default URLs:
 

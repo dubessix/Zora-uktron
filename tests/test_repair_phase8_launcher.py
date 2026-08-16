@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import signal
 import shutil
@@ -244,6 +245,14 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
         self.assertTrue(second.acquire_instance_lock())
         second.release_instance_lock()
 
+    def test_desktop_stop_request_ends_monitor_cleanly(self):
+        root, launcher = self._ready_launcher()
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        launcher.stop_request_path.write_text("stop", encoding="utf-8")
+        result = launcher.monitor_services(poll_interval=0)
+        self.assertEqual(result, 0)
+        self.assertFalse(launcher.stop_request_path.exists())
+
     def test_process_tree_escalates_after_bounded_grace_timeout(self):
         root, launcher = _layout()
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
@@ -263,6 +272,26 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
             [call.args[1] for call in killpg.call_args_list],
             [signal.SIGTERM, signal.SIGKILL],
         )
+
+    def test_verified_prebuilt_frontend_avoids_node_and_npm(self):
+        root, launcher = _layout()
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        prebuilt = launcher.source_frontend / "prebuilt"
+        prebuilt.mkdir()
+        (prebuilt / "index.html").write_text("<div id='root'></div>", encoding="utf-8")
+        source_digest = launcher._frontend_digest(launcher.source_frontend)
+        index_hash = hashlib.sha256((prebuilt / "index.html").read_bytes()).hexdigest()
+        (prebuilt / "build-meta.json").write_text(json.dumps({
+            "source_digest": source_digest,
+            "api_url": "http://127.0.0.1:8000",
+            "files": {"index.html": index_hash},
+        }), encoding="utf-8")
+        launcher._node_build_supported = Mock(return_value=False)
+        launcher._run_npm = Mock(return_value=True)
+        self.assertTrue(launcher.prepare_frontend())
+        self.assertTrue((launcher.frontend_dist / "index.html").is_file())
+        launcher._node_build_supported.assert_not_called()
+        launcher._run_npm.assert_not_called()
 
     def test_frontend_prepare_rejects_unsupported_node_before_npm(self):
         root, launcher = _layout()

@@ -2,9 +2,14 @@
 
 ## Start
 
+Beginner mode: click `Ultron` in Windows Start Menu/Desktop or Ubuntu Applications. The top activity line shows the real current state. Click `Stop Ultron` for graceful shutdown and `Ultron Keys` to update credentials.
+
+Command mode remains available:
+
 ```bash
 ultron doctor
 ultron start
+ultron stop
 ```
 
 `doctor` separates required failures from optional warnings. `start` uses a single-instance lock, loopback ports, production frontend assets, two health gates, and child monitoring.

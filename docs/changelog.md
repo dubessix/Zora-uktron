@@ -62,4 +62,13 @@
 - Read-only Code Optimizer analysis no longer requests destructive confirmation; applying changes still requires exact confirmation.
 - Live Git Clone exact confirmation, market/world schemas, semantic graph, optimizer, and frontend root were exercised in isolated storage.
 
+### Lightweight beginner setup and app-menu launch
+
+- Added one shared Tkinter setup/key window with honest progress text, secret-preserving key updates, runtime install/repair, Doctor/assets check, and shortcut creation.
+- Added Windows and Ubuntu double-click setup wrappers plus canonical daily start scripts.
+- Added Windows Start Menu/Desktop and Ubuntu Applications entries for Ultron, Stop Ultron, and Ultron Keys.
+- Added signed prebuilt frontend assets so default-port daily installation/start does not require Node/npm; changed source/custom ports still require a verified rebuild.
+- Added graceful external `ultron stop` request handling with PID ownership checks and zombie-process completion handling.
+- Added Claude-Code-style main UI activity text from real health/WebSocket/confirmation states.
+
 Git commit history is the source of truth for exact changes and hashes.

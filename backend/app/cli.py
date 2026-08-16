@@ -4,6 +4,7 @@ Provides global administration, setup wizards, diagnostics, and launch routines.
 Supports Windows 11 & Linux Ubuntu 24.04 natively.
 """
 
+import hashlib
 import os
 import sys
 import platform
@@ -11,6 +12,9 @@ import runpy
 import shutil
 import socket
 import subprocess
+import tempfile
+import time
+from pathlib import Path
 
 import click
 import yaml
@@ -124,51 +128,57 @@ def doctor():
     else:
         click.echo(click.style("  ✓ Hardware profiles comply with 8GB RAM host standard.", fg="green"))
 
-    # 2. Key Binary Dependencies Check
-    click.echo("\n[2/5] Checking Binary Executables on PATH...")
-    binaries = ["node", "npm", "git"]
-    if platform.system() != "Windows":
-        binaries.append("ffmpeg")
+    # 2. Binary checks. A verified prebuilt frontend removes Node/npm from the
+    # normal beginner install; Node is needed only after frontend source changes.
+    click.echo("\n[2/5] Checking Required Applications...")
+    git_path = shutil.which("git")
+    if git_path:
+        click.echo(f"  ✓ git     : Found at {git_path}")
     else:
-        # Ffmpeg validation warning for Windows audio conversion
-        binaries.append("ffmpeg")
+        click.echo(click.style("  ✗ git is missing. Git widgets and updates require Git.", fg="red"))
+        all_green = False
 
-    for binary in binaries:
-        path_check = shutil.which(binary) if hasattr(shutil, "which") else None
-        binary_path = path_check
-        if binary_path:
-            click.echo(f"  ✓ {binary:<8}: Found at {binary_path}")
-        else:
-            if binary == "ffmpeg":
-                warning_count += 1
-                click.echo(click.style(f"  ⚠️ {binary:<8}: Missing. Voice converter requires ffmpeg added to PATH.", fg="yellow"))
-            else:
-                click.echo(click.style(f"  ✗ {binary:<8}: Missing. Please install {binary} to proceed.", fg="red"))
-                all_green = False
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        click.echo(f"  ✓ ffmpeg  : Found at {ffmpeg_path}")
+    else:
+        warning_count += 1
+        click.echo(click.style("  ⚠️ ffmpeg is missing. Optional media conversion is unavailable.", fg="yellow"))
 
+    prebuilt_ready = (
+        (FRONTEND_DIR / "prebuilt" / "index.html").is_file()
+        and (FRONTEND_DIR / "prebuilt" / "build-meta.json").is_file()
+    )
     node_path = shutil.which("node")
-    if node_path:
+    npm_path = shutil.which("npm")
+    if node_path and npm_path:
         try:
             node_version = subprocess.run(
-                [node_path, "--version"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=5.0,
+                [node_path, "--version"], capture_output=True, text=True, check=True, timeout=5.0
             ).stdout.strip().lstrip("v")
             major, minor, *_ = [int(part) for part in node_version.split(".")]
             node_supported = (major == 20 and minor >= 19) or (major == 22 and minor >= 12) or major > 22
             if node_supported:
-                click.echo(f"  ✓ node version: {node_version} supports the production frontend build.")
+                click.echo(f"  ✓ node/npm: {node_version}; available for future frontend rebuilds.")
+            elif prebuilt_ready:
+                warning_count += 1
+                click.echo(click.style(
+                    f"  ⚠️ Node {node_version} cannot rebuild this frontend, but verified prebuilt assets are ready.",
+                    fg="yellow",
+                ))
             else:
                 click.echo(click.style(
-                    f"  ✗ node version {node_version} is unsupported; install Node 20.19+ or 22.12+.",
-                    fg="red",
+                    f"  ✗ Node {node_version} unsupported and no verified prebuilt frontend is available.", fg="red"
                 ))
                 all_green = False
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            click.echo(click.style(f"  ✗ Could not verify node version: {exc}", fg="red"))
+            click.echo(click.style(f"  ✗ Could not verify Node: {exc}", fg="red"))
             all_green = False
+    elif prebuilt_ready:
+        click.echo("  ✓ node/npm: Not required; verified prebuilt frontend is included.")
+    else:
+        click.echo(click.style("  ✗ Node/npm missing and no verified prebuilt frontend is available.", fg="red"))
+        all_green = False
 
     # 3. Local Port Availability
     click.echo("\n[3/5] Verifying Port Configurations...")
@@ -262,6 +272,53 @@ def integrity():
         click.echo(click.style(f"✗ Integrity issues: {report.get('integrity')} {report.get('error')}", fg="red"))
     for table, count in (report.get("tables") or {}).items():
         click.echo(f"  {table}: {count} rows")
+
+@main.command()
+def stop():
+    """Request a verified running Ultron launcher to stop gracefully."""
+    lock_id = hashlib.sha256(str(APPLICATION_HOME.resolve()).encode("utf-8")).hexdigest()[:16]
+    lock_path = Path(tempfile.gettempdir()) / f"ultron-launcher-{lock_id}.lock"
+    stop_path = Path(tempfile.gettempdir()) / f"ultron-stop-{lock_id}.request"
+    if not lock_path.is_file():
+        click.echo("Ultron is not running.")
+        return
+    try:
+        pid = int(lock_path.read_text(encoding="utf-8").strip())
+        process = psutil.Process(pid)
+        created = process.create_time()
+        command = " ".join(process.cmdline()).lower()
+    except (OSError, ValueError, psutil.Error):
+        lock_path.unlink(missing_ok=True)
+        stop_path.unlink(missing_ok=True)
+        click.echo("Removed a stale Ultron launcher lock; no running process was found.")
+        return
+    valid_owner = (
+        "launcher.py" in command
+        or ("ultron" in command and "start" in command)
+        or ("backend.app.cli" in command and "start" in command)
+    )
+    if not valid_owner:
+        raise click.ClickException("Refusing to stop: launcher PID does not belong to a verified Ultron command.")
+    temporary = stop_path.with_suffix(".tmp")
+    temporary.write_text(f"stop requested for {pid}\n", encoding="utf-8")
+    os.replace(temporary, stop_path)
+    deadline = time.monotonic() + 25.0
+    while time.monotonic() < deadline:
+        try:
+            current = psutil.Process(pid)
+            if (
+                current.create_time() != created
+                or not current.is_running()
+                or current.status() == psutil.STATUS_ZOMBIE
+            ):
+                click.echo("Ultron stopped cleanly.")
+                return
+        except psutil.NoSuchProcess:
+            click.echo("Ultron stopped cleanly.")
+            return
+        time.sleep(0.25)
+    raise click.ClickException("Ultron did not stop within 25 seconds. Open Ultron Doctor for help.")
+
 
 @main.command()
 @click.option("--check", "check_only", is_flag=True, help="Verify installed launch assets without starting services.")
