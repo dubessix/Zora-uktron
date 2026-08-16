@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getPersonalityTheme } from '../theme/personalityTheme';
 
 /**
  * RightPanel — Chat + Log tabs.
@@ -18,6 +19,7 @@ export default function RightPanel({
   const [tab, setTab] = useState("chat");
   const scrollRef = useRef(null);
   const logScrollRef = useRef(null);
+  const activeTheme = getPersonalityTheme(activePersonality);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -28,16 +30,21 @@ export default function RightPanel({
   }, [logs]);
 
   return (
-    <aside className="col-span-12 lg:col-span-3 h-full flex flex-col gap-4 bg-white/[0.01] border border-white/5 p-4 rounded-sm backdrop-blur-xl">
+    <aside className="col-span-12 lg:col-span-3 h-full flex flex-col gap-4 bg-[#0B1112]/72 border border-white/[0.07] p-4 rounded-xl backdrop-blur-xl">
       
       {/* Header + Chat/Log tabs */}
       <div className="flex items-center justify-between border-b border-white/5 pb-3">
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setTab("chat")}
-            className={`text-[9px] uppercase font-bold tracking-widest px-3 py-1 rounded-full transition-colors ${
-              tab === "chat" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "text-white/40 hover:text-white/70"
+            className={`text-[9px] uppercase font-bold tracking-widest px-3 py-1 rounded-full border transition-colors ${
+              tab === "chat" ? "" : "border-transparent text-white/40 hover:text-white/70"
             }`}
+            style={tab === "chat" ? {
+              color: activeTheme.primary,
+              backgroundColor: activeTheme.surface,
+              borderColor: activeTheme.border,
+            } : undefined}
           >
             Chat
           </button>
@@ -70,27 +77,36 @@ export default function RightPanel({
               </p>
             </div>
           ) : (
-            messages.map((msg) => (
-              <div key={msg.id} className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}>
-                <div className={`max-w-[90%] p-3.5 rounded-2xl border backdrop-blur-md transition-all ${
-                  msg.sender === "user"
-                    ? "bg-[#10B981]/5 border-emerald-500/10 text-[#F5F5F7] rounded-tr-none"
-                    : msg.personality === "zora"
-                    ? "bg-purple-500/5 border-purple-400/10 text-purple-200 rounded-tl-none"
-                    : "bg-[#7DD3FC]/5 border-sky-500/10 text-sky-200 rounded-tl-none"
-                }`}>
-                  <span className="block text-[7px] opacity-35 uppercase tracking-widest mb-1.5 font-bold">
-                    {msg.sender === "user" ? "Debjeet" : msg.personality ? msg.personality : "System"}
-                  </span>
-                  <p className="text-[10px] leading-relaxed font-mono select-text whitespace-pre-wrap">{msg.text}</p>
-                  {msg.sender === "ai" && msg.response_ms !== undefined && (
-                    <span className="block text-[6px] text-right opacity-30 mt-1.5 tracking-wider uppercase font-mono">
-                      {msg.response_ms}ms
+            messages.map((msg) => {
+              const isUser = msg.sender === "user";
+              const messageTheme = getPersonalityTheme(msg.personality);
+              return (
+                <div key={msg.id} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`max-w-[90%] p-3.5 rounded-2xl border backdrop-blur-md transition-all ${
+                      isUser
+                        ? "bg-[#10B981]/5 border-emerald-500/10 text-[#F5F5F7] rounded-tr-none"
+                        : "rounded-tl-none"
+                    }`}
+                    style={isUser ? undefined : {
+                      backgroundColor: messageTheme.surface,
+                      borderColor: messageTheme.border,
+                      color: messageTheme.text,
+                    }}
+                  >
+                    <span className="block text-[7px] opacity-40 uppercase tracking-widest mb-1.5 font-bold">
+                      {isUser ? "Debjeet" : msg.personality ? msg.personality : "System"}
                     </span>
-                  )}
+                    <p className="text-[10px] leading-relaxed font-mono select-text whitespace-pre-wrap">{msg.text}</p>
+                    {msg.sender === "ai" && msg.response_ms !== undefined && (
+                      <span className="block text-[6px] text-right opacity-30 mt-1.5 tracking-wider uppercase font-mono">
+                        {msg.response_ms}ms
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
           <div ref={scrollRef} />
         </div>
@@ -131,9 +147,8 @@ export default function RightPanel({
           <button
             type="submit"
             disabled={isProcessing || !inputValue.trim()}
-            className={`text-xs ml-2 transition-all disabled:opacity-20 ${
-              activePersonality === "zora" ? "text-purple-300" : "text-emerald-400"
-            }`}
+            className="text-xs ml-2 transition-all disabled:opacity-20"
+            style={{ color: activeTheme.primary }}
           >
             ➤
           </button>

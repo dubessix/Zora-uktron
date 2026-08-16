@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from 'react';
+import { getPersonalityTheme } from '../theme/personalityTheme';
 
 /**
  * BlobCanvas Component (HTML5 Canvas 2D)
@@ -52,9 +53,9 @@ export default function BlobCanvas({
       ctx.clearRect(0, 0, width, height);
       time += 0.04; // Smoother, slower physics delta step
 
-      const isZora = personality === "zora";
-      const primaryColor = isZora ? "rgba(192, 132, 252, 0.85)" : "rgba(125, 211, 252, 0.85)";
-      const glowColor = isZora ? "rgba(251, 113, 133, 0.18)" : "rgba(14, 165, 233, 0.18)";
+      const theme = getPersonalityTheme(personality);
+      const primaryColor = theme.coreParticle;
+      const glowColor = theme.coreGlow;
 
       // Setup state-machine physics multipliers (Requirement: Unique animation profiles)
       let rotationSpeed = 0.004;
@@ -117,7 +118,7 @@ export default function BlobCanvas({
         ctx.save();
         ctx.translate(center.x, center.y);
         ctx.rotate(time * 0.015);
-        ctx.strokeStyle = isZora ? "rgba(251, 113, 133, 0.22)" : "rgba(125, 211, 252, 0.22)";
+        ctx.strokeStyle = theme.coreOrbit;
         ctx.lineWidth = 1;
 
         // Ellipse Loop 1
@@ -170,7 +171,7 @@ export default function BlobCanvas({
           const ny = center.y + ny_rot * n_offset;
 
           ctx.beginPath();
-          ctx.strokeStyle = isZora ? "rgba(192, 132, 252, 0.12)" : "rgba(125, 211, 252, 0.12)";
+          ctx.strokeStyle = theme.coreLine;
           ctx.lineWidth = 0.5;
           ctx.moveTo(x, y);
           ctx.lineTo(nx, ny);

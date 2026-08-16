@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import useDraggable from '../../hooks/useDraggable';
+import { getPersonalityTheme } from '../../theme/personalityTheme';
 
 /**
  * WidgetContainer Component
@@ -21,10 +22,8 @@ export default function WidgetContainer({
   const { position, handleMouseDown, isDragging } = useDraggable(initialX, initialY);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Map active colors dynamically based on personality
-  const isZora = personality === "zora";
-  const accentBorderColor = isZora ? "border-l-purple-400" : "border-l-sky-400";
-  const shadowGlow = isZora ? "shadow-[0_0_20px_rgba(192,132,252,0.08)]" : "shadow-[0_0_20px_rgba(125,211,252,0.08)]";
+  // Map active colors dynamically from the shared personality contract.
+  const theme = getPersonalityTheme(personality);
 
   // Double-click header bar to toggle collapsed/expanded states (Requirement: remember collapsed state)
   const handleHeaderDoubleClick = () => {
@@ -39,9 +38,11 @@ export default function WidgetContainer({
         position: 'absolute',
         zIndex: isDragging ? 1000 : 50,
         width: `${initialWidth}px`,
-        height: isCollapsed ? 'auto' : `${initialHeight}px`
+        height: isCollapsed ? 'auto' : `${initialHeight}px`,
+        borderLeftColor: theme.primary,
+        boxShadow: `0 0 20px ${theme.glow}`,
       }}
-      className={`bg-[#14141E]/85 border border-white/5 border-l-[3px] ${accentBorderColor} rounded-sm ${shadowGlow} backdrop-blur-2xl flex flex-col overflow-hidden select-none cursor-default font-mono transition-shadow duration-300`}
+      className="bg-[#14141E]/85 border border-white/5 border-l-[3px] rounded-lg backdrop-blur-2xl flex flex-col overflow-hidden select-none cursor-default font-mono transition-shadow duration-300"
     >
       {/* Draggable Header Drag Bar */}
       <div 

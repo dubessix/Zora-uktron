@@ -97,11 +97,13 @@ class TestApprovedPersonalityThemeLock(unittest.TestCase):
         shell = (COMPONENTS / "AppShell.jsx").read_text(encoding="utf-8")
         core = (COMPONENTS / "BlobCanvas.jsx").read_text(encoding="utf-8")
         self.assertIn('const isZora = activePersonality === "zora"', shell)
-        self.assertIn('const aiName = isZora ? "Zora" : "Ultron"', shell)
-        self.assertIn('const accent = isZora ? "#EC4899" : "#10B981"', shell)
+        self.assertIn("getPersonalityTheme(activePersonality)", shell)
+        self.assertIn("const aiName = theme.name", shell)
+        self.assertIn("theme.primary", shell)
         self.assertIn("personality={activePersonality}", shell)
-        self.assertIn('const isZora = personality === "zora"', core)
-        self.assertIn("isZora ?", core)
+        self.assertIn("getPersonalityTheme(personality)", core)
+        self.assertIn("theme.coreParticle", core)
+        self.assertIn("theme.coreOrbit", core)
         self.assertIn("[aiState, personality, amplitude]", core)
 
     def test_frontend_claims_personality_only_after_backend_persistence(self):

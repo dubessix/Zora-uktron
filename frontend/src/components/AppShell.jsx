@@ -4,6 +4,7 @@ import RightPanel from './RightPanel';
 import BlobCanvas from './BlobCanvas';
 import WidgetRail from './WidgetRail';
 import useVoice from '../hooks/useVoice';
+import { getPersonalityTheme } from '../theme/personalityTheme';
 
 // Import dynamic widget registry structures (Requirement: Never hardcode widgets in AppShell)
 import { WIDGET_REGISTRY } from './widgets/WidgetManager';
@@ -42,12 +43,12 @@ export default function AppShell({
   logs
 }) {
   const isZora = activePersonality === "zora";
-  const accent = isZora ? "#EC4899" : "#10B981"; // pink vs emerald
+  const theme = getPersonalityTheme(activePersonality);
   const accentText = isZora ? "text-pink-400" : "text-emerald-400";
   const accentRing = isZora ? "border-pink-400/30" : "border-emerald-400/30";
   const accentBg = isZora ? "bg-pink-500/10" : "bg-emerald-500/10";
   const accentDot = isZora ? "bg-pink-400" : "bg-emerald-400";
-  const aiName = isZora ? "Zora" : "Ultron";
+  const aiName = theme.name;
   const backendConnected = backendStatus === "CONNECTED";
 
   // Voice control: wake-word listening wired to the bottom mic toggle.
@@ -64,7 +65,14 @@ export default function AppShell({
   };
 
   return (
-    <div className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-[#F5F5F7]">
+    <div
+      className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-[#F5F5F7]"
+      style={{
+        '--identity-primary': theme.primary,
+        '--identity-secondary': theme.secondary,
+        '--identity-glow': theme.glow,
+      }}
+    >
       <WidgetRail
         widgetState={widgetState}
         toggleWidget={toggleWidget}
@@ -73,13 +81,22 @@ export default function AppShell({
 
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden p-6">
       {/* ==============================================================================
-          1. SYSTEM HEADER & TOP NAVIGATION (Dynamic IRIS identity)
+          1. SYSTEM HEADER & TOP NAVIGATION (Dynamic assistant identity)
          ============================================================================== */}
-      <header className="relative flex justify-between items-center border-b border-white/5 pb-4 mb-6 z-10 font-mono">
-        <div className="flex items-center gap-2">
-          <span className={`text-2xl font-black italic tracking-tight uppercase transition-all duration-500 drop-shadow-[0_0_12px_rgba(16,185,129,0.35)] ${isZora ? "text-pink-400" : "text-emerald-400"}`}
-            style={{ fontFamily: "'Arial Black', 'Segoe UI', system-ui, sans-serif", textShadow: isZora ? "0 0 18px rgba(236,72,153,0.55)" : "0 0 18px rgba(16,185,129,0.55)" }}>
+      <header className="relative z-10 mb-4 flex items-center justify-between border-b border-white/[0.06] pb-3 font-mono">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={`text-2xl font-black italic tracking-tight uppercase transition-all duration-500 ${accentText}`}
+            style={{
+              fontFamily: "'Arial Black', 'Segoe UI', system-ui, sans-serif",
+              color: theme.primary,
+              textShadow: `0 0 18px ${theme.glow}`,
+            }}
+          >
             {aiName}
+          </span>
+          <span className="hidden border-l border-white/10 pl-3 text-[8px] uppercase tracking-[0.16em] text-white/38 xl:inline">
+            Personal Desktop Assistant
           </span>
         </div>
 
@@ -109,7 +126,7 @@ export default function AppShell({
           {/* Header context indicators */}
           <div className="absolute top-6 left-6 font-mono text-[9px] text-[#8B8B96] flex items-center gap-2">
             <span>CORE STATUS:</span>
-            <span className={`uppercase tracking-wider font-bold ${voice.wakeDetected ? "text-pink-400" : "text-[#7DD3FC]"}`}>
+            <span className={`uppercase tracking-wider font-bold ${voice.wakeDetected ? accentText : "text-[#7DD3FC]"}`}>
               {voice.wakeDetected ? "WAKED" : aiState}
             </span>
           </div>
@@ -183,7 +200,7 @@ export default function AppShell({
 
           {/* Voice listening hint */}
           {voice.isListening && (
-            <div className="absolute bottom-6 right-6 text-[8px] font-mono uppercase tracking-widest text-pink-300/80">
+            <div className={`absolute bottom-6 right-6 text-[8px] font-mono uppercase tracking-widest ${isZora ? "text-pink-300/80" : "text-emerald-300/80"}`}>
               {voice.wakeDetected ? "Wake word heard — speak your command..." : "Listening for wake word..."}
             </div>
           )}
