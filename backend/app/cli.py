@@ -35,9 +35,13 @@ from backend.app.install_paths import (
 BASE_DIR = APPLICATION_HOME
 
 def check_port_availability(port: int, host: str = "127.0.0.1") -> bool:
-    """Check if a specific TCP port is open locally."""
+    """Check whether a local listener can bind, ignoring harmless TIME_WAIT sockets."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
+            if platform.system() == "Windows" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            else:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((host, port))
             return True
         except OSError:

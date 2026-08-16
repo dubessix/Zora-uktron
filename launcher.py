@@ -658,14 +658,19 @@ class ServiceLauncher:
                 return 1
 
             url = f"http://{self.host}:{self.frontend_port}"
-            try:
-                dispatched = bool(webbrowser.open(url))
-            except Exception as exc:
+            browser_disabled = os.getenv("ULTRON_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}
+            if browser_disabled:
                 dispatched = False
-                self.log("Launcher", f"Browser dispatch failed: {exc}", "33")
+                self.log("Launcher", f"Both services healthy; browser launch intentionally skipped for {url}.", "33")
+            else:
+                try:
+                    dispatched = bool(webbrowser.open(url))
+                except Exception as exc:
+                    dispatched = False
+                    self.log("Launcher", f"Browser dispatch failed: {exc}", "33")
             if dispatched:
                 self.log("Launcher", f"Both services healthy; browser launch dispatched for {url}.", "32")
-            else:
+            elif not browser_disabled:
                 self.log("Launcher", f"Both services healthy. Open {url} manually.", "33")
             return self.monitor_services()
         finally:

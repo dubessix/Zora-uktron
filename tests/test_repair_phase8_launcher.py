@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import signal
 import shutil
 import subprocess
@@ -14,6 +15,7 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from backend.app.cli import check_port_availability as cli_check_port_availability
 from backend.app.static_server import create_server
 from launcher import LauncherError, ServiceLauncher
 
@@ -120,6 +122,7 @@ class TestFrontendProductionServer(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
             self.assertTrue(ServiceLauncher.check_port_availability(port, "127.0.0.1"))
+            self.assertTrue(cli_check_port_availability(port, "127.0.0.1"))
 
     def test_non_loopback_bind_is_rejected(self):
         with tempfile.TemporaryDirectory(prefix="ultron_static_") as temp:
@@ -217,6 +220,20 @@ class TestLauncherHealthAndLifecycle(unittest.TestCase):
             result = launcher.run()
         self.assertEqual(result, 0)
         browser.assert_called_once_with("http://127.0.0.1:5173")
+
+    def test_cloud_mode_skips_real_browser_only_after_both_health_gates(self):
+        root, launcher = self._ready_launcher()
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        launcher.wait_for_backend_health = Mock(return_value=True)
+        launcher.wait_for_frontend_health = Mock(return_value=True)
+        launcher.monitor_services = Mock(return_value=0)
+        with patch.dict(os.environ, {"ULTRON_NO_BROWSER": "1"}), patch(
+            "launcher.webbrowser.open"
+        ) as browser:
+            result = launcher.run()
+        self.assertEqual(result, 0)
+        browser.assert_not_called()
+        launcher.monitor_services.assert_called_once_with()
 
     def test_unexpected_child_exit_returns_failure_and_stops_sibling(self):
         root, launcher = self._ready_launcher()

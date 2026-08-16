@@ -9,6 +9,12 @@ The setup window keeps live progress text at the top. Paste only the keys you ha
 
 The included verified prebuilt frontend means Node/npm is not required for the normal default-port installation. Node 20.19+ or 22.12+ is needed only for frontend development, changed frontend source, or a custom backend port.
 
+## Free cloud pre-check (does not touch the owner's laptop)
+
+On GitHub, open `Actions` → `Ultron Cloud Test` → `Run workflow`. GitHub creates temporary Ubuntu 24.04 and Windows cloud machines, installs the locked project, runs both Python suites and the frontend build, creates/inspects platform shortcuts, and performs an isolated real Start/Health/Stop cycle. The workflow is manual, read-only, uses no owner provider keys, retains diagnostic artifacts for seven days, and fails if source `data/` is touched.
+
+A green cloud run verifies only the automated cloud scope. The Windows runner is not the owner's Windows 11 desktop, and cloud runners cannot verify real Start Menu clicks, microphone, speakers, Spotify, VS Code GUI, private provider credentials, or long-duration laptop behavior.
+
 ## 1. Prerequisites
 
 Required:
