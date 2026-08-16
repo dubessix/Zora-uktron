@@ -27,7 +27,11 @@ def _runtime_data_files() -> list[tuple[str, list[str]]]:
             "SETUP_ULTRON_UBUNTU.sh",
             "start_ultron.bat",
             "start_ultron.sh",
-        ]
+        ],
+        "share/ultron/images": [
+            "images/ultron_icon.ico",
+            "images/ultron_icon.png",
+        ],
     }
     frontend = ROOT / "frontend"
     for path in sorted(frontend.rglob("*")):

@@ -85,6 +85,23 @@ def save_keys(updates: dict[str, str]) -> None:
         ENV_FILE.chmod(0o600)
 
 
+def required_icon(filename: str) -> Path:
+    icon = ROOT / "images" / filename
+    if not icon.is_file():
+        raise FileNotFoundError(f"Bundled Ultron icon is missing: {icon}")
+    return icon
+
+
+def set_window_icon(window, photo_factory: Callable[..., object]) -> object | None:
+    """Apply the platform-native branded icon and retain Linux's photo object."""
+    if os.name == "nt":
+        window.iconbitmap(default=str(required_icon("ultron_icon.ico")))
+        return None
+    photo = photo_factory(file=str(required_icon("ultron_icon.png")))
+    window.iconphoto(True, photo)
+    return photo
+
+
 class InstallerEngine:
     def __init__(self, status: Callable[[str], None], log: Callable[[str], None]) -> None:
         self.status = status
@@ -208,6 +225,7 @@ class InstallerEngine:
         menu = appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Ultron"
         menu.mkdir(parents=True, exist_ok=True)
         desktop = Path.home() / "Desktop"
+        icon = required_icon("ultron_icon.ico")
         entries = {
             "Ultron": paths["start"],
             "Stop Ultron": paths["stop"],
@@ -221,7 +239,7 @@ class InstallerEngine:
                 destination_q = str(destination).replace("'", "''")
                 target_q = str(target).replace("'", "''")
                 root_q = str(APPLICATION_HOME).replace("'", "''")
-                icon_q = str(venv_python()).replace("'", "''")
+                icon_q = str(icon).replace("'", "''")
                 command = (
                     "$w=New-Object -ComObject WScript.Shell;"
                     f"$s=$w.CreateShortcut('{destination_q}');"
@@ -242,7 +260,7 @@ class InstallerEngine:
     def _create_linux_shortcuts(self, paths: dict[str, Path]) -> None:
         applications = Path.home() / ".local" / "share" / "applications"
         applications.mkdir(parents=True, exist_ok=True)
-        icon = ROOT / "images" / "ultron_ui_refined.png"
+        icon = required_icon("ultron_icon.png")
         entries = {
             "ultron.desktop": ("Ultron", paths["start"], False),
             "ultron-stop.desktop": ("Stop Ultron", paths["stop"], False),
@@ -253,7 +271,7 @@ class InstallerEngine:
                 "[Desktop Entry]\nType=Application\n"
                 f"Name={name}\nExec=\"{executable}\"\nPath={APPLICATION_HOME}\n"
                 f"Terminal={'true' if terminal else 'false'}\n"
-                f"Icon={icon if icon.is_file() else 'applications-system'}\n"
+                f"Icon={icon}\n"
                 "Categories=Development;Utility;\n"
             )
             destination = applications / filename
@@ -300,6 +318,7 @@ class InstallerWindow:
         self.messagebox = messagebox
         self.root = tk.Tk()
         self.root.title("Ultron Personal V1 Setup")
+        self.window_icon = set_window_icon(self.root, tk.PhotoImage)
         self.root.geometry("760x640")
         self.status_var = tk.StringVar(value="Ready. Nothing has been changed yet.")
         header = tk.Label(

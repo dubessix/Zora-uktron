@@ -133,6 +133,8 @@ class TestPhase7WheelInstall(unittest.TestCase):
             "share/ultron/SETUP_ULTRON_UBUNTU.sh",
             "share/ultron/start_ultron.bat",
             "share/ultron/start_ultron.sh",
+            "share/ultron/images/ultron_icon.ico",
+            "share/ultron/images/ultron_icon.png",
         }
         for suffix in required_suffixes:
             self.assertTrue(

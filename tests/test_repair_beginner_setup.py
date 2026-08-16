@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -56,6 +58,9 @@ class TestInstallerScripts(unittest.TestCase):
             home = Path(temp) / "Home Folder"
             root.mkdir()
             home.mkdir()
+            icon = root / "images" / "ultron_icon.png"
+            icon.parent.mkdir()
+            icon.write_bytes(b"test-icon")
             fake_venv = root / ".venv"
             (fake_venv / "bin").mkdir(parents=True)
             (fake_venv / "bin" / "python").write_text("", encoding="utf-8")
@@ -71,7 +76,81 @@ class TestInstallerScripts(unittest.TestCase):
             content = desktop.read_text(encoding="utf-8")
             self.assertIn(f'Exec="{scripts["start"]}"', content)
             self.assertIn("Terminal=false", content)
+            self.assertIn(f"Icon={icon}", content)
             self.assertIn("launcher-ui.log", scripts["start"].read_text(encoding="utf-8"))
+
+    def test_windows_shortcuts_use_branded_ico_instead_of_python_icon(self):
+        with tempfile.TemporaryDirectory(prefix="Ultron Windows Icon ") as temp:
+            root = Path(temp) / "Ultron Folder"
+            home = Path(temp) / "Owner Home"
+            appdata = home / "AppData" / "Roaming"
+            desktop = home / "Desktop"
+            desktop.mkdir(parents=True)
+            icon = root / "images" / "ultron_icon.ico"
+            icon.parent.mkdir(parents=True)
+            icon.write_bytes(b"test-icon")
+            scripts = {}
+            for key, filename in {
+                "start": "Start Ultron.cmd",
+                "stop": "Stop Ultron.cmd",
+                "settings": "Ultron Keys.cmd",
+            }.items():
+                scripts[key] = root / filename
+                scripts[key].write_text("@echo off\n", encoding="utf-8")
+            engine = installer.InstallerEngine(Mock(), Mock())
+            with patch.object(installer, "ROOT", root), patch.object(
+                installer, "APPLICATION_HOME", root
+            ), patch.object(installer.Path, "home", return_value=home), patch.dict(
+                os.environ, {"APPDATA": str(appdata)}
+            ), patch.object(installer.subprocess, "run") as run:
+                engine._create_windows_shortcuts(scripts)
+            self.assertEqual(run.call_count, 4)
+            commands = [" ".join(call.args[0]) for call in run.call_args_list]
+            self.assertTrue(all(str(icon) in command for command in commands), commands)
+            self.assertTrue(all("python.exe" not in command.lower() for command in commands), commands)
+
+    def test_repository_has_valid_multisize_branded_icons(self):
+        root = Path(__file__).resolve().parent.parent
+        png = (root / "images" / "ultron_icon.png").read_bytes()
+        ico = (root / "images" / "ultron_icon.ico").read_bytes()
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", png[16:24]), (512, 512))
+        reserved, kind, count = struct.unpack("<HHH", ico[:6])
+        self.assertEqual((reserved, kind), (0, 1))
+        self.assertGreaterEqual(count, 6)
+        sizes = set()
+        for index in range(count):
+            offset = 6 + index * 16
+            width, height = ico[offset], ico[offset + 1]
+            sizes.add((width or 256, height or 256))
+        self.assertTrue({(16, 16), (32, 32), (48, 48), (256, 256)}.issubset(sizes), sizes)
+
+    def test_setup_window_uses_native_branded_icon_on_both_platforms(self):
+        with tempfile.TemporaryDirectory(prefix="Ultron Setup Icon ") as temp:
+            root = Path(temp)
+            images = root / "images"
+            images.mkdir()
+            windows_icon = images / "ultron_icon.ico"
+            linux_icon = images / "ultron_icon.png"
+            windows_icon.write_bytes(b"ico")
+            linux_icon.write_bytes(b"png")
+            window = Mock()
+            photo_factory = Mock(return_value=object())
+            with patch.object(installer, "ROOT", root), patch.object(installer.os, "name", "nt"):
+                retained = installer.set_window_icon(window, photo_factory)
+            self.assertIsNone(retained)
+            window.iconbitmap.assert_called_once_with(default=str(windows_icon))
+            photo_factory.assert_not_called()
+
+            window.reset_mock()
+            photo_factory.reset_mock()
+            photo = object()
+            photo_factory.return_value = photo
+            with patch.object(installer, "ROOT", root), patch.object(installer.os, "name", "posix"):
+                retained = installer.set_window_icon(window, photo_factory)
+            self.assertIs(retained, photo)
+            photo_factory.assert_called_once_with(file=str(linux_icon))
+            window.iconphoto.assert_called_once_with(True, photo)
 
     def test_install_sequence_uses_runtime_requirements_and_preserves_cli_setup(self):
         engine = installer.InstallerEngine(Mock(), Mock())

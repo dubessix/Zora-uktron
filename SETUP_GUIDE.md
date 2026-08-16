@@ -5,7 +5,7 @@
 - Windows 11: double-click `SETUP_ULTRON_WINDOWS.bat`.
 - Ubuntu: double-click/run `SETUP_ULTRON_UBUNTU.sh`.
 
-The setup window keeps live progress text at the top. Paste only the keys you have, click `Install / Repair`, and wait for the ready message. It creates application-menu entries for `Ultron`, `Stop Ultron`, and `Ultron Keys`. Daily launch runs hidden/minimized and writes diagnostics to `data/logs/launcher-ui.log`; no command typing is required. Re-running setup preserves `.env`, config, database, memory, reminders, and backups.
+The setup window keeps live progress text at the top. Paste only the keys you have, click `Install / Repair`, and wait for the ready message. It creates branded application-menu entries for `Ultron`, `Stop Ultron`, and `Ultron Keys`, plus the main `Ultron` desktop shortcut when the desktop folder exists. Daily launch runs hidden/minimized and writes diagnostics to `data/logs/launcher-ui.log`; no command typing is required. Re-running setup refreshes the shortcuts and branded icon while preserving `.env`, config, database, memory, reminders, and backups.
 
 The included verified prebuilt frontend means Node/npm is not required for the normal default-port installation. Node 20.19+ or 22.12+ is needed only for frontend development, changed frontend source, or a custom backend port.
 
