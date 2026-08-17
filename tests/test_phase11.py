@@ -28,16 +28,16 @@ class TestPhase11WidgetSystemArchitecture(unittest.TestCase):
             self.assertTrue(path.exists(), f"Missing required file: {path.name}")
 
     def test_draggable_hook_coordinate_tracking(self):
-        """Test 2: Verify useDraggable tracks MouseDown, client coordinates, and window listeners."""
+        """Test 2: Verify one pointer path tracks mouse, pen, and touch coordinates."""
         hook_path = HOOKS_DIR / "useDraggable.js"
-        
+
         with open(hook_path, "r", encoding="utf-8") as f:
             content = f.read()
-            # Assert core drag mechanisms
             self.assertIn("clientX", content)
             self.assertIn("clientY", content)
-            self.assertIn("mousemove", content)
-            self.assertIn("mouseup", content)
+            self.assertIn("pointermove", content)
+            self.assertIn("pointerup", content)
+            self.assertIn("pointercancel", content)
 
     def test_glassmorphic_container_styles_and_bounds(self):
         """Test 3: Verify WidgetContainer implements standard double-click collapse and translate3d."""

@@ -20,7 +20,7 @@ frontend/src/
 ```
 
 ### A. `useDraggable.js` (The Movement Engine)
-*   **Role**: Tracks standard pointer triggers (`onMouseDown`, `onMouseMove`, `onMouseUp`).
+*   **Role**: Tracks unified Pointer Events (`pointerdown`, `pointermove`, `pointerup`, `pointercancel`) for mouse, pen, and touch.
 *   **Performance**: Updates hardware-accelerated **`transform: translate3d(x, y, 0)`** values directly in CSS, bypassing heavy package wrappers and keeping local client CPU usage strictly **$<0.5\%$**.
 
 ### B. `WidgetContainer.jsx` (The Glassmorphic Wrapper)

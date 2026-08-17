@@ -16,6 +16,7 @@ export default function App() {
   
   const [sessionId, setSessionId] = useState(null);
   const [activePersonality, setActivePersonality] = useState("ultron");
+  const [personalitySaving, setPersonalitySaving] = useState(false);
   const [aiState, setAiState] = useState("idle");
   const [activityText, setActivityText] = useState("Connecting to the local Ultron backend…");
   const [messages, setMessages] = useState([]);
@@ -23,6 +24,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   // Coding Mode (NVIDIA brain) — manual toggle synced to backend /api/coding-mode
   const [codingMode, setCodingMode] = useState(false);
+  const [codingModeSaving, setCodingModeSaving] = useState(false);
   // Coding activity log shown in the CodingWidget; auto-opened on coding turns.
   const [codingLog, setCodingLog] = useState([]);
   // Exact one-time action returned by the backend; never regenerate on confirm.
@@ -246,7 +248,9 @@ export default function App() {
 
   // Persist UI personality selection; never claim a switch that the backend rejected.
   const togglePersonality = async () => {
+    if (personalitySaving) return;
     const nextPers = activePersonality === "ultron" ? "zora" : "ultron";
+    setPersonalitySaving(true);
     setAiState("planning");
     setActivityText(`Saving ${nextPers} as the active personality…`);
     try {
@@ -263,33 +267,31 @@ export default function App() {
       setActivityText(`Personality unchanged: ${err.message || 'backend unavailable'}`);
       addNotification('Personality unchanged', err.message || 'Backend unavailable.', 'medium');
     } finally {
+      setPersonalitySaving(false);
       setAiState("idle");
     }
   };
 
   // Toggle Coding Mode (manual override -> NVIDIA brain for all turns)
   const toggleCodingMode = async () => {
+    if (codingModeSaving) return;
     const next = !codingMode;
-    setCodingMode(next);
+    setCodingModeSaving(true);
     setActivityText(`${next ? 'Enabling' : 'Disabling'} coding mode…`);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      const response = await fetch(`${apiUrl}/api/coding-mode`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: next })
+      const result = await api('/api/coding-mode', {
+        method: 'POST',
+        body: JSON.stringify({ enabled: next }),
       });
-      if (!response.ok) {
-        setCodingMode(!next);
-        setActivityText("Coding mode unchanged — backend rejected the request.");
-        addNotification("Coding Mode", "Failed to toggle coding mode.", "medium");
-      } else {
-        setActivityText(`Coding mode ${next ? 'enabled' : 'disabled'}.`);
-      }
+      if (!result.success) throw new Error('Backend rejected the coding-mode update.');
+      setCodingMode(Boolean(result.coding_mode));
+      setActivityText(`Coding mode ${result.coding_mode ? 'enabled' : 'disabled'}.`);
+      addNotification('Coding Mode', `Coding mode ${result.coding_mode ? 'enabled' : 'disabled'}.`, 'low');
     } catch (err) {
-      setCodingMode(!next);
-      setActivityText("Coding mode unchanged — backend offline.");
-      addNotification("Coding Mode", "Backend offline — coding mode not changed.", "medium");
+      setActivityText(`Coding mode unchanged: ${err.message || 'backend offline'}`);
+      addNotification('Coding Mode unchanged', err.message || 'Backend offline.', 'medium');
+    } finally {
+      setCodingModeSaving(false);
     }
   };
 
@@ -674,11 +676,13 @@ export default function App() {
         activityText={activityText}
         setAiState={setAiState}
         togglePersonality={togglePersonality}
+        personalitySaving={personalitySaving}
         widgetState={widgetState}
         toggleWidget={toggleWidget}
         handleVoiceCommand={handleVoiceCommand}
         codingMode={codingMode}
         toggleCodingMode={toggleCodingMode}
+        codingModeSaving={codingModeSaving}
         codingLog={codingLog}
         onConfirmRun={handleConfirmRun}
         pendingAction={pendingAction}

@@ -39,7 +39,7 @@ export default function WidgetRail({ widgetState, toggleWidget, activePersonalit
       <div className={`absolute inset-y-0 left-0 flex h-full flex-col bg-[#080B0F]/95 px-1.5 py-3 font-mono backdrop-blur-xl transition-[width] duration-200 ${
         expanded ? "w-52" : "w-14"
       } ${expanded ? "shadow-[12px_0_30px_rgba(0,0,0,0.45)]" : ""}`}>
-        <div className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5 scrollbar-thin">
+        <div className="flex-1 space-y-1 overflow-x-hidden overflow-y-auto pr-0.5 no-visible-scrollbar">
           {Object.entries(WIDGET_REGISTRY).map(([widgetId, config]) => {
             const Icon = config.icon;
             const isVisible = Boolean(widgetState[widgetId]?.visible);

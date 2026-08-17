@@ -39,9 +39,9 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
       : 'Collecting';
 
   return (
-    <aside className="col-span-12 lg:col-span-3 h-full min-w-0 space-y-3 overflow-y-auto pr-1 font-mono scrollbar-thin [@media(max-height:800px)]:space-y-2 2xl:space-y-4">
-      <section className="rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl [@media(max-height:800px)]:p-3 2xl:p-4">
-        <div className="mb-3 flex items-center justify-between [@media(max-height:800px)]:mb-2 2xl:mb-4">
+    <aside className="ultron-left-panel col-span-12 h-full min-w-0 space-y-3 overflow-x-hidden overflow-y-auto pr-1 font-mono no-visible-scrollbar md:col-span-3 lg:col-span-3 [@media(max-height:800px)]:space-y-2 2xl:space-y-4">
+      <section className="ultron-overview-panel rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl [@media(max-height:800px)]:p-3 2xl:p-4">
+        <div className="ultron-section-heading mb-3 flex items-center justify-between [@media(max-height:800px)]:mb-2 2xl:mb-4">
           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#F5F5F7] 2xl:text-[11px]">
             <Activity size={14} strokeWidth={1.8} className="text-emerald-400" aria-hidden="true" />
             <span>System overview</span>
@@ -51,7 +51,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:gap-2 2xl:gap-3">
+        <div className="ultron-trend-grid grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:gap-2 2xl:gap-3">
           <TrendMetricCard
             label="CPU"
             value={percent(cpu)}
@@ -81,12 +81,12 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
       </section>
 
       <section
-        className="rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl [@media(max-height:800px)]:p-3 2xl:p-4"
+        className="ultron-network-panel rounded-xl border border-emerald-500/15 bg-[#0B1112]/88 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.035)] backdrop-blur-xl [@media(max-height:800px)]:p-3 2xl:p-4"
         aria-label="Network counters"
       >
-        <div className="mb-3 flex items-center justify-between [@media(max-height:800px)]:mb-2 2xl:mb-4">
+        <div className="ultron-section-heading mb-3 flex items-center justify-between [@media(max-height:800px)]:mb-2 2xl:mb-4">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/15 bg-cyan-400/5 text-cyan-300 2xl:h-9 2xl:w-9">
+            <span className="ultron-network-icon flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/15 bg-cyan-400/5 text-cyan-300 2xl:h-9 2xl:w-9">
               <Network size={16} strokeWidth={1.7} aria-hidden="true" />
             </span>
             <div>
@@ -103,7 +103,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
           </span>
         </div>
 
-        <div className="mb-3 grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:mb-2 [@media(max-height:800px)]:gap-2 2xl:mb-4 2xl:gap-3">
+        <div className="ultron-network-values mb-3 grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:mb-2 [@media(max-height:800px)]:gap-2 2xl:mb-4 2xl:gap-3">
           <NetworkValue
             label="Local round trip"
             value={healthLatency === null ? 'Unavailable' : `${healthLatency.toFixed(1)} ms`}
@@ -117,7 +117,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
         </div>
 
         {network.available ? (
-          <div className="space-y-3 [@media(max-height:800px)]:space-y-2 2xl:space-y-4">
+          <div className="ultron-rate-group space-y-3 [@media(max-height:800px)]:space-y-2 2xl:space-y-4">
             <RateRow
               icon={ArrowUp}
               label="TX rate"
@@ -143,7 +143,7 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
         )}
       </section>
 
-      <section className="grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:gap-2 2xl:gap-3">
+      <section className="ultron-detail-grid grid grid-cols-2 gap-2.5 [@media(max-height:800px)]:gap-2 2xl:gap-3">
         <DetailMetricCard
           icon={Cpu}
           label="CPU load"
@@ -179,9 +179,9 @@ export default function LeftPanel({ systemMetrics, backendStatus }) {
 function TrendMetricCard({ label, value, history, color, available = true }) {
   const isUnavailable = value === 'Unavailable';
   return (
-    <div className="min-w-0 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2.5 2xl:px-3.5 2xl:py-3.5">
+    <div className="ultron-trend-card min-w-0 overflow-hidden rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2.5 2xl:px-3.5 2xl:py-3.5">
       <span className="block text-[7px] font-semibold uppercase tracking-widest text-white/42 2xl:text-[8px]">{label}</span>
-      <div className="mt-1.5 flex min-h-9 items-end justify-between gap-1.5 2xl:mt-2 2xl:min-h-11">
+      <div className="ultron-trend-card-row mt-1.5 flex min-h-9 items-end justify-between gap-1.5 2xl:mt-2 2xl:min-h-11">
         <span className={`shrink-0 whitespace-nowrap font-bold text-[#F5F5F7] ${isUnavailable ? 'text-[10px] 2xl:text-[11px]' : 'text-[16px] 2xl:text-[18px]'}`}>
           {value}
         </span>
@@ -193,14 +193,14 @@ function TrendMetricCard({ label, value, history, color, available = true }) {
 
 function MiniSparkline({ values, color, available = true }) {
   if (!available) {
-    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25 2xl:w-[76px] 2xl:text-[7px]">No sensor</span>;
+    return <span className="ultron-sparkline w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25 2xl:w-[76px] 2xl:text-[7px]">No sensor</span>;
   }
   const points = sparklinePoints(values, 58, 24);
   if (!points) {
-    return <span className="w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25 2xl:w-[76px] 2xl:text-[7px]">Collecting</span>;
+    return <span className="ultron-sparkline w-[58px] shrink-0 pb-1 text-right text-[6px] uppercase tracking-wider text-white/25 2xl:w-[76px] 2xl:text-[7px]">Collecting</span>;
   }
   return (
-    <svg width="58" height="24" viewBox="0 0 58 24" role="img" aria-label="Recent reported trend" className="shrink-0 2xl:h-[31px] 2xl:w-[76px]">
+    <svg width="58" height="24" viewBox="0 0 58 24" role="img" aria-label="Recent reported trend" className="ultron-sparkline shrink-0 2xl:h-[31px] 2xl:w-[76px]">
       <polyline
         points={points}
         fill="none"
@@ -215,7 +215,7 @@ function MiniSparkline({ values, color, available = true }) {
 
 function NetworkValue({ label, value, color }) {
   return (
-    <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2.5 2xl:px-3.5 2xl:py-3.5">
+    <div className="ultron-network-value min-w-0 overflow-hidden rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2.5 2xl:px-3.5 2xl:py-3.5">
       <span className="block text-[7px] uppercase tracking-widest text-white/35 2xl:text-[8px]">{label}</span>
       <span className={`mt-1.5 block break-words text-[14px] font-bold 2xl:mt-2 2xl:text-[16px] ${color}`}>{value}</span>
     </div>
@@ -244,14 +244,14 @@ function DetailMetricCard({ icon: Icon, label, value, progress, color, status })
   const width = numberOrNull(progress);
   const isUnavailable = value === 'Unavailable';
   return (
-    <div className="min-h-24 rounded-xl border bg-[#0B1112]/88 p-3.5 backdrop-blur-xl [@media(max-height:800px)]:min-h-20 [@media(max-height:800px)]:p-3 2xl:min-h-28 2xl:p-4" style={{ borderColor: `${color}2E` }}>
+    <div className="ultron-detail-card min-h-24 min-w-0 overflow-hidden rounded-xl border bg-[#0B1112]/88 p-3.5 backdrop-blur-xl [@media(max-height:800px)]:min-h-20 [@media(max-height:800px)]:p-3 2xl:min-h-28 2xl:p-4" style={{ borderColor: `${color}2E` }}>
       <div className="flex items-center gap-2 text-white/45 2xl:gap-2.5">
         <Icon size={14} strokeWidth={1.7} style={{ color }} aria-hidden="true" className="2xl:h-4 2xl:w-4" />
         <span className="text-[7px] font-semibold uppercase tracking-widest 2xl:text-[8px]">{label}</span>
       </div>
-      <span className={`mt-3 block whitespace-nowrap font-bold [@media(max-height:800px)]:mt-2 2xl:mt-4 ${isUnavailable ? 'text-[16px] 2xl:text-[18px]' : 'text-[18px] 2xl:text-[21px]'}`} style={{ color }}>{value}</span>
+      <span className={`ultron-detail-value mt-3 block max-w-full truncate whitespace-nowrap font-bold [@media(max-height:800px)]:mt-2 2xl:mt-4 ${isUnavailable ? 'text-[16px] 2xl:text-[18px]' : 'text-[18px] 2xl:text-[21px]'}`} style={{ color }} title={value}>{value}</span>
       {width !== null && (
-        <div className="mt-3 h-1 rounded-full bg-white/[0.06] [@media(max-height:800px)]:mt-2 2xl:mt-4 2xl:h-1.5">
+        <div className="ultron-detail-progress mt-3 h-1 rounded-full bg-white/[0.06] [@media(max-height:800px)]:mt-2 2xl:mt-4 2xl:h-1.5">
           <div
             className="h-full rounded-full"
             style={{ width: `${Math.max(0, Math.min(100, width))}%`, backgroundColor: color }}
@@ -259,7 +259,7 @@ function DetailMetricCard({ icon: Icon, label, value, progress, color, status })
         </div>
       )}
       {status && (
-        <span className="mt-2 inline-flex rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[7px] uppercase tracking-widest text-white/55 [@media(max-height:800px)]:mt-1.5 2xl:mt-3 2xl:px-2.5 2xl:text-[8px]">
+        <span className="ultron-detail-status mt-2 inline-flex rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[7px] uppercase tracking-widest text-white/55 [@media(max-height:800px)]:mt-1.5 2xl:mt-3 2xl:px-2.5 2xl:text-[8px]">
           {status}
         </span>
       )}

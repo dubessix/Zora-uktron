@@ -211,8 +211,8 @@ export default function BlobCanvas({
   return (
     <canvas 
       ref={canvasRef} 
-      style={{ width: `${displaySize}px`, height: `${displaySize}px` }}
-      className="max-w-full aspect-square"
+      style={{ '--core-size': `${displaySize}px` }}
+      className="ultron-core-canvas max-w-full aspect-square"
     />
   );
 }

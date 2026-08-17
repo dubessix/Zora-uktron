@@ -69,6 +69,8 @@ export default function useVoice({ onCommand, enabled }) {
   const [isListening, setIsListening] = useState(false);
   const [wakeDetected, setWakeDetected] = useState(false);
   const [heardText, setHeardText] = useState("");
+  const [voiceError, setVoiceError] = useState("");
+  const supported = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
   const recRef = useRef(null);
   const capturingRef = useRef(false);
   const finalTextRef = useRef("");
@@ -105,8 +107,11 @@ export default function useVoice({ onCommand, enabled }) {
 
   const start = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    setVoiceError("");
     if (!SR) {
-      console.warn("[VOICE] Web Speech API not supported in this browser.");
+      const message = "Voice recognition is unavailable in this browser.";
+      setVoiceError(message);
+      console.warn(`[VOICE] ${message}`);
       return;
     }
 
@@ -155,14 +160,25 @@ export default function useVoice({ onCommand, enabled }) {
     };
 
     rec.onerror = (event) => {
+      let message = "";
       if (event.error === "not-allowed") {
-        console.warn("[VOICE] Microphone permission denied.");
-        fatalRef.current = true; // do NOT auto-restart
+        message = "Microphone permission was denied.";
+      } else if (event.error === "audio-capture") {
+        message = "No microphone input is available in this browser or remote desktop.";
       } else if (event.error === "network" || event.error === "service-not-allowed") {
-        fatalRef.current = true; // environment won't recognize speech
-        console.warn(`[VOICE] Speech recognition error: ${event.error}`);
+        message = "Browser speech recognition service is unavailable.";
+      }
+      if (message) {
+        fatalRef.current = true;
+        setVoiceError(message);
+        console.warn(`[VOICE] ${message}`);
       }
       try { rec.stop(); } catch (_e) {}
+    };
+
+    rec.onstart = () => {
+      setIsListening(true);
+      setVoiceError("");
     };
 
     rec.onend = () => {
@@ -173,8 +189,13 @@ export default function useVoice({ onCommand, enabled }) {
     };
 
     recRef.current = rec;
-    try { rec.start(); } catch (_e) {}
-    setIsListening(true);
+    try {
+      rec.start();
+    } catch (_error) {
+      fatalRef.current = true;
+      setIsListening(false);
+      setVoiceError("Voice recognition could not start in this browser.");
+    }
   }, [dispatch]);
 
   const stop = useCallback(() => {
@@ -206,5 +227,5 @@ export default function useVoice({ onCommand, enabled }) {
   // Cleanup on unmount.
   useEffect(() => () => { clearSilenceTimer(); }, []);
 
-  return { isListening, wakeDetected, heardText, start, stop };
+  return { isListening, wakeDetected, heardText, voiceError, supported, start, stop };
 }

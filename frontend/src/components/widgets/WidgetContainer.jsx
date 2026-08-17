@@ -19,7 +19,12 @@ export default function WidgetContainer({
   personality = "ultron", 
   children 
 }) {
-  const { position, handleMouseDown, isDragging } = useDraggable(initialX, initialY);
+  const { position, handlePointerDown, isDragging } = useDraggable(
+    initialX,
+    initialY,
+    initialWidth,
+    initialHeight,
+  );
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Map active colors dynamically from the shared personality contract.
@@ -37,25 +42,29 @@ export default function WidgetContainer({
         transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
         position: 'absolute',
         zIndex: isDragging ? 1000 : 50,
-        width: `${initialWidth}px`,
-        height: isCollapsed ? 'auto' : `${initialHeight}px`,
+        width: `min(${initialWidth}px, calc(100% - 16px))`,
+        height: isCollapsed ? 'auto' : `min(${initialHeight}px, calc(100% - 16px))`,
+        maxWidth: 'calc(100% - 16px)',
+        maxHeight: 'calc(100% - 16px)',
         borderLeftColor: theme.primary,
         boxShadow: `0 0 20px ${theme.glow}`,
       }}
-      className="bg-[#14141E]/85 border border-white/5 border-l-[3px] rounded-lg backdrop-blur-2xl flex flex-col overflow-hidden select-none cursor-default font-mono transition-shadow duration-300"
+      className="ultron-widget-container flex flex-col overflow-hidden rounded-lg border border-l-[3px] border-white/5 bg-[#14141E]/85 font-mono cursor-default select-none backdrop-blur-2xl transition-shadow duration-300"
     >
       {/* Draggable Header Drag Bar */}
       <div 
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
         onDoubleClick={handleHeaderDoubleClick}
-        className="flex justify-between items-center bg-white/[0.02] border-b border-white/5 px-4 py-2.5 cursor-grab active:cursor-grabbing text-[#8B8B96]"
+        className="flex touch-none justify-between items-center bg-white/[0.02] border-b border-white/5 px-4 py-2.5 cursor-grab active:cursor-grabbing text-[#8B8B96]"
         title="Drag header to move. Double-click to collapse/expand."
       >
         <span className="text-[9px] uppercase font-bold tracking-widest text-[#F5F5F7]">
           {title} {isCollapsed && "(Collapsed)"}
         </span>
-        <button 
+        <button
+          type="button"
           onClick={onClose}
+          aria-label={`Close ${title}`}
           className="no-drag text-[9px] text-[#8B8B96] hover:text-rose-400 uppercase tracking-widest transition-colors"
         >
           Close
@@ -64,7 +73,7 @@ export default function WidgetContainer({
 
       {/* Embedded Inner Children Viewport (Lazy rendered/hidden on collapse) */}
       {!isCollapsed && (
-        <div className="p-4 flex-1 overflow-y-auto max-h-60 scrollbar-thin select-text">
+        <div className="max-h-60 flex-1 overflow-x-hidden overflow-y-auto p-4 select-text no-visible-scrollbar">
           {children}
         </div>
       )}

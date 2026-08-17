@@ -31,10 +31,10 @@ export default function RightPanel({
   }, [logs]);
 
   return (
-    <aside className="col-span-12 flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0B1112]/72 p-4 backdrop-blur-xl lg:col-span-3 2xl:gap-4 2xl:p-5">
+    <aside className="ultron-right-panel col-span-12 flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0B1112]/72 p-4 backdrop-blur-xl md:col-span-3 lg:col-span-3 2xl:gap-4 2xl:p-5">
       
       {/* Header + Chat/Log tabs */}
-      <div className="flex shrink-0 items-center justify-between border-b border-white/5 pb-3 2xl:pb-4">
+      <div className="ultron-right-header flex shrink-0 items-center justify-between border-b border-white/5 pb-3 2xl:pb-4">
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setTab("chat")}
@@ -65,9 +65,9 @@ export default function RightPanel({
 
       {/* CHAT TAB */}
       {tab === "chat" && (
-        <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto pr-1 scrollbar-thin 2xl:space-y-4">
+        <div className="ultron-chat-scroll min-h-0 min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto pr-1 no-visible-scrollbar 2xl:space-y-4">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-4 gap-4 2xl:gap-5 2xl:p-6">
+            <div className="ultron-chat-empty flex h-full flex-col items-center justify-center gap-4 p-4 text-center 2xl:gap-5 2xl:p-6">
               <div className="w-8 h-8 rounded-full border border-[#7DD3FC]/10 bg-[#7DD3FC]/5 flex items-center justify-center text-[#7DD3FC] animate-pulse 2xl:h-10 2xl:w-10">
                 <CircleCheck size={16} strokeWidth={1.8} aria-hidden="true" className="2xl:h-[18px] 2xl:w-[18px]" />
               </div>
@@ -115,7 +115,7 @@ export default function RightPanel({
 
       {/* LOG TAB — real-time operational activity */}
       {tab === "log" && (
-        <div className="min-h-0 min-w-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 p-2.5 pr-1 font-mono text-[10px] scrollbar-thin 2xl:p-3 2xl:text-[11px]">
+        <div className="min-h-0 min-w-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 p-2.5 pr-1 font-mono text-[10px] no-visible-scrollbar 2xl:p-3 2xl:text-[11px]">
           {logs.length === 0 ? (
             <p className="text-white/30">No activity yet. Ask Ultron to run a tool — you'll see real-time logs here.</p>
           ) : (

@@ -71,7 +71,7 @@ The user interface of Ultron V1 is divided into highly cohesive, decoupled React
 To offer high-fidelity local multitasking capabilities without adding heavy library overheads, we designed an isolated **Draggable Glass Widgets Subsystem**:
 
 ### A. `useDraggable.js` (The Movement Hook)
-A custom React hook tracking standard pointer trigger states (`onMouseDown`, `onMouseMove`, `onMouseUp`). It computes displacement coordinates and modifies hardware-accelerated **`transform: translate3d(x, y, 0)`** CSS parameters directly, keeping local client CPU usage strictly **$<0.5\%$**.
+A custom React hook tracking unified Pointer Events (`pointerdown`, `pointermove`, `pointerup`, `pointercancel`) for mouse, pen, and touch. It computes displacement coordinates and updates hardware-accelerated **`transform: translate3d(x, y, 0)`** coordinates directly.
 
 ### B. `WidgetContainer.jsx` (The Glassmorphic Wrapper)
 A floating wrapper panel displaying close triggers and dynamic left-accent border colors matching the active personality (Technical Blue `#7DD3FC` for Ultron, Warm Purple `#C084FC` for Zora). Supports double-clicking the header bar to collapse or expand the inner widget.

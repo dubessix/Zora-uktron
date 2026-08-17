@@ -337,9 +337,9 @@ async def set_session_personality(request: PersonalityRequest) -> dict:
 async def set_coding_mode(request: CodingModeRequest) -> dict:
     """Manually toggle NVIDIA coding mode on/off for the orchestrator."""
     try:
-        orch = CognitiveOrchestrator()
+        orch = get_orchestrator()
         orch.set_coding_mode(request.enabled)
-        return {"success": True, "coding_mode": request.enabled}
+        return {"success": True, "coding_mode": orch.coding_mode}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
