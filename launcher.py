@@ -30,6 +30,14 @@ _FRONTEND_TEXT_SUFFIXES = {
     ".ts", ".tsx", ".txt", ".yaml", ".yml",
 }
 
+# Compact terminal palette. The launcher colours only ordinary text and box
+# characters, so it stays readable without custom fonts or external binaries.
+TERMINAL_EMERALD = "38;2;52;211;153"
+TERMINAL_CYAN = "38;2;56;189;248"
+TERMINAL_TEAL = "38;2;94;234;212"
+TERMINAL_WHITE = "38;2;226;232;240"
+TERMINAL_DIM = "38;2;100;116;124"
+
 
 class LauncherError(RuntimeError):
     pass
@@ -65,6 +73,9 @@ class ServiceLauncher:
             self.config_path = self.asset_root / "config.yaml"
 
         config = self._load_config()
+        self.config = config
+        self.version = str(config.get("ultron", {}).get("version", "unknown"))
+        self.launch_started_at: Optional[float] = None
         server = config.get("server", {}) or {}
         configured_host = str(server.get("host", LOOPBACK_HOST)).strip().lower()
         if configured_host not in {"127.0.0.1", "localhost", "::1"}:
@@ -88,6 +99,13 @@ class ServiceLauncher:
             else self.application_home / "frontend"
         )
         self.frontend_dist = self.frontend_dir / "dist"
+
+        configured_launch_log = os.getenv("ULTRON_LAUNCH_LOG", "").strip()
+        self.launch_log_path = (
+            Path(configured_launch_log).expanduser().resolve()
+            if configured_launch_log
+            else None
+        )
 
         lock_id = hashlib.sha256(str(self.application_home).encode("utf-8")).hexdigest()[:16]
         self.lock_path = Path(tempfile.gettempdir()) / f"ultron-launcher-{lock_id}.lock"
@@ -122,8 +140,148 @@ class ServiceLauncher:
             raise LauncherError("Configuration must contain a 'server' mapping.")
         return config
 
+    def _append_launch_log(self, text: str) -> None:
+        if self.launch_log_path is None:
+            return
+        try:
+            self.launch_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.launch_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(text.rstrip("\n") + "\n")
+        except OSError:
+            # Console startup must continue even when optional diagnostic logging
+            # is unavailable; the visible terminal still contains the error.
+            pass
+
+    def console(self, text: str = "", color_code: Optional[str] = None) -> None:
+        rendered = f"\033[1;{color_code}m{text}\033[0m" if color_code else text
+        print(rendered, flush=True)
+        self._append_launch_log(text)
+
+    def console_segments(self, segments: list[tuple[str, Optional[str]]]) -> None:
+        plain = "".join(text for text, _color in segments)
+        rendered = "".join(
+            f"\033[1;{color}m{text}\033[0m" if color else text
+            for text, color in segments
+        )
+        print(rendered, flush=True)
+        self._append_launch_log(plain)
+
     def log(self, service: str, message: str, color_code: str = "32") -> None:
+        plain = f"[{service}] {message}"
         print(f"\033[1;{color_code}m[{service}]\033[0m {message}", flush=True)
+        self._append_launch_log(plain)
+
+    @staticmethod
+    def _unicode_box_supported() -> bool:
+        try:
+            "╭─╮│╰╯•".encode(sys.stdout.encoding or "utf-8")
+            return True
+        except (LookupError, UnicodeEncodeError):
+            return False
+
+    def render_startup_banner(self) -> None:
+        if platform.system() == "Windows":
+            # Enables virtual-terminal colour processing in current Windows
+            # consoles without requiring a third-party dependency.
+            os.system("")
+        major_version = self.version.split(".", 1)[0]
+        box_inner = 64
+        name_plain = f"  ULTRON  v{major_version}"
+        subtitle_left = "  Personal AI Assistant"
+        subtitle_gap = "  •  "
+        subtitle_right = "Local Startup Console"
+        subtitle_plain = subtitle_left + subtitle_gap + subtitle_right
+
+        if self._unicode_box_supported():
+            self.console("╭" + "─" * box_inner + "╮", TERMINAL_EMERALD)
+            self.console_segments([
+                ("│  ", TERMINAL_DIM),
+                ("ULTRON", TERMINAL_EMERALD),
+                ("  ", None),
+                (f"v{major_version}", TERMINAL_CYAN),
+                (" " * (box_inner - len(name_plain)), None),
+                ("│", TERMINAL_DIM),
+            ])
+            self.console_segments([
+                ("│", TERMINAL_DIM),
+                (subtitle_left, TERMINAL_WHITE),
+                (subtitle_gap, TERMINAL_DIM),
+                (subtitle_right, TERMINAL_TEAL),
+                (" " * (box_inner - len(subtitle_plain)), None),
+                ("│", TERMINAL_DIM),
+            ])
+            self.console("╰" + "─" * box_inner + "╯", TERMINAL_EMERALD)
+        else:
+            self.console("+" + "-" * box_inner + "+", "32")
+            self.console(f"|{name_plain:<{box_inner}}|", "32")
+            fallback_subtitle = subtitle_plain.replace("•", "|")
+            self.console(f"|{fallback_subtitle:<{box_inner}}|", "36")
+            self.console("+" + "-" * box_inner + "+", "32")
+
+    def progress(self, step: int, label: str, status: str, color_code: str = "36") -> None:
+        dots = "." * max(2, 42 - len(label))
+        self.console(f"[{step}/5] {label} {dots} {status}", color_code)
+
+    @staticmethod
+    def _is_real_key(value: str) -> bool:
+        lowered = value.strip().lower()
+        if not lowered:
+            return False
+        markers = (
+            "placeholder", "changeme", "change_me", "replace_me", "your_groq",
+            "your_gemini", "your_nvidia", "your_api", "api_key_here",
+        )
+        return not any(marker in lowered for marker in markers)
+
+    def configured_ai_key_slots(self) -> int:
+        values = dict(os.environ)
+        env_path = self.application_home / ".env"
+        try:
+            for raw in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, value = line.split("=", 1)
+                values.setdefault(name.strip(), value.strip())
+        except OSError:
+            pass
+        names = [
+            f"{prefix}_API_KEY_{index}"
+            for prefix in ("GROQ", "GEMINI", "NVIDIA")
+            for index in range(1, 5)
+        ]
+        return sum(1 for name in names if self._is_real_key(values.get(name, "")))
+
+    def render_ready(self, url: str, browser_opened: bool, browser_disabled: bool) -> None:
+        elapsed = max(0.0, time.monotonic() - (self.launch_started_at or time.monotonic()))
+        runtime = f"{elapsed:.1f}s" if elapsed < 60 else f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
+        key_slots = self.configured_ai_key_slots()
+        self.console("")
+        panel_width = 70
+        heading = "─ ULTRON IS ONLINE "
+        self.console("╭" + heading + "─" * (panel_width - len(heading)) + "╮", "32")
+        self.console(f"│ {f'Dashboard  {url}':<{panel_width - 2}} │", "36")
+        self.console(f"│ {f'Startup runtime  {runtime}':<{panel_width - 2}} │", "90")
+        self.console(f"│ {'Systems ready. Local services are online.':<{panel_width - 2}} │", "32")
+        self.console("╰" + "─" * panel_width + "╯", "32")
+        if browser_opened:
+            self.console("Browser opened successfully.", "32")
+        elif browser_disabled:
+            self.console("Browser auto-open was intentionally disabled for this run.", "33")
+        else:
+            self.console("Browser did not open automatically; use the dashboard URL above.", "33")
+        if key_slots == 0:
+            self.console(
+                "AI Core: LOCAL ONLY — providers not configured; local widgets/tools remain available.",
+                "33",
+            )
+        else:
+            self.console(
+                f"AI Core: {key_slots} key slot(s) configured; live reachability not checked at startup.",
+                "36",
+            )
+        self.console("[LOCK] Loopback Mode: ON   >_ You are in control.   ULTRON Personal AI", "90")
+        self.console("Keep this window open; use Stop Ultron for a graceful stop.", "90")
 
     def acquire_instance_lock(self) -> bool:
         """Take one cross-platform mutex while keeping launcher PID readable."""
@@ -636,39 +794,69 @@ class ServiceLauncher:
         self.release_instance_lock()
 
     def run(self) -> int:
+        self.launch_started_at = time.monotonic()
+        self.render_startup_banner()
         self.log("Launcher", "Initializing localhost-only Ultron services.", "35")
+        self.progress(1, "Checking installation assets", "CHECKING")
         if not self.acquire_instance_lock():
+            self.progress(1, "Checking installation assets", "FAILED", "31")
             self.log("Launcher", "Another Ultron launcher is already active.", "31")
             return 1
         try:
             self.install_signal_handlers()
             if not self.preflight_port_check():
+                self.progress(1, "Checking installation assets", "FAILED", "31")
                 return 1
             try:
                 frontend_ready = self.prepare_frontend()
             except OSError as exc:
+                self.progress(1, "Checking installation assets", "FAILED", "31")
                 self.log("Launcher", f"Frontend preparation failed: {exc}", "31")
                 return 1
             if not frontend_ready:
                 return self._requested_exit_code if self.is_shutting_down else 1
+            self.progress(1, "Checking installation assets", "READY", "32")
+            self.progress(2, "Loading private configuration", "LOADED", "32")
             if self.is_shutting_down:
                 return self._requested_exit_code
+            self.progress(3, "Starting backend service", "STARTING")
+            self.progress(4, "Starting dashboard service", "STARTING")
             try:
                 self.start_services()
             except (OSError, subprocess.SubprocessError) as exc:
                 self.log("Launcher", f"Service process failed to start: {exc}", "31")
                 return 1
 
+            self.progress(5, "AI Core", "CHECKING")
             if not self.wait_for_backend_health():
                 if self.is_shutting_down:
                     return self._requested_exit_code
+                self.progress(3, "Starting backend service", "FAILED", "31")
                 self.log("Launcher", "Backend failed its startup health gate; browser will not open.", "31")
                 return 1
+            self.progress(
+                3,
+                "Starting backend service",
+                f"CONNECTED  {self.host}:{self.backend_port}",
+                "32",
+            )
             if not self.wait_for_frontend_health():
                 if self.is_shutting_down:
                     return self._requested_exit_code
+                self.progress(4, "Starting dashboard service", "FAILED", "31")
                 self.log("Launcher", "Frontend failed its startup health gate; browser will not open.", "31")
                 return 1
+            self.progress(
+                4,
+                "Starting dashboard service",
+                f"CONNECTED  {self.host}:{self.frontend_port}",
+                "32",
+            )
+            key_slots = self.configured_ai_key_slots()
+            if key_slots:
+                self.progress(5, "AI Core", f"CONFIGURED  {key_slots} key slot(s)", "36")
+            else:
+                self.progress(5, "AI Core", "LOCAL ONLY  providers not configured", "33")
 
             url = f"http://{self.host}:{self.frontend_port}"
             browser_disabled = os.getenv("ULTRON_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}
@@ -685,6 +873,7 @@ class ServiceLauncher:
                 self.log("Launcher", f"Both services healthy; browser launch dispatched for {url}.", "32")
             elif not browser_disabled:
                 self.log("Launcher", f"Both services healthy. Open {url} manually.", "33")
+            self.render_ready(url, dispatched, browser_disabled)
             return self.monitor_services()
         finally:
             self.shutdown()

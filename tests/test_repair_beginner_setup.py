@@ -48,10 +48,15 @@ class TestInstallerScripts(unittest.TestCase):
                 scripts = engine._write_launch_scripts()
             start = scripts["start"].read_text(encoding="utf-8")
             stop = scripts["stop"].read_text(encoding="utf-8")
+            doctor = scripts["doctor"].read_text(encoding="utf-8")
+            env_editor = scripts["env"].read_text(encoding="utf-8")
             expected_cd = f'cd /d "{root}"' if os.name == "nt" else f'cd "{root}"'
             self.assertIn(expected_cd, start)
             self.assertIn(' -m backend.app.cli start', start)
             self.assertIn(' -m backend.app.cli stop', stop)
+            self.assertIn(' -m backend.app.cli doctor', doctor)
+            self.assertIn(str(root / ".env"), env_editor)
+            self.assertIn("ULTRON_LAUNCH_LOG", start)
             if os.name != "nt":
                 self.assertTrue(scripts["start"].stat().st_mode & 0o100)
 
@@ -61,6 +66,7 @@ class TestInstallerScripts(unittest.TestCase):
             home = Path(temp) / "Home Folder"
             root.mkdir()
             home.mkdir()
+            (home / "Desktop").mkdir()
             icon = root / "images" / "ultron_icon.png"
             icon.parent.mkdir()
             icon.write_bytes(b"test-icon")
@@ -78,9 +84,13 @@ class TestInstallerScripts(unittest.TestCase):
             desktop = home / ".local/share/applications/ultron.desktop"
             content = desktop.read_text(encoding="utf-8")
             self.assertIn(f'Exec="{scripts["start"]}"', content)
-            self.assertIn("Terminal=false", content)
+            self.assertIn("Terminal=true", content)
             self.assertIn(f"Icon={icon}", content)
-            self.assertIn("launcher-ui.log", scripts["start"].read_text(encoding="utf-8"))
+            start_source = scripts["start"].read_text(encoding="utf-8")
+            self.assertIn("launcher-ui.log", start_source)
+            self.assertIn("ULTRON_LAUNCH_LOG", start_source)
+            self.assertTrue((home / "Desktop" / "Ultron Doctor.desktop").is_file())
+            self.assertTrue((home / "Desktop" / "Open Ultron .env.desktop").is_file())
 
     def test_windows_shortcuts_use_branded_ico_instead_of_python_icon(self):
         with tempfile.TemporaryDirectory(prefix="Ultron Windows Icon ") as temp:
@@ -96,6 +106,8 @@ class TestInstallerScripts(unittest.TestCase):
             for key, filename in {
                 "start": "Start Ultron.cmd",
                 "stop": "Stop Ultron.cmd",
+                "doctor": "Ultron Doctor.cmd",
+                "env": "Open Ultron Env.cmd",
                 "settings": "Ultron Keys.cmd",
             }.items():
                 scripts[key] = root / filename
@@ -107,10 +119,12 @@ class TestInstallerScripts(unittest.TestCase):
                 os.environ, {"APPDATA": str(appdata)}
             ), patch.object(installer.subprocess, "run") as run:
                 engine._create_windows_shortcuts(scripts)
-            self.assertEqual(run.call_count, 4)
+            self.assertEqual(run.call_count, 9)
             commands = [" ".join(call.args[0]) for call in run.call_args_list]
             self.assertTrue(all(str(icon) in command for command in commands), commands)
             self.assertTrue(all("python.exe" not in command.lower() for command in commands), commands)
+            self.assertTrue(any("WindowStyle=1" in command for command in commands), commands)
+            self.assertTrue(any("WindowStyle=7" in command for command in commands), commands)
 
     def test_repository_has_valid_multisize_branded_icons(self):
         root = Path(__file__).resolve().parent.parent

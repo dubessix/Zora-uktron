@@ -57,5 +57,9 @@ def test_cloud_scripts_are_isolated_keyless_and_honest_about_scope():
     assert "tempfile.mkdtemp" in runtime
     assert "tempfile.mkdtemp" in shortcuts
     assert "WindowStyle" in shortcuts
-    assert "Terminal=false" in shortcuts
+    assert "expected_terminal" in shortcuts
+    assert "ultron-doctor.desktop" in shortcuts
+    assert "ultron-env.desktop" in shortcuts
+    assert "Ultron Doctor" in shortcuts
+    assert "Open Ultron .env" in shortcuts
     assert "real_credentials_used" in shortcuts

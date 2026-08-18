@@ -53,7 +53,7 @@ class APIKeyManager:
         self._load_keys_from_env()
 
     def _load_keys_from_env(self) -> None:
-        limits = {"groq": 3, "gemini": 2, "nvidia": 3}
+        limits = {"groq": 4, "gemini": 4, "nvidia": 4}
         prefixes = {
             "groq": "GROQ_API_KEY",
             "gemini": "GEMINI_API_KEY",

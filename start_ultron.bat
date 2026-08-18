@@ -10,11 +10,18 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b %errorlevel%
 )
 
+if not exist "data\logs" mkdir "data\logs"
+set "ULTRON_HOME=%~dp0"
+set "ULTRON_LAUNCH_LOG=%~dp0data\logs\launcher-ui.log"
+cls
+
 ".venv\Scripts\python.exe" -m backend.app.cli start
-if errorlevel 1 (
+set "EXIT_CODE=%ERRORLEVEL%"
+if not "%EXIT_CODE%"=="0" (
     echo.
-    echo Ultron stopped with an error. Open Ultron Doctor or run setup repair.
+    echo ULTRON START FAILED
+    echo Review the error above or open Ultron Doctor.
+    echo Log: %ULTRON_LAUNCH_LOG%
     pause
-    exit /b 1
 )
-endlocal
+exit /b %EXIT_CODE%

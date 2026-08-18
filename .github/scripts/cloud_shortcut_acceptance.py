@@ -77,14 +77,19 @@ def main() -> int:
         if os.name == "nt":
             menu = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Ultron"
             expected = {
-                menu / "Ultron.lnk": generated_scripts / "Start Ultron.cmd",
-                menu / "Stop Ultron.lnk": generated_scripts / "Stop Ultron.cmd",
-                menu / "Ultron Keys.lnk": generated_scripts / "Ultron Keys.cmd",
-                desktop / "Ultron.lnk": generated_scripts / "Start Ultron.cmd",
+                menu / "Ultron.lnk": (generated_scripts / "Start Ultron.cmd", 1),
+                menu / "Stop Ultron.lnk": (generated_scripts / "Stop Ultron.cmd", 7),
+                menu / "Ultron Doctor.lnk": (generated_scripts / "Ultron Doctor.cmd", 1),
+                menu / "Open Ultron .env.lnk": (generated_scripts / "Open Ultron Env.cmd", 1),
+                menu / "Ultron Keys.lnk": (generated_scripts / "Ultron Keys.cmd", 1),
+                desktop / "Ultron.lnk": (generated_scripts / "Start Ultron.cmd", 1),
+                desktop / "Stop Ultron.lnk": (generated_scripts / "Stop Ultron.cmd", 7),
+                desktop / "Ultron Doctor.lnk": (generated_scripts / "Ultron Doctor.cmd", 1),
+                desktop / "Open Ultron .env.lnk": (generated_scripts / "Open Ultron Env.cmd", 1),
             }
             icon = ROOT / "images" / "ultron_icon.ico"
             details = {}
-            for shortcut, target in expected.items():
+            for shortcut, (target, window_style) in expected.items():
                 if not shortcut.is_file():
                     raise RuntimeError(f"Windows shortcut was not created: {shortcut}")
                 values = powershell_shortcut(shortcut)
@@ -92,21 +97,28 @@ def main() -> int:
                     raise RuntimeError(f"Wrong Windows shortcut target: {shortcut}: {values}")
                 if str(icon).casefold() not in str(values.get("IconLocation", "")).casefold():
                     raise RuntimeError(f"Wrong Windows shortcut icon: {shortcut}: {values}")
-                if int(values.get("WindowStyle", 0)) != 7:
-                    raise RuntimeError(f"Windows shortcut is not minimized: {shortcut}: {values}")
+                if int(values.get("WindowStyle", 0)) != window_style:
+                    raise RuntimeError(
+                        f"Wrong Windows shortcut window style: {shortcut}: {values}"
+                    )
                 details[shortcut.name] = values
             verified = sorted(str(path.relative_to(owner_home)) for path in expected)
         else:
             menu = owner_home / ".local" / "share" / "applications"
             expected = {
-                menu / "ultron.desktop": generated_scripts / "start-ultron",
-                menu / "ultron-stop.desktop": generated_scripts / "stop-ultron",
-                menu / "ultron-keys.desktop": generated_scripts / "ultron-keys",
-                desktop / "Ultron.desktop": generated_scripts / "start-ultron",
+                menu / "ultron.desktop": (generated_scripts / "start-ultron", True),
+                menu / "ultron-stop.desktop": (generated_scripts / "stop-ultron", False),
+                menu / "ultron-doctor.desktop": (generated_scripts / "ultron-doctor", True),
+                menu / "ultron-env.desktop": (generated_scripts / "open-ultron-env", False),
+                menu / "ultron-keys.desktop": (generated_scripts / "ultron-keys", False),
+                desktop / "Ultron.desktop": (generated_scripts / "start-ultron", True),
+                desktop / "Stop Ultron.desktop": (generated_scripts / "stop-ultron", False),
+                desktop / "Ultron Doctor.desktop": (generated_scripts / "ultron-doctor", True),
+                desktop / "Open Ultron .env.desktop": (generated_scripts / "open-ultron-env", False),
             }
             icon = ROOT / "images" / "ultron_icon.png"
             details = {}
-            for shortcut, target in expected.items():
+            for shortcut, (target, terminal) in expected.items():
                 if not shortcut.is_file():
                     raise RuntimeError(f"Ubuntu application entry was not created: {shortcut}")
                 content = shortcut.read_text(encoding="utf-8")
@@ -114,9 +126,16 @@ def main() -> int:
                     raise RuntimeError(f"Wrong Ubuntu shortcut target: {shortcut}")
                 if f"Icon={icon}" not in content:
                     raise RuntimeError(f"Wrong Ubuntu shortcut icon: {shortcut}")
-                if "Terminal=false" not in content:
-                    raise RuntimeError(f"Ubuntu shortcut would show a terminal: {shortcut}")
-                details[shortcut.name] = {"target": str(target), "icon": str(icon), "terminal": False}
+                expected_terminal = "true" if terminal else "false"
+                if f"Terminal={expected_terminal}" not in content:
+                    raise RuntimeError(
+                        f"Wrong Ubuntu terminal visibility: {shortcut}: expected {expected_terminal}"
+                    )
+                details[shortcut.name] = {
+                    "target": str(target),
+                    "icon": str(icon),
+                    "terminal": terminal,
+                }
             verified = sorted(str(path.relative_to(owner_home)) for path in expected)
 
         if (ROOT / "data").exists():

@@ -20,7 +20,7 @@ Windows 11: double-click `SETUP_ULTRON_WINDOWS.bat`.
 
 Ubuntu: double-click/run `SETUP_ULTRON_UBUNTU.sh`.
 
-The small setup window shows live progress text at the top, installs runtime packages, preserves existing keys/data, runs Doctor/assets checks, and creates `Ultron`, `Stop Ultron`, and `Ultron Keys` entries in Windows Start Menu or Ubuntu Applications. App-menu launch is hidden/minimized (no command typing); logs go to `data/logs/launcher-ui.log`. Normal setup uses the signed prebuilt frontend and does not require Node/npm.
+The small setup window installs runtime packages, preserves existing keys/data, runs Doctor/assets checks, and creates branded `Ultron`, `Stop Ultron`, `Ultron Doctor`, `Open Ultron .env`, and `Ultron Keys` entries. The main four actions also appear on the desktop when a desktop folder is available. Clicking `Ultron` opens a visible terminal-style loader with the compact emerald/cyan terminal header with soft-white and teal subtitle, five real startup checks, the dashboard URL, and clear failures; the same output is duplicated privately to `data/logs/launcher-ui.log`. Normal setup uses verified prebuilt frontend assets and does not require Node/npm.
 
 ## Manual install from source
 
@@ -61,6 +61,8 @@ ultron start
 
 ## Configuration
 
+Provider keys belong in the private git-ignored `.env`. Groq, Gemini, and NVIDIA each support four independent slots (`*_API_KEY_1` through `*_API_KEY_4`). Empty values and documented placeholders are ignored, so slots may be non-contiguous: for example, a placeholder in `GROQ_API_KEY_1` and real keys in `GROQ_API_KEY_3`/`GROQ_API_KEY_4` loads only the two real keys. Active keys rotate; cooling/failed keys are skipped. Never commit `.env` or paste its secret values into issues/chat.
+
 Effective model IDs are in `config.yaml` and may be overridden with environment variables:
 
 | Purpose | Default | Override |
@@ -75,7 +77,7 @@ Provider secrets belong only in the git-ignored `.env` or process environment. T
 
 ## Daily operation
 
-Beginner mode: open `Ultron` from Windows Start Menu/Desktop or Ubuntu Applications. Use `Stop Ultron` for graceful shutdown and `Ultron Keys` to update provider credentials. Commands remain available for diagnostics:
+Beginner mode: click `Ultron` from the desktop, Windows Start Menu, or Ubuntu Applications. Keep its startup terminal open while the services run; it prints the verified dashboard URL and opens the browser after both health checks pass. Use `Stop Ultron` for graceful shutdown, `Ultron Doctor` for diagnostics, and `Open Ultron .env` for manual private key editing (`Ultron Keys` remains available as the preserved simple key GUI). Commands also remain available:
 
 ```bash
 ultron start

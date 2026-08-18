@@ -5,7 +5,7 @@
 - Windows 11: double-click `SETUP_ULTRON_WINDOWS.bat`.
 - Ubuntu: double-click/run `SETUP_ULTRON_UBUNTU.sh`.
 
-The setup window keeps live progress text at the top. Paste only the keys you have, click `Install / Repair`, and wait for the ready message. It creates branded application-menu entries for `Ultron`, `Stop Ultron`, and `Ultron Keys`, plus the main `Ultron` desktop shortcut when the desktop folder exists. Daily launch runs hidden/minimized and writes diagnostics to `data/logs/launcher-ui.log`; no command typing is required. Re-running setup refreshes the shortcuts and branded icon while preserving `.env`, config, database, memory, reminders, and backups.
+Click `Install / Repair` once and wait for the ready message. Setup preserves existing `.env`, config, database, memory, reminders, and backups, then creates branded desktop/application entries for `Ultron`, `Stop Ultron`, `Ultron Doctor`, and `Open Ultron .env`; the preserved `Ultron Keys` GUI remains in the application menu. Daily `Ultron` launch opens a visible terminal loader with an ANSI block banner, five real startup stages, clear errors, and the verified dashboard URL. Output is also written privately to `data/logs/launcher-ui.log`. Re-running setup refreshes scripts/shortcuts without overwriting owner data.
 
 The included verified prebuilt frontend means Node/npm is not required for the normal default-port installation. Node 20.19+ or 22.12+ is needed only for frontend development, changed frontend source, or a custom backend port.
 
@@ -88,18 +88,27 @@ This creates writable database/cache/log directories, a user `config.yaml`, and 
 
 ## 4. Configure providers
 
-Edit the generated `.env` locally. Example variable names:
+Use the `Open Ultron .env` shortcut or edit the generated `.env` locally. Each AI provider supports four independent slots:
 
 ```dotenv
 GROQ_API_KEY_1=
+GROQ_API_KEY_2=
+GROQ_API_KEY_3=
+GROQ_API_KEY_4=
 GEMINI_API_KEY_1=
+GEMINI_API_KEY_2=
+GEMINI_API_KEY_3=
+GEMINI_API_KEY_4=
 NVIDIA_API_KEY_1=
+NVIDIA_API_KEY_2=
+NVIDIA_API_KEY_3=
+NVIDIA_API_KEY_4=
 TAVILY_API_KEY=
 GITHUB_TOKEN_1=
 GITHUB_USERNAME_1=
 ```
 
-Do not commit `.env`, paste credentials into source/config files, or place tokens in Git remote URLs.
+Empty values and documented placeholders are ignored. Slots may be non-contiguous, so a placeholder in slot 1 and real keys in slots 3/4 loads only the real keys. Active keys rotate and cooling/failed keys are skipped. Do not commit `.env`, paste credentials into source/config files, or place tokens in Git remote URLs.
 
 Without a provider key, chat returns an explicit offline/unprocessed response. Local non-LLM tools remain available through their widgets/API.
 
@@ -147,7 +156,7 @@ ultron start --check
 ultron start
 ```
 
-The UI is loopback-only at `http://127.0.0.1:5173`. Press `Ctrl+C` in the launcher terminal to stop both child services. If a child exits unexpectedly, the launcher stops the sibling and returns a non-zero status.
+The visible launcher terminal shows the ULTRON block banner, five real startup stages, and the dashboard URL. The UI is loopback-only at `http://127.0.0.1:5173`; the browser opens only after backend and frontend health pass. Keep the terminal open while Ultron runs. Use the `Stop Ultron` icon or press `Ctrl+C` to stop both child services. If a child exits unexpectedly, the launcher stops the sibling, keeps a clear error visible, and returns a non-zero status.
 
 ## 8. Backups
 
